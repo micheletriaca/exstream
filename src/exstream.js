@@ -220,12 +220,12 @@ class Exstream extends EventEmitter {
         push(Error('item must be a promise'))
         next()
       } else {
-        promises.push(x)
-        if (promises.length < parallelism) next()
+        const resPointer = {}
+        promises.push(resPointer)
         x.then(res => {
-          const idx = promises.indexOf(x)
+          const idx = promises.indexOf(resPointer)
           if (preserveOrder) {
-            x.result = res
+            resPointer.result = res
             while (_.has(promises[0], 'result')) push(null, promises.shift().result)
             if (ended && promises.length === 0) push(null, _.nil)
             else if (idx === 0) next()
@@ -236,6 +236,7 @@ class Exstream extends EventEmitter {
             else next()
           }
         })
+        if (promises.length < parallelism) next()
       }
     })
   }
