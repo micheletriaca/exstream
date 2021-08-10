@@ -295,6 +295,63 @@ class Exstream extends EventEmitter {
     })
   }
 
+  uniq = fields => {
+    const seen = new Set()
+    return this.consume((err, x, push, next) => {
+      if (err) {
+        push(err)
+        next()
+      } else if (x === _.nil) {
+        push(err, x)
+      } else {
+        if (!seen.has(x)) {
+          seen.add(x)
+          push(null, x)
+        }
+        next()
+      }
+    })
+  }
+
+  uniqBy = cfg => {
+    const seen = new Set()
+    const isFn = _.isFunction(cfg)
+    if (!isFn && !Array.isArray(cfg)) cfg = [cfg]
+
+    const fn = !isFn ? x => cfg.map(f => x[f]).join('_') : cfg
+
+    return this.consume((err, x, push, next) => {
+      if (err) {
+        push(err)
+        next()
+      } else if (x === _.nil) {
+        push(err, x)
+      } else {
+        const k = fn(x)
+        if (!seen.has(k)) {
+          seen.add(k)
+          push(null, x)
+        }
+        next()
+      }
+    })
+  }
+
+  flatten = () => this.consume((err, x, push, next) => {
+    if (err) {
+      push(err)
+      next()
+    } else if (x === _.nil) {
+      push(err, x)
+    } else if (_.isIterable(x)) {
+      for (const y of x) push(null, y)
+      next()
+    } else {
+      push(null, x)
+      next()
+    }
+  })
+
   toArray = f => this.collect().pull((err, x) => {
     if (err) {
       this.emit('error', err)

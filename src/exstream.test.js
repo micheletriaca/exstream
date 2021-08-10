@@ -166,6 +166,51 @@ test('batch', () => {
   })
 })
 
+test('uniq', () => {
+  _([1, 2, 2, 2, 5]).uniq().toArray(res => {
+    expect(res).toEqual([1, 2, 5])
+  })
+})
+
+test('uniqBy', () => {
+  _([
+    { a: 1, b: 1, c: 1 },
+    { a: 1, b: 2, c: 2 },
+    { a: 1, b: 3, c: 1 }
+  ]).uniqBy(['a', 'c']).toArray(res => {
+    expect(res).toEqual([{ a: 1, b: 1, c: 1 }, { a: 1, b: 2, c: 2 }])
+  })
+
+  _([
+    { a: 1, b: 1, c: 1 },
+    { a: 1, b: 2, c: 2 },
+    { a: 1, b: 3, c: 1 }
+  ]).uniqBy('c').toArray(res => {
+    expect(res).toEqual([{ a: 1, b: 1, c: 1 }, { a: 1, b: 2, c: 2 }])
+  })
+
+  _([1, 2, 3, 4]).uniqBy(x => x % 2 === 0).toArray(res => expect(res).toEqual([1, 2]))
+})
+
+test('flatten', () => {
+  _([1, 2, 3, 4, 5])
+    .batch(3)
+    .flatten()
+    .toArray(res => {
+      expect(res).toEqual([1, 2, 3, 4, 5])
+    })
+})
+
+test('flatten iterable', () => {
+  _([1, 2, 3, 4, 5])
+    .batch(3)
+    .map(x => new Set(x))
+    .flatten()
+    .toArray(res => {
+      expect(res).toEqual([1, 2, 3, 4, 5])
+    })
+})
+
 test('piping', () => new Promise(resolve => {
   _([1, 2, 3])
     .map(x => x * 2)
