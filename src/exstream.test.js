@@ -63,7 +63,7 @@ test('backpressure', () => {
   const x = _([1, 2, 3])
   const y = []
   return new Promise((resolve) => {
-    x.consume((err, x, push, next) => {
+    const z = x.consume((err, x, push, next) => {
       if (err) {
         y.push(err)
         setTimeout(() => next(), 100)
@@ -77,7 +77,7 @@ test('backpressure', () => {
       expect(y).toEqual([1, 2, 3])
       resolve()
     })
-    x.resume()
+    z.resume()
   })
 })
 
@@ -85,7 +85,7 @@ test('test write', () => {
   const x = _()
   const y = []
   return new Promise((resolve) => {
-    x.consume((err, x, push, next) => {
+    const z = x.consume((err, x, push, next) => {
       if (err) {
         y.push(err)
         next()
@@ -99,7 +99,7 @@ test('test write', () => {
       expect(y).toEqual([1, 2, 3, 4])
       resolve()
     })
-    x.resume()
+    z.resume()
     x.write(1)
     x.write(2)
     x.write(3)
@@ -512,7 +512,7 @@ test('pipe pipeline', async () => new Promise((resolve) => {
     .map(x => 'buahaha' + x + '\n')
 
   const res = []
-  fs.createReadStream('out').pipe(p.toNodeStream()).pipe(getSlowWritable(res, 0)).on('finish', () => {
+  fs.createReadStream('out').pipe(p.generateStream()).pipe(getSlowWritable(res, 0)).on('finish', () => {
     resolve()
     expect(res.length).toBe(10001)
   })
@@ -533,9 +533,8 @@ test('csv', () => {
     .csv()
     .toArray(res => {
       expect(res).toEqual([
-        ['a', 'b', 'c'],
-        ['1', '2', '3'],
-        ['ciao "amico"', 'multiline\nrow', '3']
+        { a: '1', b: '2', c: '3' },
+        { a: 'ciao "amico"', b: 'multiline\nrow', c: '3' }
       ])
     })
 })

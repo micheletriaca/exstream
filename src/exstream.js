@@ -14,6 +14,7 @@ class Exstream extends EventEmitter {
   #generator = null
 
   consumeFn = null
+  #nextCalled = true
   #consumers = []
   _autostart = true
 
@@ -32,17 +33,17 @@ class Exstream extends EventEmitter {
     if (this.#nilPushed) throw new Error('Cannot write to stream after nil')
     const isError = !!x.__exstreamError// false// x instanceof Error
 
-    if (this.consumeFn) {
-      let nextCalled = false
-      // let syncNext = true
-      this.consumeFn(isError ? x : undefined, isError ? undefined : x, this.#send, () => {
-        nextCalled = true
-        if (this.paused /* && !syncNext */) this.resume()
-      })
-      // syncNext = false
-      if (!nextCalled) this.pause()
-    } else if (this.paused) {
+    if (this.paused) {
       this.#buffer.push(x)
+    } else if (this.consumeFn) {
+      this.#nextCalled = false
+      let syncNext = true
+      this.consumeFn(isError ? x : undefined, isError ? undefined : x, this.#send, () => {
+        this.#nextCalled = true
+        if (this.paused && !syncNext) this.resume()
+      })
+      syncNext = false
+      if (!this.#nextCalled) this.pause()
     } else if (isError) {
       this.#send(x)
     } else {
@@ -78,26 +79,12 @@ class Exstream extends EventEmitter {
   }
 
   resume = _.debounce(() => {
-    if (!this.paused) {
-      if (this.source) this.source.#checkBackPressure()
-      return
-    }
-    if (this.#nilPushed || !this._autostart) return
+    if (this.#nilPushed || !this._autostart || !this.#nextCalled) return
     this.paused = false
     let canDrain = true
-    if (this.source) this.source.#checkBackPressure()
     if (this.paused) return
-    if (this.#sourceData) {
-      do {
-        const nextVal = this.#sourceData.next()
-        if (!nextVal.done) this.write(nextVal.value)
-        else this.end()
-      } while (!this.#nilPushed && !this.paused)
-    } else if (this.#generator) {
-      let nextCalled = false
-      this.#generator(this.#send, () => { nextCalled = true; if (this.paused) this.resume() })
-      if (!nextCalled) this.pause()
-    } else if (this.#buffer.length) {
+
+    if (this.#buffer.length) {
       let i = 0
       for (const len = this.#buffer.length; i < len; i++) {
         this.write(this.#buffer[i])
@@ -108,8 +95,23 @@ class Exstream extends EventEmitter {
         }
       }
       this.#buffer = this.#buffer.slice(i + 1)
+      if (!canDrain) return
     }
+
+    if (this.#sourceData) {
+      do {
+        const nextVal = this.#sourceData.next()
+        if (!nextVal.done) this.write(nextVal.value)
+        else this.end()
+      } while (!this.#nilPushed && !this.paused)
+    } else if (this.#generator) {
+      let nextCalled = false
+      this.#generator(this.#send, () => { nextCalled = true; if (this.paused) this.resume() })
+      if (!nextCalled) this.pause()
+    }
+
     if (canDrain) this.emit('drain')
+    if (this.source) this.source.#checkBackPressure()
   })
 
   #checkBackPressure = () => {
@@ -124,13 +126,13 @@ class Exstream extends EventEmitter {
       }
     }
 
-    if (this.paused) this.resume()
+    this.resume()
   }
 
   consume (fn) {
     const res = new Exstream()
     res.consumeFn = fn
-    this._addConsumer(res)
+    ;(this.endOfChain || this)._addConsumer(res)
     return res
   }
 

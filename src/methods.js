@@ -174,7 +174,7 @@ _m.merge = s => {
   let toBeEnded = 0
   s.each(subS => {
     toBeEnded++
-    subS.consume((err, x, push, next) => {
+    const k = subS.consume((err, x, push, next) => {
       if (x === _.nil) {
         if (--toBeEnded === 0) merged.write(_.nil)
       } else if (!merged.write(err || x)) {
@@ -183,7 +183,7 @@ _m.merge = s => {
         next()
       }
     })
-    setImmediate(subS.resume)
+    setImmediate(k.resume)
   })
   return merged
 }
@@ -232,9 +232,9 @@ _m.through = (target, s) => {
     s._addConsumer(findParent(target))
     return target
   } else if (_.isExstreamPipeline(target)) {
-    const { begin, end } = target.generateStream()
-    s._addConsumer(begin)
-    return end
+    const pipelineInstance = target.generateStream()
+    s._addConsumer(pipelineInstance)
+    return pipelineInstance
   } else if (_.isReadableStream(target)) {
     s.pipe(target)
     return new Exstream(target)
@@ -253,34 +253,12 @@ _m.toNodeStream = (options, s) => s.pipe(new Transform({
 
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,
-  toNodeStream: function (bufferSize = 10000) {
-    let { begin, end } = this.generateStream()
-    end = end.batch(bufferSize)
-    const wrapper = new Exstream((push, next) => {
-      end.pull((err, x) => {
-        if (err) {
-          push(err)
-          next()
-        } else if (x === _.nil) {
-          push(null, _.nil)
-        } else {
-          for (const b of x) push(null, b)
-          next()
-        }
-      })
-    })
-
-    wrapper.__exstream__ = false
-    wrapper.write = x => begin.write(x)
-    wrapper.end = () => begin.end()
-    begin.on('drain', () => wrapper.emit('drain'))
-    return wrapper
-  },
   generateStream: function () {
     const s = new Exstream()
     let curr = s
     for (const { method, args } of this.definitions) curr = curr[method](...args)
-    return { begin: s, end: curr }
+    s.endOfChain = curr
+    return s
   },
   definitions: []
 }, {
@@ -301,11 +279,18 @@ _m.csv = function (opts, s) {
     header: true,
     ...opts
   }
-  const decoder = new Decoder()
+  const decoder = new Decoder(opts.encoding)
   let buffer = ''
   let row = []
   let col = 0
   let quote = false
+  let firstRow = null
+
+  function convertRow (row, firstRow) {
+    const res = {}
+    for (let i = 0; i < firstRow.length; i++) res[firstRow[i]] = row[i]
+    return res
+  }
 
   function drain (x, push, isEnd = false) {
     buffer = buffer + decoder.write(x)
@@ -319,10 +304,10 @@ _m.csv = function (opts, s) {
       if (cc === opts.separator && !quote) { ++col; continue }
       if (cc === '\r' && nc === '\n' && !quote) { ++c }
       if ((cc === '\n' || cc === '\r') && !quote) {
+        if (!firstRow && opts.header) firstRow = row
+        else push(null, opts.header ? convertRow(row, firstRow) : row)
         col = 0
-        push(null, row)
         row = []
-        if (s.paused) return
         continue
       }
       row[col] += cc
