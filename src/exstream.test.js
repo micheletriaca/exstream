@@ -1,4 +1,4 @@
-const _ = require('./exstream.js')
+const _ = require('./index.js')
 const EventEmitter = require('events').EventEmitter
 const { Writable } = require('stream')
 const __ = require('highland')
@@ -6,13 +6,26 @@ const zlib = require('zlib')
 
 const sleep = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms))
 
-const getSlowWritable = () => new Writable({
+const getSlowWritable = (res = [], writeDelay = 50) => new Writable({
   objectMode: true,
   highWaterMark: 0,
   write (rec, encoding, callback) {
-    sleep().then(callback)
+    res.push(rec)
+    if (writeDelay === 0) callback()
+    else sleep(writeDelay).then(callback)
   }
 })
+
+const randomStringGenerator = (iterations = 3) => {
+  const alphabet = 'abcdefghijklmnopqrstuvz'.split('')
+  return (function * () {
+    for (let i = 0; i < iterations; i++) {
+      let s = ''
+      for (let j = 0; j < 18; j++) s += alphabet[Math.round(Math.random() * (alphabet.length - 1))]
+      yield s
+    }
+  })()
+}
 
 test('stream initialization', () => {
   const x = _([1, 2, 3])
@@ -220,7 +233,7 @@ test('piping', () => new Promise(resolve => {
 }))
 
 test('extend', () => {
-  _.extend('duplicate', s => s.map(x => x * 2))
+  _.extend('duplicate', function () { return this.map(x => x * 2) })
   _([1, 2, 3])
     .duplicate()
     .toArray(res => {
@@ -236,11 +249,25 @@ test('filter', () => {
     })
 })
 
-test('through', () => {
+test('through pipeline', () => {
   _([1, 2, 3])
-    .through(_().map(x => x * 2))
+    .through(_.pipeline()
+      .map(x => x * 2)
+      .map(x => x * 2)
+    )
     .toArray(res => {
-      expect(res).toEqual([2, 4, 6])
+      expect(res).toEqual([4, 8, 12])
+    })
+})
+
+test('through stream', () => {
+  _([1, 2, 3])
+    .through(_()
+      .map(x => x * 2)
+      .map(x => x * 2)
+    )
+    .toArray(res => {
+      expect(res).toEqual([4, 8, 12])
     })
 
   let exception = false
@@ -292,11 +319,15 @@ test('ordered promises', () => {
 })
 
 test('slow writes on node stream', () => {
+  const res = []
   return new Promise(resolve => {
     _([2, 3, 4])
       .map(x => x * 2)
-      .pipe(getSlowWritable())
-      .on('finish', resolve)
+      .pipe(getSlowWritable(res))
+      .on('finish', () => {
+        resolve()
+        expect(res).toEqual([4, 6, 8])
+      })
   })
 })
 
@@ -424,6 +455,69 @@ test('through node stream', () => {
   })
 })
 
+test('forking', async () => {
+  const s = _([1, 2, 3])
+  const p1 = s.fork().map(x => x * 2 + 1).toPromise()
+  const p2 = s.fork().map(x => x * 2 + 2).toPromise()
+  const p3 = s.fork().map(x => x * 2 + 3).toPromise()
+  s.start()
+  const [r1, r2, r3] = await Promise.all([p1, p2, p3])
+  expect(r1).toEqual([3, 5, 7])
+  expect(r2).toEqual([4, 6, 8])
+  expect(r3).toEqual([5, 7, 9])
+})
+
+test('merging', async () => new Promise((resolve) => {
+  const res = []
+  const s = _([1, 2, 3])
+  _([
+    s.fork().map(x => x * 2 + 1),
+    s.fork().map(x => x * 2 + 2),
+    s.fork().map(x => x * 2 + 3)
+  ]).merge()
+    .pipe(getSlowWritable(res))
+    .on('finish', () => {
+      expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
+      resolve()
+    })
+  s.start()
+}))
+
+test('merging2', async () => new Promise((resolve) => {
+  _([
+    _(fs.createReadStream('out')),
+    _(fs.createReadStream('out2'))
+  ]).merge()
+    .pipe(fs.createWriteStream('out3'))
+    .on('finish', resolve)
+}))
+
+test('multithread', async () => new Promise((resolve) => {
+  _(randomStringGenerator(100000))
+    .multi(3, 50000, _.pipeline()
+      .map(x => x.toUpperCase())
+      .map(x => x + '\n')
+    )
+    .merge()
+    .pipe(fs.createWriteStream('rand'))
+    .on('finish', resolve)
+}))
+
+test('pipe pipeline', async () => new Promise((resolve) => {
+  const p = _.pipeline()
+    .map(x => x.toString())
+    .collect()
+    .map(x => x.join().split('\n'))
+    .flatten()
+    .map(x => 'buahaha' + x + '\n')
+
+  const res = []
+  fs.createReadStream('out').pipe(p.toNodeStream()).pipe(getSlowWritable(res, 0)).on('finish', () => {
+    resolve()
+    expect(res.length).toBe(10001)
+  })
+}))
+
 const fs = require('fs')
 test('pipeToFile', () => {
   return new Promise(resolve => {
@@ -432,4 +526,16 @@ test('pipeToFile', () => {
       .pipe(fs.createWriteStream('out'))
       .on('finish', resolve)
   })
+})
+
+test('csv', () => {
+  _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
+    .csv()
+    .toArray(res => {
+      expect(res).toEqual([
+        ['a', 'b', 'c'],
+        ['1', '2', '3'],
+        ['ciao "amico"', 'multiline\nrow', '3']
+      ])
+    })
 })
