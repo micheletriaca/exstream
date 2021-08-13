@@ -31,7 +31,7 @@ class Exstream extends EventEmitter {
 
   write (x) {
     if (this.#nilPushed) throw new Error('Cannot write to stream after nil')
-    const isError = !!x.__exstreamError// false// x instanceof Error
+    const isError = !!x.__exstreamError
 
     if (this.paused) {
       this.#buffer.push(x)
@@ -105,9 +105,14 @@ class Exstream extends EventEmitter {
         else this.end()
       } while (!this.#nilPushed && !this.paused)
     } else if (this.#generator) {
-      let nextCalled = false
-      this.#generator(this.#send, () => { nextCalled = true; if (this.paused) this.resume() })
-      if (!nextCalled) this.pause()
+      let syncNext = true
+      this._nextCalled = false
+      this.#generator(this.#send, () => {
+        this.#nextCalled = true
+        if (this.paused && !syncNext) this.resume()
+      })
+      syncNext = false
+      if (!this._nextCalled) this.pause()
     }
 
     if (canDrain) this.emit('drain')
@@ -158,19 +163,15 @@ class Exstream extends EventEmitter {
   pipe (dest, options = {}) {
     const canClose = dest !== process.stdout && dest !== process.stderr && options.end !== false
     const end = canClose ? dest.end : () => {}
-    let onNextDrain = null
-    const handleDrain = () => onNextDrain && onNextDrain()
     const s = this.consume((err, x, push, next) => {
       if (x === _.nil) {
         end.call(dest)
-        dest.off('drain', handleDrain)
       } else if (!dest.write(x || err)) {
-        onNextDrain = next
+        dest.once('drain', next)
       } else {
         next()
       }
     })
-    dest.on('drain', handleDrain)
     dest.emit('pipe', this)
     setImmediate(s.resume)
     return dest
