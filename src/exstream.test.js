@@ -530,11 +530,30 @@ test('pipeToFile', () => {
 
 test('csv', () => {
   _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
-    .csv()
+    .csv({ header: true })
     .toArray(res => {
       expect(res).toEqual([
         { a: '1', b: '2', c: '3' },
         { a: 'ciao "amico"', b: 'multiline\nrow', c: '3' }
+      ])
+    })
+
+  _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
+    .csv({ header: ['aa', 'bb', 'cc'] })
+    .toArray(res => {
+      expect(res).toEqual([
+        { aa: 'a', bb: 'b', cc: 'c' },
+        { aa: '1', bb: '2', cc: '3' },
+        { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' }
+      ])
+    })
+
+  _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
+    .csv({ header: row => row.map(x => x + x) })
+    .toArray(res => {
+      expect(res).toEqual([
+        { aa: '1', bb: '2', cc: '3' },
+        { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' }
       ])
     })
 })

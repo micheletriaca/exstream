@@ -276,7 +276,7 @@ _m.csv = function (opts, s) {
     quote: '"',
     separator: ',',
     encoding: 'utf8',
-    header: true,
+    header: false,
     ...opts
   }
   const decoder = new Decoder(opts.encoding)
@@ -286,9 +286,14 @@ _m.csv = function (opts, s) {
   let quote = false
   let firstRow = null
 
+  function getFirstRow (row) {
+    if (opts.header === true) return row
+    if (_.isFunction(opts.header)) return opts.header(row)
+  }
+
   function convertRow (row, firstRow) {
     const res = {}
-    for (let i = 0; i < firstRow.length; i++) res[firstRow[i]] = row[i]
+    for (let i = 0, len = firstRow.length; i < len; i++) res[firstRow[i]] = row[i]
     return res
   }
 
@@ -296,7 +301,7 @@ _m.csv = function (opts, s) {
     buffer = buffer + decoder.write(x)
     if ((buffer.endsWith(opts.quote) || buffer.endsWith('\r')) && !isEnd) return
 
-    for (let c = 0; c < buffer.length; c++) {
+    for (let c = 0, len = buffer.length; c < len; c++) {
       const cc = buffer[c]; const nc = buffer[c + 1]
       row[col] = row[col] || ''
       if (cc === opts.quote && quote && nc === opts.quote) { row[col] += cc; ++c; continue }
@@ -304,7 +309,7 @@ _m.csv = function (opts, s) {
       if (cc === opts.separator && !quote) { ++col; continue }
       if (cc === '\r' && nc === '\n' && !quote) { ++c }
       if ((cc === '\n' || cc === '\r') && !quote) {
-        if (!firstRow && opts.header) firstRow = row
+        if (!firstRow && opts.header) firstRow = getFirstRow(row)
         else push(null, opts.header ? convertRow(row, firstRow) : row)
         col = 0
         row = []
@@ -314,6 +319,8 @@ _m.csv = function (opts, s) {
     }
     buffer = ''
   }
+
+  if (Array.isArray(opts.header)) firstRow = opts.header
 
   return s.consume(function (err, x, push, next) {
     if (err) {
