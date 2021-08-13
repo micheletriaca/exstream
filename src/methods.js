@@ -238,7 +238,7 @@ _m.through = (target, s) => {
   } else if (_.isReadableStream(target)) {
     s.pipe(target)
     return new Exstream(target)
-  } else throw Error('You must pass an exstream instance or a node stream')
+  } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
 }
 
 _m.toPromise = s => new Promise((resolve, reject) => s.toArray(resolve))
