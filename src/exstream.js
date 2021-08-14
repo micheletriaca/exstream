@@ -23,10 +23,10 @@ class Exstream extends EventEmitter {
   #sourceData = null
   #generator = null
 
-  consumeFn = null
+  #consumeFn = null
   #nextCalled = true
   #consumers = []
-  _autostart = true
+  #autostart = true
 
   constructor (xs) {
     super()
@@ -45,11 +45,11 @@ class Exstream extends EventEmitter {
 
     if (this.paused) {
       this.#buffer.push(x)
-    } else if (this.consumeFn) {
+    } else if (this.#consumeFn) {
       this.#nextCalled = false
       let syncNext = true
       this._currentRec = x
-      this.consumeFn(isError ? x : undefined, isError ? undefined : x, this.#send, () => {
+      this.#consumeFn(isError ? x : undefined, isError ? undefined : x, this.#send, () => {
         this.#nextCalled = true
         this._currentRec = null
         if (this.paused && !syncNext) this.resume()
@@ -78,7 +78,7 @@ class Exstream extends EventEmitter {
   }
 
   start () {
-    this._autostart = true
+    this.#autostart = true
     this.resume()
   }
 
@@ -91,8 +91,8 @@ class Exstream extends EventEmitter {
     this.paused = true
   }
 
-  resume = () => {
-    if (this.#nilPushed || !this._autostart || !this.#nextCalled || !this.paused) return
+  resume () {
+    if (this.#nilPushed || !this.#autostart || !this.#nextCalled || !this.paused) return
     this.paused = false
 
     if (this.#buffer.length) {
@@ -144,7 +144,7 @@ class Exstream extends EventEmitter {
 
   consume (fn) {
     const res = new Exstream()
-    res.consumeFn = fn
+    res.#consumeFn = fn
     ;(this.endOfChain || this).#addConsumer(res)
     return res
   }
@@ -205,18 +205,18 @@ class Exstream extends EventEmitter {
       }
     })
     dest.emit('pipe', this)
-    setImmediate(s.resume)
+    setImmediate(() => s.resume())
     return dest
   }
 
   fork () {
-    this._autostart = false
+    this.#autostart = false
     const res = new Exstream()
     this.#addConsumer(res, true)
     return res
   }
 
-  through = target => {
+  through (target) {
     if (_.isExstream(target)) {
       const findParent = x => x.source ? findParent(x.source) : x
       this.#addConsumer(findParent(target))
@@ -246,7 +246,7 @@ class Exstream extends EventEmitter {
           next()
         }
       })
-      setImmediate(k.resume)
+      setImmediate(() => k.resume())
     })
     return merged
   }

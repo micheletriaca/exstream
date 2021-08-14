@@ -1,15 +1,15 @@
 const _ = require('../src/index.js')
-const TestUtils = require('./helpers.js')
+const h = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
 const __ = require('highland')
 const zlib = require('zlib')
 jest.mock('fs')
 const fs = require('fs')
 
-const out = [...TestUtils.randomStringGenerator(10000)].map(x => x.toString() + '\n')
+const out = [...h.randomStringGenerator(10000)].map(x => x.toString() + '\n')
 
 beforeEach(() => {
-  require('fs').__setMockFiles({ out })
+  fs.__setMockFiles({ out })
 })
 
 test('stream initialization', () => {
@@ -238,7 +238,7 @@ test('piping', () => new Promise(resolve => {
     .map(x => x.toString())
     .pipe(_().map(x => x + x))
     .pipe(_.pipeline().map(x => x + x))
-    .pipe(TestUtils.getSlowWritable(res))
+    .pipe(h.getSlowWritable(res))
     .on('finish', () => {
       resolve()
       expect(res).toEqual(['2222', '4444', '6666'])
@@ -333,7 +333,7 @@ test('slow writes on node stream', () => {
   return new Promise(resolve => {
     _([2, 3, 4])
       .map(x => x * 2)
-      .pipe(TestUtils.getSlowWritable(res))
+      .pipe(h.getSlowWritable(res))
       .on('finish', () => {
         resolve()
         expect(res).toEqual([4, 6, 8])
@@ -343,7 +343,7 @@ test('slow writes on node stream', () => {
 
 test('promise in constructor', () => {
   const p = async () => {
-    await TestUtils.sleep(10)
+    await h.sleep(10)
     return 'x'
   }
 
@@ -357,15 +357,15 @@ test('promise in constructor', () => {
 
 test('generator', () => {
   return new Promise(resolve => {
-    _(TestUtils.fibonacci(10))
-      .pipe(TestUtils.getSlowWritable())
+    _(h.fibonacci(10))
+      .pipe(h.getSlowWritable())
       .on('finish', resolve)
   })
 })
 
 test('generator end event', () => {
   return new Promise(resolve => {
-    _(TestUtils.fibonacci(10))
+    _(h.fibonacci(10))
       .on('end', resolve)
       .map(x => x.toString())
       .pipe(process.stdout)
@@ -374,7 +374,7 @@ test('generator end event', () => {
 
 const asyncIterator = async function * (iterations = 10) {
   for (let i = 0; i < iterations; i++) {
-    await TestUtils.sleep(0)
+    await h.sleep(0)
     yield i
   }
 }
@@ -402,7 +402,7 @@ test('async highland', () => {
   return new Promise(resolve => __((push, next) => {
     i++
     if (i < 10) {
-      TestUtils.sleep(0).then(() => {
+      h.sleep(0).then(() => {
         push(null, i)
         next()
       })
@@ -418,7 +418,7 @@ test('async exstream', () => {
   return new Promise(resolve => _((push, next) => {
     i++
     if (i < 10) {
-      TestUtils.sleep(0).then(() => {
+      h.sleep(0).then(() => {
         push(null, i)
         next()
       })
@@ -477,7 +477,7 @@ test('merging', async () => new Promise((resolve) => {
     s.fork().map(x => x * 2 + 2),
     s.fork().map(x => x * 2 + 3)
   ]).merge()
-    .pipe(TestUtils.getSlowWritable(res))
+    .pipe(h.getSlowWritable(res))
     .on('finish', () => {
       expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
       resolve()
@@ -506,7 +506,7 @@ test('merging3', () => {
 })
 
 test('multithread', async () => new Promise((resolve) => {
-  _(TestUtils.randomStringGenerator(100000))
+  _(h.randomStringGenerator(100000))
     .multi(3, 10000, _.pipeline()
       .map(x => x.toUpperCase())
       .map(x => x + '\n')
@@ -525,7 +525,7 @@ test('pipe pipeline', async () => new Promise((resolve) => {
     .map(x => 'buahaha' + x + '\n')
 
   const res = []
-  fs.createReadStream('out').pipe(p.generateStream()).pipe(TestUtils.getSlowWritable(res, 0)).on('finish', () => {
+  fs.createReadStream('out').pipe(p.generateStream()).pipe(h.getSlowWritable(res, 0)).on('finish', () => {
     resolve()
     expect(res.length).toBe(10001)
   })
@@ -533,7 +533,7 @@ test('pipe pipeline', async () => new Promise((resolve) => {
 
 test('pipeToFile', () => {
   return new Promise(resolve => {
-    _(TestUtils.fibonacci(10000))
+    _(h.fibonacci(10000))
       .map(x => x.toString() + '\n')
       .pipe(fs.createWriteStream('fibo'))
       .on('finish', resolve)
