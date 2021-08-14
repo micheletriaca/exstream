@@ -83,13 +83,6 @@ _m.toArray = (f, s) => s.collect().pull((err, x) => {
   }
 })
 
-_m.fork = s => {
-  s._autostart = false
-  const res = new Exstream()
-  s._addConsumer(res, true)
-  return res
-}
-
 _m.filter = (f, s) => s.consume((err, x, push, next) => {
   if (err) {
     push(err)
@@ -173,26 +166,6 @@ _m.uniqBy = (cfg, s) => {
   })
 }
 
-_m.merge = s => {
-  const merged = new Exstream()
-  let toBeEnded = 0
-  s.each(subS => {
-    toBeEnded++
-    if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
-    const k = subS.consume((err, x, push, next) => {
-      if (x === _.nil) {
-        if (--toBeEnded === 0) merged.write(_.nil)
-      } else if (!merged.write(err || x)) {
-        merged.once('drain', next)
-      } else {
-        next()
-      }
-    })
-    setImmediate(k.resume)
-  })
-  return merged
-}
-
 _m.then = (fn, s) => s.map(x => x.then(fn))
 
 _m.catch = (fn, s) => s.map(x => x.catch(fn))
@@ -240,21 +213,6 @@ _m.resolve = (parallelism = 1, preserveOrder = true, s) => {
   })
 }
 
-_m.through = (target, s) => {
-  if (_.isExstream(target)) {
-    const findParent = x => x.source ? findParent(x.source) : x
-    s._addConsumer(findParent(target))
-    return target
-  } else if (_.isExstreamPipeline(target)) {
-    const pipelineInstance = target.generateStream()
-    s._addConsumer(pipelineInstance)
-    return pipelineInstance
-  } else if (_.isReadableStream(target)) {
-    s.pipe(target)
-    return new Exstream(target)
-  } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
-}
-
 _m.errors = (fn, s) => s.consume((err, x, push, next) => {
   if (x === _.nil) {
     push(null, _.nil)
@@ -289,7 +247,7 @@ _m.pipeline = () => new Proxy({
   }
 }, {
   get (target, propKey, receiver) {
-    if (target[propKey] || !_m[propKey]) return Reflect.get(...arguments)
+    if (target[propKey] || !Exstream.prototype[propKey]) return Reflect.get(...arguments)
     return function (...args) {
       target.definitions.push({ method: propKey, args })
       return this
@@ -300,6 +258,7 @@ _m.pipeline = () => new Proxy({
 _m.csv = function (opts, s) {
   opts = {
     quote: '"',
+    escape: '"',
     separator: ',',
     encoding: 'utf8',
     header: false,
@@ -330,7 +289,7 @@ _m.csv = function (opts, s) {
     for (let c = 0, len = buffer.length; c < len; c++) {
       const cc = buffer[c]; const nc = buffer[c + 1]
       row[col] = row[col] || ''
-      if (cc === opts.quote && quote && nc === opts.quote) { row[col] += cc; ++c; continue }
+      if (cc === opts.escape && quote && nc === opts.quote) { row[col] += cc; ++c; continue }
       if (cc === opts.quote) { quote = !quote; continue }
       if (cc === opts.separator && !quote) { ++col; continue }
       if (cc === '\r' && nc === '\n' && !quote) { ++c }

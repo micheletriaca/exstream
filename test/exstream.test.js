@@ -224,11 +224,17 @@ test('flatten iterable', () => {
 })
 
 test('piping', () => new Promise(resolve => {
+  const res = []
   _([1, 2, 3])
     .map(x => x * 2)
     .map(x => x.toString())
-    .pipe(TestUtils.getSlowWritable())
-    .on('finish', resolve)
+    .pipe(_().map(x => x + x))
+    .pipe(_.pipeline().map(x => x + x))
+    .pipe(TestUtils.getSlowWritable(res))
+    .on('finish', () => {
+      resolve()
+      expect(res).toEqual(['2222', '4444', '6666'])
+    })
 }))
 
 test('extend', () => {
@@ -278,43 +284,40 @@ test('through stream', () => {
   expect(exception).toBe(true)
 })
 
-test('toPromise', () => {
-  return _([1, 2, 3])
+test('toPromise', async () => {
+  const res = await _([1, 2, 3])
     .map(x => x * 2)
     .toPromise()
-    .then(res => {
-      expect(res).toEqual([2, 4, 6])
-    })
+
+  expect(res).toEqual([2, 4, 6])
 })
 
-test('unordered promises', () => {
+test('unordered promises', async () => {
   let sleepCount = 3
   const sleep = x => new Promise(resolve => setTimeout(() => resolve(x), 200 * sleepCount--))
 
-  return _([2, 3, 4])
+  const res = await _([2, 3, 4])
     .map(x => sleep(x))
     .then(x => x * 2)
     .then(x => x * 2)
     .resolve(2, false)
     .toPromise()
-    .then(res => {
-      expect(res).toEqual([12, 8, 16])
-    })
+
+  expect(res).toEqual([12, 8, 16])
 })
 
-test('ordered promises', () => {
+test('ordered promises', async () => {
   let sleepCount = 3
   const decrementalSlowMap = x => new Promise(resolve => setTimeout(() => resolve(x), 200 * sleepCount--))
 
-  return _([2, 3, 4])
+  const res = await _([2, 3, 4])
     .map(x => decrementalSlowMap(x))
     .then(x => x * 2)
     .then(x => x * 2)
     .resolve(3)
     .toPromise()
-    .then(res => {
-      expect(res).toEqual([8, 12, 16])
-    })
+
+  expect(res).toEqual([8, 12, 16])
 })
 
 test('slow writes on node stream', () => {
@@ -483,6 +486,17 @@ test('merging2', async () => new Promise((resolve) => {
     .on('finish', resolve)
 }))
 
+test('merging3', () => {
+  let excep = false
+  try {
+    _([1, 2])
+      .merge()
+  } catch (e) {
+    excep = true
+  }
+  expect(excep).toBe(true)
+})
+
 test('multithread', async () => new Promise((resolve) => {
   _(TestUtils.randomStringGenerator(100000))
     .multi(3, 10000, _.pipeline()
@@ -542,7 +556,7 @@ test('csv', () => {
       ])
     })
 
-  _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
+  _([Buffer.from('a,b,c\n1,2,3\n"ciao "'), Buffer.from('"amico""","multiline\nrow",3\n')])
     .csv({ header: ['aa', 'bb', 'cc'] })
     .toArray(res => {
       expect(res).toEqual([
@@ -558,6 +572,16 @@ test('csv', () => {
       expect(res).toEqual([
         { aa: '1', bb: '2', cc: '3' },
         { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' }
+      ])
+    })
+
+  _([Buffer.from('a,b,c\r1,2,3\r\n"ciao ""amico""","multiline\nrow",3\n')])
+    .csv({ header: false })
+    .toArray(res => {
+      expect(res).toEqual([
+        ['a', 'b', 'c'],
+        ['1', '2', '3'],
+        ['ciao "amico"', 'multiline\nrow', '3']
       ])
     })
 })

@@ -10,12 +10,3 @@ _.isAsyncIterable = x => _.isDefined(x) && typeof x[Symbol.asyncIterator] === 'f
 _.isFunction = x => typeof x === 'function'
 _.isString = x => typeof x === 'string'
 _.isReadableStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
-_.debounce = fn => {
-  let isRunning = false
-  return (...args) => {
-    if (isRunning) return
-    isRunning = true
-    fn(...args)
-    isRunning = false
-  }
-}

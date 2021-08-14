@@ -91,25 +91,19 @@ class Exstream extends EventEmitter {
     this.paused = true
   }
 
-  resume = _.debounce(() => {
-    if (this.#nilPushed || !this._autostart || !this.#nextCalled) return
+  resume = () => {
+    if (this.#nilPushed || !this._autostart || !this.#nextCalled || !this.paused) return
     this.paused = false
-    let canDrain = true
 
     if (this.#buffer.length) {
       let i = 0
       for (const len = this.#buffer.length; i < len; i++) {
-        this.write(this.#buffer[i])
-        // write can synchronously pause the stream again in case of back pressure
-        if (this.paused) {
-          canDrain = false
-          break
-        }
+        if (!this.write(this.#buffer[i])) break // write can synchronously pause the stream again in case of back pressure
       }
       this.#buffer = this.#buffer.slice(i + 1)
-      if (!canDrain) return
     }
 
+    if (this.paused) return
     if (this.#sourceData) {
       do {
         const nextVal = this.#sourceData.next()
@@ -129,9 +123,9 @@ class Exstream extends EventEmitter {
       } while (!this.paused && !this.#nilPushed)
     }
 
-    if (canDrain) this.emit('drain')
-    if (this.source) this.source.#checkBackPressure()
-  })
+    if (!this.paused && !this.source) this.emit('drain')
+    else if (this.source) this.source.#checkBackPressure()
+  }
 
   #checkBackPressure = () => {
     if (!this.#consumers.length) {
@@ -175,6 +169,7 @@ class Exstream extends EventEmitter {
   }
 
   pipe (dest, options = {}) {
+    if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
     const canClose = dest !== process.stdout && dest !== process.stderr && options.end !== false
     const end = canClose ? dest.end : () => {}
     const s = this.consume((err, x, push, next) => {
@@ -189,6 +184,48 @@ class Exstream extends EventEmitter {
     dest.emit('pipe', this)
     setImmediate(s.resume)
     return dest
+  }
+
+  fork () {
+    this._autostart = false
+    const res = new Exstream()
+    this._addConsumer(res, true)
+    return res
+  }
+
+  through = target => {
+    if (_.isExstream(target)) {
+      const findParent = x => x.source ? findParent(x.source) : x
+      this._addConsumer(findParent(target))
+      return target
+    } else if (_.isExstreamPipeline(target)) {
+      const pipelineInstance = target.generateStream()
+      this._addConsumer(pipelineInstance)
+      return pipelineInstance
+    } else if (_.isReadableStream(target)) {
+      this.pipe(target)
+      return new Exstream(target)
+    } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
+  }
+
+  merge () {
+    const merged = new Exstream()
+    let toBeEnded = 0
+    this.each(subS => {
+      toBeEnded++
+      if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
+      const k = subS.consume((err, x, push, next) => {
+        if (x === _.nil) {
+          if (--toBeEnded === 0) merged.write(_.nil)
+        } else if (!merged.write(err || x)) {
+          merged.once('drain', next)
+        } else {
+          next()
+        }
+      })
+      setImmediate(k.resume)
+    })
+    return merged
   }
 
   multi = (numThreads, batchSize, s) => {
