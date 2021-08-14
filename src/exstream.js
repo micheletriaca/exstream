@@ -2,6 +2,16 @@ const EventEmitter = require('events').EventEmitter
 const { Readable } = require('stream')
 const _ = require('./utils')
 
+class ExstreamError extends Error {
+  __exstreamError__ = true
+  constructor (originalError, originalData) {
+    super(originalError.message)
+    if (originalError.__exstreamError__) return originalError
+    this.originalError = originalError
+    this.originalData = originalData
+  }
+}
+
 class Exstream extends EventEmitter {
   __exstream__ = true
   writable = true
@@ -31,15 +41,17 @@ class Exstream extends EventEmitter {
 
   write (x) {
     if (this.#nilPushed) throw new Error('Cannot write to stream after nil')
-    const isError = !!x.__exstreamError
+    const isError = x instanceof Error
 
     if (this.paused) {
       this.#buffer.push(x)
     } else if (this.consumeFn) {
       this.#nextCalled = false
       let syncNext = true
+      this._currentRec = x
       this.consumeFn(isError ? x : undefined, isError ? undefined : x, this.#send, () => {
         this.#nextCalled = true
+        this._currentRec = null
         if (this.paused && !syncNext) this.resume()
       })
       syncNext = false
@@ -54,8 +66,9 @@ class Exstream extends EventEmitter {
   }
 
   #send = (err, x) => {
+    const wrappedError = _.isDefined(err) ? new ExstreamError(err, this._currentRec) : null
     for (let i = 0, len = this.#consumers.length; i < len; i++) {
-      this.#consumers[i].write(err || x)
+      this.#consumers[i].write(wrappedError || x)
     }
 
     if (x === _.nil) {
@@ -82,7 +95,6 @@ class Exstream extends EventEmitter {
     if (this.#nilPushed || !this._autostart || !this.#nextCalled) return
     this.paused = false
     let canDrain = true
-    if (this.paused) return
 
     if (this.#buffer.length) {
       let i = 0

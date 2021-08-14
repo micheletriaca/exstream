@@ -48,7 +48,7 @@ _m.pull = (f, s) => {
 _m.each = (f, s) => {
   const s2 = s.consume((err, x, push, next) => {
     if (err) {
-      this.emit('error', err)
+      ;(s.endOfChain || s).emit('error', err)
     } else if (x === _.nil) {
       push(null, _.nil)
     } else {
@@ -77,7 +77,7 @@ _m.flatten = s => s.consume((err, x, push, next) => {
 
 _m.toArray = (f, s) => s.collect().pull((err, x) => {
   if (err) {
-    this.emit('error', err)
+    ;(s.endOfChain || s).emit('error', err)
   } else {
     f(x)
   }
@@ -159,10 +159,14 @@ _m.uniqBy = (cfg, s) => {
     } else if (x === _.nil) {
       push(err, x)
     } else {
-      const k = fn(x)
-      if (!seen.has(k)) {
-        seen.add(k)
-        push(null, x)
+      try {
+        const k = fn(x)
+        if (!seen.has(k)) {
+          seen.add(k)
+          push(null, x)
+        }
+      } catch (e) {
+        push(e)
       }
       next()
     }
@@ -174,6 +178,7 @@ _m.merge = s => {
   let toBeEnded = 0
   s.each(subS => {
     toBeEnded++
+    if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
     const k = subS.consume((err, x, push, next) => {
       if (x === _.nil) {
         if (--toBeEnded === 0) merged.write(_.nil)
@@ -190,6 +195,8 @@ _m.merge = s => {
 
 _m.then = (fn, s) => s.map(x => x.then(fn))
 
+_m.catch = (fn, s) => s.map(x => x.catch(fn))
+
 _m.resolve = (parallelism = 1, preserveOrder = true, s) => {
   const promises = []
   let ended = false
@@ -201,26 +208,33 @@ _m.resolve = (parallelism = 1, preserveOrder = true, s) => {
     } else if (x === _.nil) {
       if (promises.length === 0) push(err, x)
       else ended = true
-    } else if (!x.then) {
+    } else if (!_.isPromise(x)) {
       push(Error('item must be a promise'))
       next()
     } else {
       const resPointer = {}
       promises.push(resPointer)
-      x.then(res => {
+      const handlePromiseResult = isError => res => {
         const idx = promises.indexOf(resPointer)
         if (preserveOrder) {
           resPointer.result = res
-          while (_.has(promises[0], 'result')) push(null, promises.shift().result)
+          resPointer.isError = isError
+          while (_.has(promises[0], 'result')) {
+            const item = promises.shift()
+            if (item.isError) push(item.result)
+            else push(null, item.result)
+          }
           if (ended && promises.length === 0) push(null, _.nil)
           else if (idx === 0) next()
         } else {
           promises.splice(idx, 1)
-          push(null, res)
+          if (isError) push(res)
+          else push(null, res)
           if (ended && promises.length === 0) push(null, _.nil)
           else next()
         }
-      })
+      }
+      x.then(handlePromiseResult(false), handlePromiseResult(true))
       if (promises.length < parallelism) next()
     }
   })
@@ -241,7 +255,19 @@ _m.through = (target, s) => {
   } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
 }
 
-_m.toPromise = s => new Promise((resolve, reject) => s.toArray(resolve))
+_m.errors = (fn, s) => s.consume((err, x, push, next) => {
+  if (x === _.nil) {
+    push(null, _.nil)
+  } else if (err) {
+    fn(err, push)
+    next()
+  } else {
+    push(null, x)
+    next()
+  }
+})
+
+_m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toArray(resolve))
 
 _m.toNodeStream = (options, s) => s.pipe(new Transform({
   transform: function (chunk, enc, cb) {
@@ -253,14 +279,14 @@ _m.toNodeStream = (options, s) => s.pipe(new Transform({
 
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,
+  definitions: [],
   generateStream: function () {
     const s = new Exstream()
     let curr = s
     for (const { method, args } of this.definitions) curr = curr[method](...args)
     s.endOfChain = curr
     return s
-  },
-  definitions: []
+  }
 }, {
   get (target, propKey, receiver) {
     if (target[propKey] || !_m[propKey]) return Reflect.get(...arguments)
@@ -327,10 +353,18 @@ _m.csv = function (opts, s) {
       push(err)
       next()
     } else if (x === _.nil) {
-      drain(decoder.end(), push, true)
+      try {
+        drain(decoder.end(), push, true)
+      } catch (e) {
+        push(e)
+      }
       push(null, _.nil)
     } else {
-      drain(x, push)
+      try {
+        drain(x, push)
+      } catch (e) {
+        push(e)
+      }
       next()
     }
   })
