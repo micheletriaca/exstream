@@ -3,6 +3,14 @@ const TestUtils = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
 const __ = require('highland')
 const zlib = require('zlib')
+jest.mock('fs')
+const fs = require('fs')
+
+const out = [...TestUtils.randomStringGenerator(10000)].map(x => x.toString() + '\n')
+
+beforeEach(() => {
+  require('fs').__setMockFiles({ out })
+})
 
 test('stream initialization', () => {
   const x = _([1, 2, 3])
@@ -480,7 +488,7 @@ test('merging', async () => new Promise((resolve) => {
 test('merging2', async () => new Promise((resolve) => {
   _([
     _(fs.createReadStream('out')),
-    _(fs.createReadStream('out2'))
+    _(fs.createReadStream('out'))
   ]).merge()
     .pipe(fs.createWriteStream('out3'))
     .on('finish', resolve)
@@ -523,12 +531,11 @@ test('pipe pipeline', async () => new Promise((resolve) => {
   })
 }))
 
-const fs = require('fs')
 test('pipeToFile', () => {
   return new Promise(resolve => {
     _(TestUtils.fibonacci(10000))
       .map(x => x.toString() + '\n')
-      .pipe(fs.createWriteStream('out'))
+      .pipe(fs.createWriteStream('fibo'))
       .on('finish', resolve)
   })
 })

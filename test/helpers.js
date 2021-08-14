@@ -2,9 +2,9 @@ const { Writable } = require('stream')
 
 const sleep = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms))
 
-const getSlowWritable = (res = [], writeDelay = 50) => new Writable({
+const getSlowWritable = (res = [], writeDelay = 50, highWaterMark = 0) => new Writable({
   objectMode: true,
-  highWaterMark: 0,
+  highWaterMark,
   write (rec, encoding, callback) {
     res.push(rec)
     if (writeDelay === 0) callback()
