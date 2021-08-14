@@ -105,14 +105,16 @@ class Exstream extends EventEmitter {
         else this.end()
       } while (!this.#nilPushed && !this.paused)
     } else if (this.#generator) {
-      let syncNext = true
-      this._nextCalled = false
-      this.#generator(this.#send, () => {
-        this.#nextCalled = true
-        if (this.paused && !syncNext) this.resume()
-      })
-      syncNext = false
-      if (!this._nextCalled) this.pause()
+      do {
+        let syncNext = true
+        this._nextCalled = false
+        this.#generator(this.#send, () => {
+          this._nextCalled = true
+          if (this.paused && !syncNext) this.resume()
+        })
+        syncNext = false
+        if (!this._nextCalled) this.pause()
+      } while (!this.paused && !this.#nilPushed)
     }
 
     if (canDrain) this.emit('drain')
