@@ -37,29 +37,6 @@ _m.collect = s => {
   })
 }
 
-_m.pull = (f, s) => {
-  const s2 = s.consume((err, x) => {
-    s2.source._removeConsumer(s2)
-    f(err, x)
-  })
-  s2.resume()
-}
-
-_m.each = (f, s) => {
-  const s2 = s.consume((err, x, push, next) => {
-    if (err) {
-      ;(s.endOfChain || s).emit('error', err)
-    } else if (x === _.nil) {
-      push(null, _.nil)
-    } else {
-      f(x)
-      next()
-    }
-  })
-  s2.resume()
-  return s2
-}
-
 _m.flatten = s => s.consume((err, x, push, next) => {
   if (err) {
     push(err)

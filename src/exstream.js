@@ -145,11 +145,34 @@ class Exstream extends EventEmitter {
   consume (fn) {
     const res = new Exstream()
     res.consumeFn = fn
-    ;(this.endOfChain || this)._addConsumer(res)
+    ;(this.endOfChain || this).#addConsumer(res)
     return res
   }
 
-  _addConsumer = (s, skipCheck = false) => {
+  pull (f) {
+    const s2 = this.consume((err, x) => {
+      s2.source.#removeConsumer(s2)
+      f(err, x)
+    })
+    s2.resume()
+  }
+
+  each (f) {
+    const s2 = this.consume((err, x, push, next) => {
+      if (err) {
+        ;(this.endOfChain || this).emit('error', err)
+      } else if (x === _.nil) {
+        push(null, _.nil)
+      } else {
+        f(x)
+        next()
+      }
+    })
+    s2.resume()
+    return s2
+  }
+
+  #addConsumer = (s, skipCheck = false) => {
     if (!skipCheck && this.#consumers.length) {
       throw new Error(
         'This stream has already been transformed or consumed. Please ' +
@@ -162,7 +185,7 @@ class Exstream extends EventEmitter {
     this.#checkBackPressure()
   }
 
-  _removeConsumer (s) {
+  #removeConsumer = s => {
     this.#consumers = this.#consumers.filter(c => c !== s)
     if (s.source === this) s.source = null
     this.#checkBackPressure()
@@ -189,18 +212,18 @@ class Exstream extends EventEmitter {
   fork () {
     this._autostart = false
     const res = new Exstream()
-    this._addConsumer(res, true)
+    this.#addConsumer(res, true)
     return res
   }
 
   through = target => {
     if (_.isExstream(target)) {
       const findParent = x => x.source ? findParent(x.source) : x
-      this._addConsumer(findParent(target))
+      this.#addConsumer(findParent(target))
       return target
     } else if (_.isExstreamPipeline(target)) {
       const pipelineInstance = target.generateStream()
-      this._addConsumer(pipelineInstance)
+      this.#addConsumer(pipelineInstance)
       return pipelineInstance
     } else if (_.isReadableStream(target)) {
       this.pipe(target)
