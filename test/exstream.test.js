@@ -1,31 +1,8 @@
-const _ = require('./index.js')
+const _ = require('../src/index.js')
+const TestUtils = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
-const { Writable } = require('stream')
 const __ = require('highland')
 const zlib = require('zlib')
-
-const sleep = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms))
-
-const getSlowWritable = (res = [], writeDelay = 50) => new Writable({
-  objectMode: true,
-  highWaterMark: 0,
-  write (rec, encoding, callback) {
-    res.push(rec)
-    if (writeDelay === 0) callback()
-    else sleep(writeDelay).then(callback)
-  }
-})
-
-const randomStringGenerator = (iterations = 3) => {
-  const alphabet = 'abcdefghijklmnopqrstuvz'.split('')
-  return (function * () {
-    for (let i = 0; i < iterations; i++) {
-      let s = ''
-      for (let j = 0; j < 18; j++) s += alphabet[Math.round(Math.random() * (alphabet.length - 1))]
-      yield s
-    }
-  })()
-}
 
 test('stream initialization', () => {
   const x = _([1, 2, 3])
@@ -105,6 +82,13 @@ test('test write', () => {
     x.write(3)
     x.write(4)
     x.write(_.nil)
+    let exception = false
+    try {
+      x.write(5)
+    } catch (e) {
+      exception = true
+    }
+    expect(exception).toBe(true)
   })
 })
 
@@ -206,8 +190,23 @@ test('uniqBy', () => {
 })
 
 test('flatten', () => {
+  _([[1, [2, 3]], [4, [5]]])
+    .flatten()
+    .toArray(res => {
+      expect(res).toEqual([1, [2, 3], 4, [5]])
+      _(res).flatten().toArray(res2 => {
+        expect(res2).toEqual([1, 2, 3, 4, 5])
+      })
+    })
+
   _([1, 2, 3, 4, 5])
     .batch(3)
+    .flatten()
+    .toArray(res => {
+      expect(res).toEqual([1, 2, 3, 4, 5])
+    })
+
+  _([1, 2, 3, 4, 5])
     .flatten()
     .toArray(res => {
       expect(res).toEqual([1, 2, 3, 4, 5])
@@ -228,7 +227,7 @@ test('piping', () => new Promise(resolve => {
   _([1, 2, 3])
     .map(x => x * 2)
     .map(x => x.toString())
-    .pipe(getSlowWritable())
+    .pipe(TestUtils.getSlowWritable())
     .on('finish', resolve)
 }))
 
@@ -323,7 +322,7 @@ test('slow writes on node stream', () => {
   return new Promise(resolve => {
     _([2, 3, 4])
       .map(x => x * 2)
-      .pipe(getSlowWritable(res))
+      .pipe(TestUtils.getSlowWritable(res))
       .on('finish', () => {
         resolve()
         expect(res).toEqual([4, 6, 8])
@@ -333,7 +332,7 @@ test('slow writes on node stream', () => {
 
 test('promise in constructor', () => {
   const p = async () => {
-    await sleep(10)
+    await TestUtils.sleep(10)
     return 'x'
   }
 
@@ -345,25 +344,17 @@ test('promise in constructor', () => {
   })
 })
 
-const fibonacci = function * (iterations) {
-  let curr = 0; let next = 1
-  for (let i = 0; i < iterations; i++) {
-    yield curr
-    ;[curr, next] = [next, curr + next]
-  }
-}
-
 test('generator', () => {
   return new Promise(resolve => {
-    _(fibonacci(10))
-      .pipe(getSlowWritable())
+    _(TestUtils.fibonacci(10))
+      .pipe(TestUtils.getSlowWritable())
       .on('finish', resolve)
   })
 })
 
 test('generator end event', () => {
   return new Promise(resolve => {
-    _(fibonacci(10))
+    _(TestUtils.fibonacci(10))
       .on('end', resolve)
       .map(x => x.toString())
       .pipe(process.stdout)
@@ -372,7 +363,7 @@ test('generator end event', () => {
 
 const asyncIterator = async function * (iterations = 10) {
   for (let i = 0; i < iterations; i++) {
-    await sleep(0)
+    await TestUtils.sleep(0)
     yield i
   }
 }
@@ -400,7 +391,7 @@ test('async highland', () => {
   return new Promise(resolve => __((push, next) => {
     i++
     if (i < 10) {
-      sleep(0).then(() => {
+      TestUtils.sleep(0).then(() => {
         push(null, i)
         next()
       })
@@ -416,7 +407,7 @@ test('async exstream', () => {
   return new Promise(resolve => _((push, next) => {
     i++
     if (i < 10) {
-      sleep(0).then(() => {
+      TestUtils.sleep(0).then(() => {
         push(null, i)
         next()
       })
@@ -475,7 +466,7 @@ test('merging', async () => new Promise((resolve) => {
     s.fork().map(x => x * 2 + 2),
     s.fork().map(x => x * 2 + 3)
   ]).merge()
-    .pipe(getSlowWritable(res))
+    .pipe(TestUtils.getSlowWritable(res))
     .on('finish', () => {
       expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
       resolve()
@@ -493,8 +484,8 @@ test('merging2', async () => new Promise((resolve) => {
 }))
 
 test('multithread', async () => new Promise((resolve) => {
-  _(randomStringGenerator(100000))
-    .multi(3, 50000, _.pipeline()
+  _(TestUtils.randomStringGenerator(100000))
+    .multi(3, 10000, _.pipeline()
       .map(x => x.toUpperCase())
       .map(x => x + '\n')
     )
@@ -512,7 +503,7 @@ test('pipe pipeline', async () => new Promise((resolve) => {
     .map(x => 'buahaha' + x + '\n')
 
   const res = []
-  fs.createReadStream('out').pipe(p.generateStream()).pipe(getSlowWritable(res, 0)).on('finish', () => {
+  fs.createReadStream('out').pipe(p.generateStream()).pipe(TestUtils.getSlowWritable(res, 0)).on('finish', () => {
     resolve()
     expect(res.length).toBe(10001)
   })
@@ -521,11 +512,24 @@ test('pipe pipeline', async () => new Promise((resolve) => {
 const fs = require('fs')
 test('pipeToFile', () => {
   return new Promise(resolve => {
-    _(fibonacci(10000))
+    _(TestUtils.fibonacci(10000))
       .map(x => x.toString() + '\n')
       .pipe(fs.createWriteStream('out'))
       .on('finish', resolve)
   })
+})
+
+test('not more than 1 consumer if not fork', () => {
+  const s = _()
+  s.map(x => x)
+  let exception = false
+  try {
+    s.map(x => x * 2)
+  } catch (e) {
+    exception = true
+  }
+  expect(exception).toBe(true)
+  s.fork().map(x => x)
 })
 
 test('csv', () => {
