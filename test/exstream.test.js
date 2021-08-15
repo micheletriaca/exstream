@@ -469,6 +469,19 @@ test('forking', async () => {
   expect(r3).toEqual([5, 7, 9])
 })
 
+test('fork and back pressure', async () => new Promise(resolve => {
+  const res = []
+  const stream = _([1, 2, 3, 4, 5]).map(String)
+  const l = stream.fork()
+  const r = stream.fork()
+  r.take(2).pipe(h.getSlowWritable(res, 0))
+  l.on('end', () => {
+    resolve()
+    expect(res).toEqual(['1', '1', '2', '2', '3', '4', '5'])
+  }).pipe(h.getSlowWritable(res, 0))
+  setImmediate(() => stream.start())
+}))
+
 test('merging', async () => new Promise((resolve) => {
   const res = []
   const s = _([1, 2, 3])
@@ -476,7 +489,7 @@ test('merging', async () => new Promise((resolve) => {
     s.fork().map(x => x * 2 + 1),
     s.fork().map(x => x * 2 + 2),
     s.fork().map(x => x * 2 + 3)
-  ]).merge()
+  ]).merge(3)
     .pipe(h.getSlowWritable(res))
     .on('finish', () => {
       expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
@@ -494,14 +507,14 @@ test('merging2', async () => new Promise((resolve) => {
     .on('finish', resolve)
 }))
 
-test('merging3', () => {
+test('merging3', async () => {
   let excep = false
-  try {
-    _([1, 2])
-      .merge()
-  } catch (e) {
-    excep = true
-  }
+  await _([1, 2])
+    .merge()
+    .toPromise()
+    .catch(e => {
+      excep = true
+    })
   expect(excep).toBe(true)
 })
 

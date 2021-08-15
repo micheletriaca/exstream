@@ -18,6 +18,7 @@ class Exstream extends EventEmitter {
 
   paused = true
   #nilPushed = false
+  ended = false
 
   #buffer = []
   #sourceData = null
@@ -73,7 +74,7 @@ class Exstream extends EventEmitter {
 
     if (x === _.nil) {
       this.#nilPushed = true
-      this.emit('end')
+      setImmediate(() => this.destroy())
     }
   }
 
@@ -83,7 +84,21 @@ class Exstream extends EventEmitter {
   }
 
   end () {
+    this.ended = true
     if (!this.#nilPushed) this.write(_.nil)
+    this.emit('end')
+  }
+
+  destroy () {
+    this.end()
+    while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
+    if (this.source) {
+      if (this.source.#consumers.length === 1) this.source.destroy()
+      else this.source.#removeConsumer(this)
+    } else {
+      this.#generator = null
+      this.#sourceData = null
+    }
   }
 
   pause () {
@@ -98,7 +113,7 @@ class Exstream extends EventEmitter {
     if (this.#buffer.length) {
       let i = 0
       for (const len = this.#buffer.length; i < len; i++) {
-        if (!this.write(this.#buffer[i])) break // write can synchronously pause the stream again in case of back pressure
+        if (!this.write(this.#buffer[i])) break // write can synchronously pause the stream in case of back pressure
       }
       this.#buffer = this.#buffer.slice(i + 1)
     }
@@ -185,9 +200,10 @@ class Exstream extends EventEmitter {
     this.#checkBackPressure()
   }
 
-  #removeConsumer = s => {
+  #removeConsumer = (s, propagate = false) => {
     this.#consumers = this.#consumers.filter(c => c !== s)
     if (s.source === this) s.source = null
+    // if (this.#consumers.length === 0 && propagate && this.source) this.source.#removeConsumer(this, true)
     this.#checkBackPressure()
   }
 
@@ -204,6 +220,7 @@ class Exstream extends EventEmitter {
         next()
       }
     })
+    dest.once('close', () => s.destroy())
     dest.emit('pipe', this)
     setImmediate(() => s.resume())
     return dest
@@ -231,23 +248,27 @@ class Exstream extends EventEmitter {
     } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
   }
 
-  merge () {
+  merge (parallelism = 1) {
     const merged = new Exstream()
-    let toBeEnded = 0
-    this.each(subS => {
-      toBeEnded++
+    this.map(subS => {
       if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
-      const k = subS.consume((err, x, push, next) => {
-        if (x === _.nil) {
-          if (--toBeEnded === 0) merged.write(_.nil)
-        } else if (!merged.write(err || x)) {
-          merged.once('drain', next)
-        } else {
-          next()
-        }
+      return new Promise(resolve => {
+        const subS2 = subS.consume((err, x, push, next) => {
+          if (x === _.nil) {
+            resolve()
+          } else if (!merged.write(err || x)) {
+            merged.once('drain', next)
+          } else {
+            next()
+          }
+        })
+        merged.once('end', () => subS2.destroy())
+        subS2.resume()
       })
-      setImmediate(() => k.resume())
-    })
+    }).errors(err => merged.write(err))
+      .resolve(parallelism, false)
+      .on('end', () => merged.end())
+      .resume()
     return merged
   }
 
