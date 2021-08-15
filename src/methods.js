@@ -212,6 +212,32 @@ _m.toNodeStream = (options, s) => s.pipe(new Transform({
   ...options
 }))
 
+_m.slice = (start, end, s) => {
+  let index = 0
+  start = typeof start !== 'number' || start < 0 ? 0 : start
+  end = typeof end !== 'number' ? Infinity : end
+
+  if (start === 0 && end === Infinity) return this
+  if (start >= end) throw new Error('start must be lower than end')
+
+  return s.consume((err, x, push, next) => {
+    const done = x === _.nil
+    if (err) {
+      push(err)
+    } else if (!done && index++ >= start) {
+      push(null, x)
+    }
+
+    if (!done && index < end) {
+      next()
+    } else {
+      push(null, _.nil)
+    }
+  })
+}
+
+_m.take = (n, s) => s.slice(0, n)
+
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,
   definitions: [],
