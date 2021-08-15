@@ -10,8 +10,9 @@
   "author": "Michele Triaca",
   "license": "MIT",
   "repository": {
+    "type": "git",
     "url": "https://github.com/micheletriaca/exstream"
-  },  
+  },
   "devDependencies": {
     "babel-eslint": "^10.1.0",
     "eslint": "^7.32.0",
