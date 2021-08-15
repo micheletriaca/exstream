@@ -68,11 +68,23 @@ _m.filter = (f, s) => s.consume((err, x, push, next) => {
     push(err, x)
   } else {
     try {
-      if (f(x)) push(null, x)
+      const res = f(x)
+      if (res.then) {
+        res.then(res2 => {
+          if (res2) push(null, x)
+          next()
+        }).catch(e => {
+          push(e)
+          next()
+        })
+      } else {
+        if (res) push(null, x)
+        next()
+      }
     } catch (e) {
       push(e)
+      next()
     }
-    next()
   }
 })
 
@@ -237,6 +249,37 @@ _m.slice = (start, end, s) => {
 }
 
 _m.take = (n, s) => s.slice(0, n)
+
+_m.reduce = (z, f, s) => {
+  return s.consume((err, x, push, next) => {
+    if (x === _.nil) {
+      push(null, z)
+      push(null, _.nil)
+    } else if (err) {
+      push(err)
+      next()
+    } else {
+      try {
+        const k = f(z, x)
+        if (k.then) {
+          k.then(kres => {
+            z = kres
+            next()
+          }).catch(e => {
+            push(e)
+            push(null, _.nil)
+          })
+        } else {
+          z = k
+          next()
+        }
+      } catch (e) {
+        push(e)
+        push(null, _.nil)
+      }
+    }
+  })
+}
 
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,

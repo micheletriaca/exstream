@@ -262,6 +262,35 @@ test('filter', () => {
     })
 })
 
+test('async filter', async () => {
+  const res = await _([1, 2, 3])
+    .filter(async x => {
+      await h.sleep(100)
+      return x % 2 === 0
+    })
+    .toPromise()
+
+  expect(res).toEqual([2])
+})
+
+test('reduce', () => {
+  _([1, 2, 3])
+    .reduce(0, (memo, x) => memo + x)
+    .toArray(res => {
+      expect(res).toEqual([6])
+    })
+})
+
+test('async reduce', async () => {
+  const res = await _([1, 2, 3])
+    .reduce(0, async (memo, x) => {
+      await h.sleep(10)
+      return memo + x
+    })
+    .toPromise()
+  expect(res).toEqual([6])
+})
+
 test('through pipeline', () => {
   _([1, 2, 3])
     .through(_.pipeline()

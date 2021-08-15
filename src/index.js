@@ -23,6 +23,7 @@ _.extend('resolve', function (parallelism, preserveOrder) { return _.resolve(par
 _.extend('csv', function (opts) { return _.csv(opts, this) })
 _.extend('slice', function (start, end) { return _.slice(start, end, this) })
 _.extend('take', function (n, opts) { return _.take(n, this) })
+_.extend('reduce', function (memo, fn) { return _.reduce(memo, fn, this) })
 _.extend('toArray', function (fn) { return _.toArray(fn, this) })
 _.extend('toPromise', function () { return _.toPromise(this) })
 _.extend('toNodeStream', function (options) { return _.toNodeStream(options, this) })
