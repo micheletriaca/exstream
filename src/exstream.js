@@ -84,9 +84,11 @@ class Exstream extends EventEmitter {
   }
 
   end () {
-    this.ended = true
+    if (!this.ended) {
+      this.ended = true
+      this.emit('end')
+    }
     if (!this.#nilPushed) this.write(_.nil)
-    this.emit('end')
   }
 
   destroy () {
