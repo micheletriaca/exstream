@@ -11,6 +11,7 @@ const _ = Object.assign(
 _.extend = (name, fn) => { Exstream.prototype[name] = fn }
 _.extend('errors', function (fn) { return _.errors(fn, this) })
 _.extend('map', function (fn) { return _.map(fn, this) })
+_.extend('pluck', function (f) { return _.pluck(f, this) })
 _.extend('filter', function (fn) { return _.filter(fn, this) })
 _.extend('flatten', function () { return _.flatten(this) })
 _.extend('uniq', function () { return _.uniq(this) })

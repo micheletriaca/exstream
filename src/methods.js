@@ -127,6 +127,8 @@ _m.uniq = s => {
   })
 }
 
+_m.pluck = (f, s) => s.map(x => x[f])
+
 _m.uniqBy = (cfg, s) => {
   const seen = new Set()
   const isFn = _.isFunction(cfg)

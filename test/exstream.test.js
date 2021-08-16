@@ -171,6 +171,12 @@ test('batch', () => {
   })
 })
 
+test('pluck', () => {
+  _([{ a: 1 }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a').toArray(res => {
+    expect(res).toEqual([1, 2, 3, undefined])
+  })
+})
+
 test('uniq', () => {
   _([1, 2, 2, 2, 5]).uniq().toArray(res => {
     expect(res).toEqual([1, 2, 5])
