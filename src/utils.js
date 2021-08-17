@@ -10,3 +10,4 @@ _.isAsyncIterable = x => _.isDefined(x) && typeof x[Symbol.asyncIterator] === 'f
 _.isFunction = x => typeof x === 'function'
 _.isString = x => typeof x === 'string'
 _.isReadableStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
+_.escapeRegExp = text => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
