@@ -1,7 +1,6 @@
 const _ = require('./utils.js')
 const Exstream = require('./exstream.js')
 const { Transform } = require('stream')
-const { StringDecoder: Decoder } = require('string_decoder')
 
 const _m = module.exports = {}
 
@@ -302,77 +301,3 @@ _m.pipeline = () => new Proxy({
     }
   }
 })
-
-_m.csv = function (opts, s) {
-  opts = {
-    quote: '"',
-    escape: '"',
-    separator: ',',
-    encoding: 'utf8',
-    header: false,
-    ...opts
-  }
-  const decoder = new Decoder(opts.encoding)
-  let buffer = ''
-  let row = []
-  let col = 0
-  let quote = false
-  let firstRow = null
-
-  function getFirstRow (row) {
-    if (opts.header === true) return row
-    if (_.isFunction(opts.header)) return opts.header(row)
-  }
-
-  function convertRow (row, firstRow) {
-    const res = {}
-    for (let i = 0, len = firstRow.length; i < len; i++) res[firstRow[i]] = row[i]
-    return res
-  }
-
-  function drain (x, push, isEnd = false) {
-    buffer = buffer + decoder.write(x)
-    if ((buffer.endsWith(opts.quote) || buffer.endsWith('\r')) && !isEnd) return
-
-    for (let c = 0, len = buffer.length; c < len; c++) {
-      const cc = buffer[c]; const nc = buffer[c + 1]
-      row[col] = row[col] || ''
-      if (cc === opts.escape && quote && nc === opts.quote) { row[col] += cc; ++c; continue }
-      if (cc === opts.quote) { quote = !quote; continue }
-      if (cc === opts.separator && !quote) { ++col; continue }
-      if (cc === '\r' && nc === '\n' && !quote) { ++c }
-      if ((cc === '\n' || cc === '\r') && !quote) {
-        if (!firstRow && opts.header) firstRow = getFirstRow(row)
-        else push(null, opts.header ? convertRow(row, firstRow) : row)
-        col = 0
-        row = []
-        continue
-      }
-      row[col] += cc
-    }
-    buffer = ''
-  }
-
-  if (Array.isArray(opts.header)) firstRow = opts.header
-
-  return s.consume(function (err, x, push, next) {
-    if (err) {
-      push(err)
-      next()
-    } else if (x === _.nil) {
-      try {
-        drain(decoder.end(), push, true)
-      } catch (e) {
-        push(e)
-      }
-      push(null, _.nil)
-    } else {
-      try {
-        drain(x, push)
-      } catch (e) {
-        push(e)
-      }
-      next()
-    }
-  })
-}

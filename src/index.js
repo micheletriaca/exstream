@@ -1,10 +1,12 @@
-const Exstream = require('./exstream.js')
+const Exstream = require('./exstream')
 const methods = require('./methods')
+const csv = require('./csv')
 const utils = require('./utils')
 
 const _ = Object.assign(
   xs => new Exstream(xs),
   utils,
+  csv,
   methods
 )
 

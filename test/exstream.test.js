@@ -630,13 +630,13 @@ test('csv', () => {
       ])
     })
 
-  _([Buffer.from('a,b,c\r1,2,3\r\n"ciao ""amico""","multiline\nrow",3\n')])
+  _([Buffer.from('a,b,c\r\n1,2,3\r\n"ciao ""amico""","multi,li""n""e\nrow","3""bis"""\n')])
     .csv({ header: false })
     .toArray(res => {
       expect(res).toEqual([
         ['a', 'b', 'c'],
         ['1', '2', '3'],
-        ['ciao "amico"', 'multiline\nrow', '3']
+        ['ciao "amico"', 'multi,li"n"e\nrow', '3"bis"']
       ])
     })
 })
