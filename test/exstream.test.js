@@ -237,6 +237,14 @@ test('flatten iterable', () => {
     })
 })
 
+test('synchronous tasks', () => {
+  const res = _([1, 2, 3, 4, 5, 6])
+    .map(x => x * 2)
+    .batch(3)
+    .value()
+  expect(res).toEqual([[2, 4, 6], [8, 10, 12]])
+})
+
 test('piping', () => new Promise(resolve => {
   const res = []
   _([1, 2, 3])

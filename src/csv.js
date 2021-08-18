@@ -34,10 +34,9 @@ _m.csv = (opts, s) => {
   let currentBuffer = Buffer.alloc(0)
   let firstRow = Array.isArray(opts.header) ? opts.header : []
   let row = firstRow.length ? {} : []
-  return s.consume((err, x, push, next) => {
+  return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
-      next()
     } else if (x === _.nil) {
       push(null, _.nil)
     } else {
@@ -83,7 +82,6 @@ _m.csv = (opts, s) => {
         }
       }
       currentBuffer = currentBuffer.slice(prevIdx)
-      next()
     }
   })
 }

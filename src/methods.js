@@ -4,10 +4,9 @@ const { Transform } = require('stream')
 
 const _m = module.exports = {}
 
-_m.map = (f, s) => s.consume((err, x, push, next) => {
+_m.map = (f, s) => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)
-    next()
   } else if (x === _.nil) {
     push(err, x)
   } else {
@@ -16,38 +15,32 @@ _m.map = (f, s) => s.consume((err, x, push, next) => {
     } catch (e) {
       push(e)
     }
-    next()
   }
 })
 
 _m.collect = s => {
   const xs = []
-  return s.consume((err, x, push, next) => {
+  return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
-      next()
     } else if (x === _.nil) {
       push(null, xs)
       push(null, _.nil)
     } else {
       xs.push(x)
-      next()
     }
   })
 }
 
-_m.flatten = s => s.consume((err, x, push, next) => {
+_m.flatten = s => s.consumeSync((err, x, push, next) => {
   if (err) {
     push(err)
-    next()
   } else if (x === _.nil) {
     push(err, x)
   } else if (_.isIterable(x)) {
     for (const y of x) push(null, y)
-    next()
   } else {
     push(null, x)
-    next()
   }
 })
 
@@ -89,10 +82,9 @@ _m.filter = (f, s) => s.consume((err, x, push, next) => {
 
 _m.batch = (size, s) => {
   let buffer = []
-  return s.consume((err, x, push, next) => {
+  return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
-      next()
     } else if (x === _.nil) {
       if (buffer.length) push(null, buffer)
       buffer = []
@@ -103,17 +95,15 @@ _m.batch = (size, s) => {
         push(null, buffer)
         buffer = []
       }
-      next()
     }
   })
 }
 
 _m.uniq = s => {
   const seen = new Set()
-  return s.consume((err, x, push, next) => {
+  return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
-      next()
     } else if (x === _.nil) {
       push(err, x)
     } else {
@@ -121,7 +111,6 @@ _m.uniq = s => {
         seen.add(x)
         push(null, x)
       }
-      next()
     }
   })
 }
@@ -135,10 +124,9 @@ _m.uniqBy = (cfg, s) => {
 
   const fn = !isFn ? x => cfg.map(f => x[f]).join('_') : cfg
 
-  return s.consume((err, x, push, next) => {
+  return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
-      next()
     } else if (x === _.nil) {
       push(err, x)
     } else {
@@ -151,7 +139,6 @@ _m.uniqBy = (cfg, s) => {
       } catch (e) {
         push(e)
       }
-      next()
     }
   })
 }
@@ -203,15 +190,13 @@ _m.resolve = (parallelism = 1, preserveOrder = true, s) => {
   })
 }
 
-_m.errors = (fn, s) => s.consume((err, x, push, next) => {
+_m.errors = (fn, s) => s.consumeSync((err, x, push) => {
   if (x === _.nil) {
     push(null, _.nil)
   } else if (err) {
     fn(err, push)
-    next()
   } else {
     push(null, x)
-    next()
   }
 })
 
@@ -233,7 +218,7 @@ _m.slice = (start, end, s) => {
   if (start === 0 && end === Infinity) return this
   if (start >= end) throw new Error('start must be lower than end')
 
-  return s.consume((err, x, push, next) => {
+  return s.consumeSync((err, x, push) => {
     const done = x === _.nil
     if (err) {
       push(err)
@@ -241,9 +226,7 @@ _m.slice = (start, end, s) => {
       push(null, x)
     }
 
-    if (!done && index < end) {
-      next()
-    } else {
+    if (done || index >= end) {
       push(null, _.nil)
     }
   })

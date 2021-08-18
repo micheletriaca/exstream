@@ -136,3 +136,17 @@ test('error in promise chain', async () => {
   expect(errorCatched).toBe(true)
   expect(res).toEqual([1, 2, 3, 4, 6])
 })
+
+test('synchronous tasks errors', () => {
+  let exception = false
+  try {
+    _([1, 2, 3, 4, 5, 6])
+      .map(async x => x * 2)
+      .resolve()
+      .batch(3)
+      .value()
+  } catch (e) {
+    exception = true
+  }
+  expect(exception).toBe(true)
+})

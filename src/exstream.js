@@ -25,19 +25,31 @@ class Exstream extends EventEmitter {
   #generator = null
 
   #consumeFn = null
+  #consumeSyncFn = null
   #nextCalled = true
   #consumers = []
   #autostart = true
+  #synchronous = true
 
   constructor (xs) {
     super()
-    if (!xs) return this
-    else if (_.isExstream(xs)) return xs
-    else if (_.isIterable(xs)) this.#sourceData = xs[Symbol.iterator]()
-    else if (_.isReadableStream(xs)) xs.pipe(this)
-    else if (_.isAsyncIterable(xs)) Readable.from(xs).pipe(this)
-    else if (_.isPromise(xs)) return new Exstream([xs]).resolve()
-    else if (_.isFunction(xs)) this.#generator = xs
+    if (!xs) {
+      return this
+    } else if (_.isExstream(xs)) {
+      return xs
+    } else if (_.isIterable(xs)) {
+      this.#sourceData = xs[Symbol.iterator]()
+    } else if (_.isReadableStream(xs)) {
+      xs.pipe(this); this.#synchronous = false
+    } else if (_.isAsyncIterable(xs)) {
+      Readable.from(xs).pipe(this)
+      this.#synchronous = false
+    } else if (_.isPromise(xs)) {
+      return new Exstream([xs]).resolve()
+    } else if (_.isFunction(xs)) {
+      this.#generator = xs
+      this.#synchronous = false
+    }
   }
 
   write (x) {
@@ -57,6 +69,9 @@ class Exstream extends EventEmitter {
       })
       syncNext = false
       if (!this.#nextCalled) this.pause()
+    } else if (this.#consumeSyncFn) {
+      this._currentRec = x
+      this.#consumeSyncFn(isError ? x : undefined, isError ? undefined : x, this.#send)
     } else if (isError) {
       this.#send(x)
     } else {
@@ -160,14 +175,22 @@ class Exstream extends EventEmitter {
   }
 
   consume (fn) {
+    this.#synchronous = false
     const res = new Exstream()
     res.#consumeFn = fn
     ;(this.endOfChain || this).#addConsumer(res)
     return res
   }
 
+  consumeSync (fn) {
+    const res = new Exstream()
+    res.#consumeSyncFn = fn
+    ;(this.endOfChain || this).#addConsumer(res)
+    return res
+  }
+
   pull (f) {
-    const s2 = this.consume((err, x) => {
+    const s2 = this.consumeSync((err, x) => {
       s2.source.#removeConsumer(s2)
       f(err, x)
     })
@@ -175,14 +198,13 @@ class Exstream extends EventEmitter {
   }
 
   each (f) {
-    const s2 = this.consume((err, x, push, next) => {
+    const s2 = this.consumeSync((err, x, push) => {
       if (err) {
         ;(this.endOfChain || this).emit('error', err)
       } else if (x === _.nil) {
         push(null, _.nil)
       } else {
         f(x)
-        next()
       }
     })
     s2.resume()
@@ -210,6 +232,7 @@ class Exstream extends EventEmitter {
   }
 
   pipe (dest, options = {}) {
+    this.#synchronous = false
     if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
     const canClose = dest !== process.stdout && dest !== process.stderr && options.end !== false
     const end = canClose ? dest.end : () => {}
@@ -229,6 +252,7 @@ class Exstream extends EventEmitter {
   }
 
   fork () {
+    this.#synchronous = false
     this.#autostart = false
     const res = new Exstream()
     this.#addConsumer(res, true)
@@ -245,12 +269,14 @@ class Exstream extends EventEmitter {
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
     } else if (_.isReadableStream(target)) {
+      this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)
     } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
   }
 
   merge (parallelism = 1) {
+    this.#synchronous = false
     const merged = new Exstream()
     this.map(subS => {
       if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
@@ -276,6 +302,19 @@ class Exstream extends EventEmitter {
 
   multi = (numThreads, batchSize, s) => {
     return this.batch(batchSize).map(x => new Exstream(x).through(s))
+  }
+
+  value () {
+    let curr = this
+    let isSync = this.#synchronous
+    while (isSync && curr.source) {
+      curr = curr.source
+      isSync = isSync && curr.#synchronous
+    }
+    if (!isSync) throw Error('value method can be called only if all operations are synchronous')
+    let res
+    this.toArray(x => (res = x))
+    return res
   }
 }
 
