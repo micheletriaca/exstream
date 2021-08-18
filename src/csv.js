@@ -1,6 +1,72 @@
 const _ = require('./utils.js')
 const _m = module.exports = {}
 
+_m.csvStringify = (opts, s) => {
+  opts = {
+    quote: '"',
+    escape: '"',
+    separator: ',',
+    encoding: 'utf8',
+    header: false,
+    quoted: false,
+    quoted_empty: false,
+    ...opts
+  }
+
+  const regexpQuote = new RegExp(_.escapeRegExp(opts.quote[0]), 'g')
+  const regexpEscape = new RegExp(_.escapeRegExp(opts.escape[0]), 'g')
+  const escapedQuote = opts.escape + opts.quote
+  const escapedEscape = opts.escape + opts.escape
+  const escapeDifferentFromQuote = opts.escape !== opts.quote
+
+  function findSpecialCharsInCell (x) {
+    const res = {
+      hasQuote: x.indexOf(opts.quote) >= 0,
+      hasEscape: escapeDifferentFromQuote && x.indexOf(opts.escape) >= 0,
+      hasOthers: x.indexOf(opts.separator) >= 0 || x.indexOf('\n') >= 0 || x.indexOf('\r') >= 0
+    }
+    res.shouldQuote = res.hasEscape || res.hasQuote || res.hasOthers
+    return res
+  }
+
+  let firstRow = false
+
+  return s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else {
+      if (!firstRow) {
+        if (typeof x === 'object') {
+          firstRow = Object.keys(x)
+          if (opts.header) push(null, Buffer.from(firstRow.join(opts.separator) + '\n', opts.encoding))
+        } else {
+          firstRow = Object.keys(x).map(x => parseInt(x))
+        }
+      }
+      const row = Array(x.length)
+      for (let i = 0; i < firstRow.length; i++) {
+        const col = firstRow[i]
+        const k = findSpecialCharsInCell(x[col])
+        row[i] = x[col]
+        if (!row[i]) {
+          if (opts.quoted_empty) row[i] = opts.quote + opts.quote
+          else row[i] = ''
+          continue
+        }
+        if (!opts.quoted && !k.shouldQuote) continue
+        if (k.hasEscape) row[i] = row[i].replace(regexpEscape, escapedEscape)
+        if (k.hasQuote) row[i] = row[i].replace(regexpQuote, escapedQuote)
+        row[i] = opts.quote + row[i] + opts.quote
+      }
+      const res = row.join(opts.separator) + '\n'
+      if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
+      else push(null, res)
+    }
+  })
+}
+
 _m.csv = (opts, s) => {
   opts = {
     quote: '"',

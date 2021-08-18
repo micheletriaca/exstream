@@ -648,3 +648,26 @@ test('csv', () => {
       ])
     })
 })
+
+test('csvStringify', () => {
+  let res = _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
+    .csv({ header: true })
+    .csvStringify({ header: true })
+    .value()
+
+  expect(res.join('')).toEqual('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')
+
+  res = _([Buffer.from('a,b,c\n1,2,3\n"ciao "'), Buffer.from('"amico""","multiline\nrow",3\n')])
+    .csv({ header: ['aa', 'bb', 'cc'] })
+    .csvStringify({ header: true })
+    .value()
+
+  expect(res.join('')).toEqual('aa,bb,cc\na,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')
+
+  res = _([Buffer.from('a,b,c\n1,2,3\n"ciao "'), Buffer.from('"amico""","multiline\nrow",3\n')])
+    .csv({ header: ['aa', 'bb', 'cc'] })
+    .csvStringify({ header: false })
+    .value()
+
+  expect(res.join('')).toEqual('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')
+})
