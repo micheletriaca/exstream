@@ -6,6 +6,7 @@ _m.csvStringify = (opts, s) => {
     quote: '"',
     escape: '"',
     separator: ',',
+    line_ending: '\n',
     encoding: 'utf8',
     header: false,
     quoted: false,
@@ -23,7 +24,7 @@ _m.csvStringify = (opts, s) => {
     const res = {
       hasQuote: x.indexOf(opts.quote) >= 0,
       hasEscape: escapeDifferentFromQuote && x.indexOf(opts.escape) >= 0,
-      hasOthers: x.indexOf(opts.separator) >= 0 || x.indexOf('\n') >= 0 || x.indexOf('\r') >= 0
+      hasOthers: x.indexOf(opts.separator) >= 0 || x.indexOf(opts.line_ending) >= 0
     }
     res.shouldQuote = res.hasEscape || res.hasQuote || res.hasOthers
     return res
@@ -40,7 +41,7 @@ _m.csvStringify = (opts, s) => {
       if (!firstRow) {
         if (typeof x === 'object') {
           firstRow = Object.keys(x)
-          if (opts.header) push(null, Buffer.from(firstRow.join(opts.separator) + '\n', opts.encoding))
+          if (opts.header) push(null, Buffer.from(firstRow.join(opts.separator) + opts.line_ending, opts.encoding))
         } else {
           firstRow = Object.keys(x).map(x => parseInt(x))
         }
@@ -48,19 +49,19 @@ _m.csvStringify = (opts, s) => {
       const row = Array(x.length)
       for (let i = 0; i < firstRow.length; i++) {
         const col = firstRow[i]
-        const k = findSpecialCharsInCell(x[col])
-        row[i] = x[col]
+        row[i] = x[col] + ''
         if (!row[i]) {
           if (opts.quoted_empty) row[i] = opts.quote + opts.quote
           else row[i] = ''
           continue
         }
+        const k = findSpecialCharsInCell(row[i])
         if (!opts.quoted && !k.shouldQuote) continue
         if (k.hasEscape) row[i] = row[i].replace(regexpEscape, escapedEscape)
         if (k.hasQuote) row[i] = row[i].replace(regexpQuote, escapedQuote)
         row[i] = opts.quote + row[i] + opts.quote
       }
-      const res = row.join(opts.separator) + '\n'
+      const res = row.join(opts.separator) + opts.line_ending
       if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
       else push(null, res)
     }
@@ -91,7 +92,7 @@ _m.csv = (opts, s) => {
 
   function storeCell (row, col, colStart, colEnd, handleQuote) {
     const idx = firstRow.length ? firstRow[col] : col
-    row[idx] = currentBuffer.slice(colStart, colEnd).toString(opts.encoding)
+    row[idx] = currentBuffer.toString(opts.encoding, colStart, colEnd)
     if (handleQuote) {
       row[idx] = row[idx].replace(quoteRegexp, opts.quote)
       return false
