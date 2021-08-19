@@ -70,6 +70,7 @@ _m.csvStringify = (opts, s) => {
 
 _m.csv = (opts, s) => {
   opts = {
+    fastMode: false,
     quote: '"',
     escape: '"',
     separator: ',',
@@ -90,6 +91,14 @@ _m.csv = (opts, s) => {
     if (_.isFunction(opts.header)) return opts.header(row)
   }
 
+  function convertObj (row) {
+    const res = {}
+    for (let i = 0; i < row.length; i++) {
+      res[firstRow[i]] = row[i]
+    }
+    return res
+  }
+
   function storeCell (row, col, colStart, colEnd, handleQuote) {
     const idx = firstRow.length ? firstRow[col] : col
     row[idx] = currentBuffer.toString(opts.encoding, colStart, colEnd)
@@ -101,19 +110,39 @@ _m.csv = (opts, s) => {
   let currentBuffer = Buffer.alloc(0)
   let firstRow = Array.isArray(opts.header) ? opts.header : []
   let row = firstRow.length ? {} : []
+  let isEnding = false
   return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
+      return
     } else if (x === _.nil) {
-      push(null, _.nil)
+      if (currentBuffer.length === 0) {
+        push(null, _.nil)
+        return
+      } else {
+        isEnding = true
+        x = Buffer.from('\n')
+      }
+    }
+
+    currentBuffer = Buffer.concat([currentBuffer, x], currentBuffer.length + x.length)
+    let inQuote = false
+    let prevIdx = 0
+    let col = 0
+    let colStart = 0
+    let endOffset = 0
+    let handleQuote = false
+    if (opts.fastMode) {
+      let i = 0
+      while ((i = currentBuffer.indexOf(newLine, prevIdx)) >= 0) {
+        const row = currentBuffer.toString(opts.encoding, prevIdx, i).split(opts.separator)
+        if (opts.header) {
+          if (!firstRow.length) firstRow = row
+          else push(null, convertObj(row))
+        } else push(null, row)
+        prevIdx = i + 1
+      }
     } else {
-      currentBuffer = Buffer.concat([currentBuffer, x], currentBuffer.length + x.length)
-      let inQuote = false
-      let prevIdx = 0
-      let col = 0
-      let colStart = 0
-      let endOffset = 0
-      let handleQuote = false
       for (let i = 0; i < currentBuffer.length; i++) {
         if (!inQuote) {
           switch (currentBuffer[i]) {
@@ -148,7 +177,8 @@ _m.csv = (opts, s) => {
           if (currentBuffer[i] === quote) { inQuote = false; endOffset = 1; continue }
         }
       }
-      currentBuffer = currentBuffer.slice(prevIdx)
     }
+    currentBuffer = currentBuffer.slice(prevIdx)
+    if (isEnding) push(null, _.nil)
   })
 }

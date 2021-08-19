@@ -664,10 +664,22 @@ test('csvStringify', () => {
 
   expect(res.join('')).toEqual('aa,bb,cc\na,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')
 
-  res = _([Buffer.from('a,b,c\n1,2,3\n"ciao "'), Buffer.from('"amico""","multiline\nrow",3\n')])
+  res = _([Buffer.from('a,b,c\n1,2,3\n"ciao "'), Buffer.from('"amico""","multiline\nrow",3')])
     .csv({ header: ['aa', 'bb', 'cc'] })
     .csvStringify({ header: false })
     .value()
 
   expect(res.join('')).toEqual('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')
+})
+
+test('csv fast mode', () => {
+  const res = _([Buffer.from('a,b,c\n1,2,3\n4,5'), Buffer.from(',6\nu,v,z')])
+    .csv({ header: true, fastMode: true })
+    .value()
+
+  expect(res).toEqual([
+    { a: '1', b: '2', c: '3' },
+    { a: '4', b: '5', c: '6' },
+    { a: 'u', b: 'v', c: 'z' }
+  ])
 })
