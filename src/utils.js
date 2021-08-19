@@ -11,3 +11,6 @@ _.isFunction = x => typeof x === 'function'
 _.isString = x => typeof x === 'string'
 _.isReadableStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
 _.escapeRegExp = text => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
+_.partial = function (f, ...args) { return function (...args2) { return f.call(this, ...args, ...args2) } }
+_.ncurry = function (n, fn, ...o) { return o.length >= n ? fn.apply(this, o.slice(0, n)) : _.partial.call(this, _.ncurry, n, fn, ...o) }
+_.curry = function (fn, ...args) { return _.ncurry.call(this, fn.length, fn, ...args) }
