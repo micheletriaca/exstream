@@ -1,6 +1,18 @@
 const _ = require('./utils.js')
 const _m = module.exports = {}
 
+function replace (str, c, replacement) {
+  let outstr = ''
+  const len = c.length
+  let start = -len
+  let end = 0
+  while ((end = str.indexOf(c, (start += len))) > -1) {
+    outstr += str.slice(start, end) + replacement
+    start = end
+  }
+  return outstr + str.slice(start)
+}
+
 _m.csvStringify = (opts, s) => {
   opts = {
     quote: '"',
@@ -14,20 +26,18 @@ _m.csvStringify = (opts, s) => {
     ...opts
   }
 
-  const regexpQuote = new RegExp(_.escapeRegExp(opts.quote[0]), 'g')
-  const regexpEscape = new RegExp(_.escapeRegExp(opts.escape[0]), 'g')
   const escapedQuote = opts.escape + opts.quote
   const escapedEscape = opts.escape + opts.escape
   const escapeDifferentFromQuote = opts.escape !== opts.quote
+  const doubleQuote = opts.quote + opts.quote
 
-  function findSpecialCharsInCell (x) {
-    const res = {
-      hasQuote: x.indexOf(opts.quote) >= 0,
-      hasEscape: escapeDifferentFromQuote && x.indexOf(opts.escape) >= 0,
-      hasOthers: x.indexOf(opts.separator) >= 0 || x.indexOf(opts.line_ending) >= 0
-    }
-    res.shouldQuote = res.hasEscape || res.hasQuote || res.hasOthers
-    return res
+  function checkQuote (x) {
+    return (
+      x.indexOf(opts.separator) > -1 ||
+      x.indexOf(opts.quote) > -1 ||
+      x.indexOf(opts.line_ending) > -1 ||
+      (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1)
+    )
   }
 
   let firstRow = false
@@ -51,14 +61,14 @@ _m.csvStringify = (opts, s) => {
         const col = firstRow[i]
         row[i] = x[col] + ''
         if (!row[i]) {
-          if (opts.quoted_empty) row[i] = opts.quote + opts.quote
+          if (opts.quoted_empty) row[i] = doubleQuote
           else row[i] = ''
           continue
         }
-        const k = findSpecialCharsInCell(row[i])
-        if (!opts.quoted && !k.shouldQuote) continue
-        if (k.hasEscape) row[i] = row[i].replace(regexpEscape, escapedEscape)
-        if (k.hasQuote) row[i] = row[i].replace(regexpQuote, escapedQuote)
+        const shouldQuote = opts.quoted || checkQuote(row[i])
+        if (!opts.quoted && !shouldQuote) continue
+        if (escapeDifferentFromQuote) row[i] = replace(row[i], opts.escape, escapedEscape)
+        row[i] = replace(row[i], opts.quote, escapedQuote)
         row[i] = opts.quote + row[i] + opts.quote
       }
       const res = row.join(opts.separator) + opts.line_ending
@@ -84,7 +94,7 @@ _m.csv = (opts, s) => {
   const quote = Buffer.from(opts.quote, opts.encoding)[0]
   const escape = Buffer.from(opts.escape, opts.encoding)[0]
   const separator = Buffer.from(opts.separator, opts.encoding)[0]
-  const quoteRegexp = new RegExp(_.escapeRegExp(opts.escape[0] + opts.quote[0]), 'g')
+  const escapedQuote = opts.escape + opts.quote
 
   function getFirstRow (row) {
     if (opts.header === true) return row
@@ -103,7 +113,7 @@ _m.csv = (opts, s) => {
     const idx = firstRow.length ? firstRow[col] : col
     row[idx] = currentBuffer.toString(opts.encoding, colStart, colEnd)
     if (handleQuote) {
-      row[idx] = row[idx].replace(quoteRegexp, opts.quote)
+      row[idx] = replace(row[idx], escapedQuote, opts.quote)
       return false
     }
   }
