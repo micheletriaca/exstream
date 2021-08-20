@@ -269,16 +269,15 @@ test('extend', () => {
 })
 
 test('filter', () => {
-  _([1, 2, 3])
+  const res = _([1, 2, 3])
     .filter(x => x % 2 === 0)
-    .toArray(res => {
-      expect(res).toEqual([2])
-    })
+    .value()
+  expect(res).toEqual([2])
 })
 
 test('async filter', async () => {
   const res = await _([1, 2, 3])
-    .filter(async x => {
+    .asyncFilter(async x => {
       await h.sleep(100)
       return x % 2 === 0
     })
@@ -288,16 +287,15 @@ test('async filter', async () => {
 })
 
 test('reduce', () => {
-  _([1, 2, 3])
+  const res = _([1, 2, 3])
     .reduce(0, (memo, x) => memo + x)
-    .toArray(res => {
-      expect(res).toEqual([6])
-    })
+    .value()
+  expect(res).toEqual([6])
 })
 
 test('async reduce', async () => {
   const res = await _([1, 2, 3])
-    .reduce(0, async (memo, x) => {
+    .asyncReduce(0, async (memo, x) => {
       await h.sleep(10)
       return memo + x
     })
@@ -607,6 +605,40 @@ test('not more than 1 consumer if not fork', () => {
   }
   expect(exception).toBe(true)
   s.fork().map(x => x)
+})
+
+test('tap', () => {
+  const sideEffect = []
+  const res = _([1, 2, 3])
+    .tap(x => sideEffect.push(x))
+    .map(x => x * 2)
+    .value()
+
+  expect(res).toEqual([2, 4, 6])
+})
+
+test('compact', () => {
+  const res = _([1, 2, 0, null, undefined, ''])
+    .compact()
+    .value()
+
+  expect(res).toEqual([1, 2])
+})
+
+test('find', () => {
+  const res = _([1, 2, 0, null, undefined, ''])
+    .find(x => x === 2)
+    .value()
+
+  expect(res).toEqual([2])
+})
+
+test('drop', () => {
+  const res = _([1, 2, 3])
+    .drop(1)
+    .value()
+
+  expect(res).toEqual([2, 3])
 })
 
 test('csv', () => {

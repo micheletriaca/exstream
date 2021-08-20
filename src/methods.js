@@ -52,7 +52,22 @@ _m.toArray = (f, s) => s.collect().pull((err, x) => {
   }
 })
 
-_m.filter = (f, s) => s.consume((err, x, push, next) => {
+_m.filter = (f, s) => s.consumeSync((err, x, push) => {
+  if (err) {
+    push(err)
+  } else if (x === _.nil) {
+    push(err, x)
+  } else {
+    try {
+      const res = f(x)
+      if (res) push(null, x)
+    } catch (e) {
+      push(e)
+    }
+  }
+})
+
+_m.asyncFilter = (f, s) => s.consume(async (err, x, push, next) => {
   if (err) {
     push(err)
     next()
@@ -60,19 +75,9 @@ _m.filter = (f, s) => s.consume((err, x, push, next) => {
     push(err, x)
   } else {
     try {
-      const res = f(x)
-      if (res.then) {
-        res.then(res2 => {
-          if (res2) push(null, x)
-          next()
-        }).catch(e => {
-          push(e)
-          next()
-        })
-      } else {
-        if (res) push(null, x)
-        next()
-      }
+      const res = await f(x)
+      if (res) push(null, x)
+      next()
     } catch (e) {
       push(e)
       next()
@@ -234,8 +239,28 @@ _m.slice = (start, end, s) => {
 
 _m.take = (n, s) => s.slice(0, n)
 
+_m.drop = (n, s) => s.slice(n, Infinity)
+
 _m.reduce = (z, f, s) => {
-  return s.consume((err, x, push, next) => {
+  return s.consumeSync((err, x, push) => {
+    if (x === _.nil) {
+      push(null, z)
+      push(null, _.nil)
+    } else if (err) {
+      push(err)
+    } else {
+      try {
+        z = f(z, x)
+      } catch (e) {
+        push(e)
+        push(null, _.nil)
+      }
+    }
+  })
+}
+
+_m.asyncReduce = (z, f, s) => {
+  return s.consume(async (err, x, push, next) => {
     if (x === _.nil) {
       push(null, z)
       push(null, _.nil)
@@ -244,19 +269,8 @@ _m.reduce = (z, f, s) => {
       next()
     } else {
       try {
-        const k = f(z, x)
-        if (k.then) {
-          k.then(kres => {
-            z = kres
-            next()
-          }).catch(e => {
-            push(e)
-            push(null, _.nil)
-          })
-        } else {
-          z = k
-          next()
-        }
+        z = await f(z, x)
+        next()
       } catch (e) {
         push(e)
         push(null, _.nil)
@@ -264,6 +278,40 @@ _m.reduce = (z, f, s) => {
     }
   })
 }
+
+_m.makeAsync = (maxSyncExecutionTime, s) => {
+  let lastSnapshot = null
+  let start = null
+  let end = null
+  return s.consume((err, x, push, next) => {
+    if (err) {
+      push(err)
+      next()
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else {
+      lastSnapshot = process.hrtime.bigint()
+      if (start === null) start = lastSnapshot
+      else end = lastSnapshot
+      if (end !== null && (end - start) / 1000000n > maxSyncExecutionTime) {
+        setImmediate(() => {
+          push(null, x)
+          start = process.hrtime.bigint()
+          next()
+        })
+      } else {
+        push(null, x)
+        next()
+      }
+    }
+  })
+}
+
+_m.tap = (fn, s) => s.map(x => { fn(x); return x })
+
+_m.compact = s => s.filter(x => x)
+
+_m.find = (fn, s) => s.filter(fn).take(1)
 
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,
