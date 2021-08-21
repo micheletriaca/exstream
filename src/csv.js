@@ -18,11 +18,12 @@ _m.csvStringify = (opts, s) => {
     quote: '"',
     escape: '"',
     separator: ',',
-    line_ending: '\n',
+    lineEnding: '\n',
     encoding: 'utf8',
     header: false,
     quoted: false,
-    quoted_empty: false,
+    quotedEmpty: false,
+    // TODO -> FINAL NEWLINE
     ...opts
   }
 
@@ -35,12 +36,18 @@ _m.csvStringify = (opts, s) => {
     return (
       x.indexOf(opts.separator) > -1 ||
       x.indexOf(opts.quote) > -1 ||
-      x.indexOf(opts.line_ending) > -1 ||
+      x.indexOf(opts.lineEnding) > -1 ||
       (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1)
     )
   }
 
   let firstRow = false
+
+  function processCell (x) {
+    if (!opts.quoted && !checkQuote(x)) return x
+    if (escapeDifferentFromQuote) x = replace(x, opts.escape, escapedEscape)
+    return opts.quote + replace(x, opts.quote, escapedQuote) + opts.quote
+  }
 
   return s.consumeSync((err, x, push) => {
     if (err) {
@@ -49,27 +56,25 @@ _m.csvStringify = (opts, s) => {
       push(null, _.nil)
     } else {
       if (!firstRow) {
-        if (typeof x === 'object') {
-          firstRow = Object.keys(x)
-          if (opts.header) push(null, Buffer.from(firstRow.join(opts.separator) + opts.line_ending, opts.encoding))
-        } else {
-          firstRow = Object.keys(x).map(x => parseInt(x))
+        firstRow = Object.keys(x)
+        if (Array.isArray(x)) firstRow = firstRow.map(x => parseInt(x))
+        if (opts.header) {
+          const rowToPush = firstRow.map(processCell).join(opts.separator) + opts.lineEnding
+          if (opts.encoding !== 'utf8') push(null, Buffer.from(rowToPush, opts.encoding))
+          else push(null, rowToPush)
         }
       }
       const row = Array(x.length)
       for (let i = 0; i < firstRow.length; i++) {
         row[i] = x[firstRow[i]] + ''
         if (!row[i]) {
-          if (opts.quoted_empty) row[i] = doubleQuote
+          if (opts.quotedEmpty) row[i] = doubleQuote
           else row[i] = ''
           continue
         }
-        if (!opts.quoted && !checkQuote(row[i])) continue
-        if (escapeDifferentFromQuote) row[i] = replace(row[i], opts.escape, escapedEscape)
-        row[i] = replace(row[i], opts.quote, escapedQuote)
-        row[i] = opts.quote + row[i] + opts.quote
+        row[i] = processCell(row[i])
       }
-      const res = row.join(opts.separator) + opts.line_ending
+      const res = row.join(opts.separator) + opts.lineEnding
       if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
       else push(null, res)
     }
