@@ -37,10 +37,11 @@ class Exstream extends EventEmitter {
       return this
     } else if (_.isExstream(xs)) {
       return xs
+    } else if (_.isReadableStream(xs)) {
+      xs.pipe(this)
+      this.#synchronous = false
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
-    } else if (_.isReadableStream(xs)) {
-      xs.pipe(this); this.#synchronous = false
     } else if (_.isAsyncIterable(xs)) {
       Readable.from(xs).pipe(this)
       this.#synchronous = false
