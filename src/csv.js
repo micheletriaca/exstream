@@ -58,15 +58,13 @@ _m.csvStringify = (opts, s) => {
       }
       const row = Array(x.length)
       for (let i = 0; i < firstRow.length; i++) {
-        const col = firstRow[i]
-        row[i] = x[col] + ''
+        row[i] = x[firstRow[i]] + ''
         if (!row[i]) {
           if (opts.quoted_empty) row[i] = doubleQuote
           else row[i] = ''
           continue
         }
-        const shouldQuote = opts.quoted || checkQuote(row[i])
-        if (!opts.quoted && !shouldQuote) continue
+        if (!opts.quoted && !checkQuote(row[i])) continue
         if (escapeDifferentFromQuote) row[i] = replace(row[i], opts.escape, escapedEscape)
         row[i] = replace(row[i], opts.quote, escapedQuote)
         row[i] = opts.quote + row[i] + opts.quote
