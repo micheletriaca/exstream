@@ -185,9 +185,14 @@ _m.csv = (opts, s) => {
               colStart = prevIdx = i + 1
               continue
           }
-        } else if (inQuote) {
-          if (currentBuffer[i] === escape && currentBuffer[i + 1] === quote) { handleQuote = true; ++i; continue }
-          if (currentBuffer[i] === quote) { inQuote = false; endOffset = 1; continue }
+        } else {
+          if (currentBuffer[i] === escape && currentBuffer[i + 1] === quote) {
+            handleQuote = true
+            ++i
+          } else if (currentBuffer[i] === quote) {
+            inQuote = false
+            endOffset = 1
+          }
         }
       }
     }
