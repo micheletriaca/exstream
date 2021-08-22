@@ -23,24 +23,25 @@ test('error in source stream - exstream generator', () => {
     })
 })
 
-test('error in source stream - generator', () => {
+test('fatal error in source stream - generator', () => {
   const errSkipped = []
   _(h.randomStringGenerator(5, 2))
     .errors((err, push) => {
       errSkipped.push(err)
     })
     .toArray(res => {
-      expect(res.length).toBe(4)
+      console.log(res)
+      expect(res.length).toBe(2)
       expect(res).toEqual(expect.not.arrayContaining(errSkipped))
     })
 })
 
-test('error in source stream - async generator', async () => {
+test('fatal error in source stream - async generator', async () => {
   const errSkipped = []
   const asyncGenerator = async function * () {
     for (let i = 0; i < 5; i++) {
       await h.sleep(10)
-      if (i === 3) yield Error('can\t be 3!')
+      if (i === 3) throw Error('can\t be 3!')
       else yield i
     }
   }
@@ -52,7 +53,7 @@ test('error in source stream - async generator', async () => {
     })
     .toPromise()
     .then(res => {
-      expect(res.length).toBe(5)
+      expect(res.length).toBe(4)
       expect(res).toEqual(expect.not.arrayContaining(errSkipped))
     })
 
@@ -144,7 +145,7 @@ test('synchronous tasks errors', () => {
       .map(async x => x * 2)
       .resolve()
       .batch(3)
-      .value()
+      .value() // Throw error because the chain is not synchronous
   } catch (e) {
     exception = true
   }

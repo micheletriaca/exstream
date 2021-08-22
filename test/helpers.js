@@ -4,6 +4,8 @@ const sleep = (ms = 50) => new Promise(resolve => setTimeout(resolve, ms))
 
 const getSlowWritable = (res = [], writeDelay = 50, highWaterMark = 0) => new Writable({
   objectMode: true,
+  emitClose: true,
+  autoDestroy: true,
   highWaterMark,
   write (rec, encoding, callback) {
     res.push(rec)
@@ -16,7 +18,7 @@ const randomStringGenerator = (iterations = 3, simulateErrorAtIndex = -1) => {
   const alphabet = 'abcdefghijklmnopqrstuvz'.split('')
   return (function * () {
     for (let i = 0; i < iterations; i++) {
-      if (simulateErrorAtIndex === i) yield Error('an error')
+      if (simulateErrorAtIndex === i) throw Error('an error')
       else {
         let s = ''
         for (let j = 0; j < 18; j++) s += alphabet[Math.round(Math.random() * (alphabet.length - 1))]

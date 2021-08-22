@@ -513,17 +513,24 @@ test('forking', async () => {
 test('fork and back pressure', async () => new Promise(resolve => {
   const res = []
   const stream = _([1, 2, 3, 4, 5]).map(String)
+  stream.on('end', () => console.log('stream end'))
   const l = stream.fork()
   const r = stream.fork()
-  r.take(2).pipe(h.getSlowWritable(res, 0))
+  r.on('end', () => console.log('r end'))
+    .take(2)
+    .on('end', () => console.log('r take end'))
+    .pipe(h.getSlowWritable(res, 0))
+    .on('finish', () => console.log('r finish'))
   l.on('end', () => {
+    console.log('l end')
     resolve()
     expect(res).toEqual(['1', '1', '2', '2', '3', '4', '5'])
   }).pipe(h.getSlowWritable(res, 0))
+    .on('finish', () => console.log('l finish'))
   setImmediate(() => stream.start())
 }))
 
-test('merging', async () => new Promise((resolve) => {
+test('merging1', async () => new Promise((resolve) => {
   const res = []
   const s = _([1, 2, 3])
   _([
