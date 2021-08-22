@@ -108,7 +108,7 @@ test('standard end propagation', async () => {
   expect(res).toEqual([2, 4, 6])
 })
 
-test('explicit end', async () => {
+test('explicit end', async () => new Promise((resolve) => {
   let s1Ended = false
   let s2Ended = false
   let s3Ended = false
@@ -122,14 +122,15 @@ test('explicit end', async () => {
       expect(s3Ended).toBe(true)
       expect(s4Ended).toBe(false)
     })
-    .map(x => x * 2)
+    .map(x => x + '2')
     .on('end', () => {
       expect(s1Ended).toBe(false)
       s2Ended = true
       expect(s3Ended).toBe(true)
       expect(s4Ended).toBe(false)
     })
-    .map(x => _([x]))
+    .batch(100)
+    .map(x => _(x))
     .on('end', () => {
       expect(s1Ended).toBe(false)
       expect(s2Ended).toBe(false)
@@ -144,11 +145,12 @@ test('explicit end', async () => {
       expect(s2Ended).toBe(true)
       expect(s3Ended).toBe(true)
       s4Ended = true
+      resolve()
     })
 
   setTimeout(() => s.end(), 30)
   s2.resume()
-})
+}))
 
 test('destroy test', () => {
   const res = []

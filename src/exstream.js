@@ -300,6 +300,7 @@ class Exstream extends EventEmitter {
       return new Promise(resolve => {
         const subS2 = subS.consume((err, x, push, next) => {
           if (x === _.nil) {
+            merged.off('end', endListener)
             resolve()
           } else if (!merged.#write(err || x)) {
             merged.once('drain', next)
@@ -307,12 +308,13 @@ class Exstream extends EventEmitter {
             next()
           }
         })
-        merged.once('end', () => subS2.destroy())
+        const endListener = () => subS2.destroy()
+        merged.once('end', endListener)
         subS2.resume()
       })
     }).errors(err => merged.#write(err))
       .resolve(parallelism, false)
-      .on('end', () => merged.end())
+      .once('end', () => merged.end())
       .resume()
 
     return merged
