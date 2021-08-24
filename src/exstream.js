@@ -295,6 +295,8 @@ class Exstream extends EventEmitter {
       this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)
+    } else if (_.isFunction(target)) {
+      return target(this)
     } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
   }
 
