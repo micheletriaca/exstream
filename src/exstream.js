@@ -32,6 +32,8 @@ class Exstream extends EventEmitter {
   #synchronous = true
   #onStreamError = e => { this.#write(e); this.end() }
 
+  #destroyers = []
+
   constructor (xs) {
     super()
     if (!xs) {
@@ -40,11 +42,14 @@ class Exstream extends EventEmitter {
       return xs
     } else if (_.isReadableStream(xs)) {
       xs.once('error', this.#onStreamError).pipe(this)
+      this.#destroyers.push(() => xs.off('error', this.#onStreamError))
       this.#synchronous = false
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
     } else if (_.isAsyncIterable(xs)) {
-      Readable.from(xs).once('error', this.#onStreamError).pipe(this)
+      const r = Readable.from(xs)
+      r.once('error', this.#onStreamError).pipe(this)
+      this.#destroyers.push(() => r.off('error', this.#onStreamError))
       this.#synchronous = false
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
@@ -116,7 +121,8 @@ class Exstream extends EventEmitter {
     this.#generator = null
     this.#sourceData = null
     this.removeAllListeners()
-    // TODO -> UNPIPE FROM NODE STREAM. REMOVE LISTENERS ON NODE STREAM
+    this.#destroyers.forEach(x => x())
+    this.#destroyers = []
   }
 
   destroy () {
@@ -135,8 +141,8 @@ class Exstream extends EventEmitter {
   }
 
   pause () {
-    if (this.source) this.source.pause()
     this.paused = true
+    if (this.source) this.source.pause()
   }
 
   resume () {
@@ -177,17 +183,10 @@ class Exstream extends EventEmitter {
   }
 
   #checkBackPressure = () => {
-    if (!this.#consumers.length) {
-      this.pause()
-      return
-    }
+    if (!this.#consumers.length) return this.pause()
     for (let i = 0, len = this.#consumers.length; i < len; i++) {
-      if (this.#consumers[i].paused) {
-        this.pause()
-        return
-      }
+      if (this.#consumers[i].paused) return this.pause()
     }
-
     this.resume()
   }
 
@@ -241,7 +240,7 @@ class Exstream extends EventEmitter {
     this.#checkBackPressure()
   }
 
-  #removeConsumer = (s, propagate = false) => {
+  #removeConsumer = s => {
     this.#consumers = this.#consumers.filter(c => c !== s)
     if (s.source === this) s.source = null
     this.#checkBackPressure()
@@ -254,6 +253,7 @@ class Exstream extends EventEmitter {
     const end = canClose ? dest.end : () => {}
     const s = this.consume((err, x, push, next) => {
       if (x === _.nil) {
+        dest.off('drain', next)
         process.nextTick(() => end.call(dest))
       } else if (!dest.write(x || err)) {
         dest.once('drain', next)
@@ -261,8 +261,13 @@ class Exstream extends EventEmitter {
         next()
       }
     })
-    dest.once('close', () => s.end())
-    dest.once('finish', () => s.end())
+    const onEnd = () => s.end()
+    dest.once('close', onEnd)
+    dest.once('finish', onEnd)
+    this.#destroyers.push(() => {
+      dest.off('close', onEnd)
+      dest.off('finish', onEnd)
+    })
     dest.emit('pipe', this)
     setImmediate(() => s.resume())
     return dest
@@ -301,6 +306,7 @@ class Exstream extends EventEmitter {
         const subS2 = subS.consume((err, x, push, next) => {
           if (x === _.nil) {
             merged.off('end', endListener)
+            merged.off('drain', next)
             resolve()
           } else if (!merged.#write(err || x)) {
             merged.once('drain', next)
