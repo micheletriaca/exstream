@@ -4,7 +4,7 @@ const { Transform } = require('stream')
 
 const _m = module.exports = {}
 
-_m.map = (f, s) => s.consumeSync((err, x, push) => {
+_m.map = _.curry((f, s) => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)
   } else if (x === _.nil) {
@@ -16,7 +16,7 @@ _m.map = (f, s) => s.consumeSync((err, x, push) => {
       push(e)
     }
   }
-})
+}))
 
 _m.collect = s => {
   const xs = []
@@ -44,17 +44,17 @@ _m.flatten = s => s.consumeSync((err, x, push, next) => {
   }
 })
 
-_m.flatMap = (f, s) => s.map(f).flatten()
+_m.flatMap = _.curry((f, s) => s.map(f).flatten())
 
-_m.toArray = (f, s) => s.collect().pull((err, x) => {
+_m.toArray = _.curry((f, s) => s.collect().pull((err, x) => {
   if (err) {
     ;(s.endOfChain || s).emit('error', err)
   } else {
     f(x)
   }
-})
+}))
 
-_m.filter = (f, s) => s.consumeSync((err, x, push) => {
+_m.filter = _.curry((f, s) => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)
   } else if (x === _.nil) {
@@ -67,9 +67,9 @@ _m.filter = (f, s) => s.consumeSync((err, x, push) => {
       push(e)
     }
   }
-})
+}))
 
-_m.asyncFilter = (f, s) => s.consume(async (err, x, push, next) => {
+_m.asyncFilter = _.curry((f, s) => s.consume(async (err, x, push, next) => {
   if (err) {
     push(err)
     next()
@@ -85,9 +85,9 @@ _m.asyncFilter = (f, s) => s.consume(async (err, x, push, next) => {
       next()
     }
   }
-})
+}))
 
-_m.batch = (size, s) => {
+_m.batch = _.curry((size, s) => {
   let buffer = []
   return s.consumeSync((err, x, push) => {
     if (err) {
@@ -104,7 +104,7 @@ _m.batch = (size, s) => {
       }
     }
   })
-}
+})
 
 _m.uniq = s => {
   const seen = new Set()
@@ -122,9 +122,9 @@ _m.uniq = s => {
   })
 }
 
-_m.pluck = (f, s) => s.map(x => x[f])
+_m.pluck = _.curry((f, s) => s.map(x => x[f]))
 
-_m.uniqBy = (cfg, s) => {
+_m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
   const isFn = _.isFunction(cfg)
   if (!isFn && !Array.isArray(cfg)) cfg = [cfg]
@@ -148,13 +148,13 @@ _m.uniqBy = (cfg, s) => {
       }
     }
   })
-}
+})
 
-_m.then = (fn, s) => s.map(x => x.then(fn))
+_m.then = _.curry((fn, s) => s.map(x => x.then(fn)))
 
-_m.catch = (fn, s) => s.map(x => x.catch(fn))
+_m.catch = _.curry((fn, s) => s.map(x => x.catch(fn)))
 
-_m.resolve = (parallelism = 1, preserveOrder = true, s) => {
+_m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
 
@@ -195,9 +195,9 @@ _m.resolve = (parallelism = 1, preserveOrder = true, s) => {
       if (promises.length < parallelism) next()
     }
   })
-}
+})
 
-_m.errors = (fn, s) => s.consumeSync((err, x, push) => {
+_m.errors = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   if (x === _.nil) {
     push(null, _.nil)
   } else if (err) {
@@ -205,19 +205,19 @@ _m.errors = (fn, s) => s.consumeSync((err, x, push) => {
   } else {
     push(null, x)
   }
-})
+}))
 
 _m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toArray(resolve))
 
-_m.toNodeStream = (options, s) => s.pipe(new Transform({
+_m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
   transform: function (chunk, enc, cb) {
     this.push(chunk)
     cb()
   },
   ...options
-}))
+})))
 
-_m.slice = (start, end, s) => {
+_m.slice = _.curry((start, end, s) => {
   let index = 0
   start = typeof start !== 'number' || start < 0 ? 0 : start
   end = typeof end !== 'number' ? Infinity : end
@@ -237,13 +237,13 @@ _m.slice = (start, end, s) => {
       push(null, _.nil)
     }
   })
-}
+})
 
-_m.take = (n, s) => s.slice(0, n)
+_m.take = _.curry((n, s) => s.slice(0, n))
 
-_m.drop = (n, s) => s.slice(n, Infinity)
+_m.drop = _.curry((n, s) => s.slice(n, Infinity))
 
-_m.reduce = (z, f, s) => {
+_m.reduce = _.curry((z, f, s) => {
   return s.consumeSync((err, x, push) => {
     if (x === _.nil) {
       push(null, z)
@@ -259,9 +259,9 @@ _m.reduce = (z, f, s) => {
       }
     }
   })
-}
+})
 
-_m.asyncReduce = (z, f, s) => {
+_m.asyncReduce = _.curry((z, f, s) => {
   return s.consume(async (err, x, push, next) => {
     if (x === _.nil) {
       push(null, z)
@@ -279,9 +279,9 @@ _m.asyncReduce = (z, f, s) => {
       }
     }
   })
-}
+})
 
-_m.makeAsync = (maxSyncExecutionTime, s) => {
+_m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null
   let start = null
   let end = null
@@ -307,13 +307,13 @@ _m.makeAsync = (maxSyncExecutionTime, s) => {
       }
     }
   })
-}
+})
 
-_m.tap = (fn, s) => s.map(x => { fn(x); return x })
+_m.tap = _.curry((fn, s) => s.map(x => { fn(x); return x }))
 
 _m.compact = s => s.filter(x => x)
 
-_m.find = (fn, s) => s.filter(fn).take(1)
+_m.find = _.curry((fn, s) => s.filter(fn).take(1))
 
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,
