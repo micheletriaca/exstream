@@ -25,7 +25,7 @@ test('merge end propagation', () => {
     const res = []
     const s1 = _(h.randomStringGenerator(Infinity))
     const s2 = _(h.randomStringGenerator(Infinity))
-    const s3 = _([s1, s2]).merge(2)
+    const s3 = _([s1, s2]).merge(2, false)
     const s4 = h.getSlowWritable(res, 1, 10)
     s3.pipe(s4)
     s2.once('end', () => {
@@ -45,7 +45,7 @@ test('fork end propagation', () => {
     const s = _(h.randomStringGenerator(Infinity))
     const s1 = s.fork().take(3)
     const s2 = s.fork()
-    const s3 = _([s1, s2]).merge(2)
+    const s3 = _([s1, s2]).merge(2, false)
     s3.resume()
     s1.once('end', () => {
       expect(s.ended).toBe(false)

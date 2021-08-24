@@ -298,33 +298,41 @@ class Exstream extends EventEmitter {
     } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
   }
 
-  merge (parallelism = 1) {
+  merge (parallelism = 1, preserveOrder = true) {
     this.#synchronous = false
     const merged = new Exstream()
-    this.map(subS => {
+    const ss = this.map(subS => {
       if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
-      return new Promise(resolve => {
-        const subS2 = subS.consume((err, x, push, next) => {
-          if (x === _.nil) {
-            merged.off('end', endListener)
-            merged.off('drain', next)
-            resolve()
-          } else if (!merged.#write(err || x)) {
-            merged.once('drain', next)
-          } else {
-            next()
-          }
+      if (!preserveOrder) {
+        return new Promise(resolve => {
+          const subS2 = subS.consume((err, x, push, next) => {
+            if (x === _.nil) {
+              merged.off('end', endListener)
+              merged.off('drain', next)
+              resolve()
+            } else if (!merged.#write(err || x)) {
+              merged.once('drain', next)
+            } else {
+              next()
+            }
+          })
+          const endListener = () => subS2.destroy()
+          merged.once('end', endListener)
+          subS2.resume()
         })
-        const endListener = () => subS2.destroy()
-        merged.once('end', endListener)
-        subS2.resume()
-      })
-    }).errors(err => merged.#write(err))
-      .resolve(parallelism, false)
-      .once('end', () => merged.end())
-      .resume()
+      } else {
+        return subS.toPromise()
+      }
+    }).through(preserveOrder ? null : new Exstream().errors(err => merged.#write(err)))
+      .resolve(parallelism, preserveOrder)
+      .through(preserveOrder ? new Exstream().flatten() : null)
 
-    return merged
+    if (preserveOrder) return ss
+    else {
+      ss.once('end', () => merged.end())
+        .resume()
+      return merged
+    }
   }
 
   multi = (numThreads, batchSize, s) => {

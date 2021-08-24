@@ -355,6 +355,18 @@ test('unordered promises', async () => {
   expect(res).toEqual([12, 8, 16])
 })
 
+test('promises hl style', async () => {
+  let sleepCount = 3
+  const sleep = x => new Promise(resolve => setTimeout(() => resolve(x), 200 * sleepCount--))
+
+  const res = await _([2, 3, 4])
+    .map(x => _(sleep(x)))
+    .merge(3)
+    .toPromise()
+
+  expect(res).toEqual([2, 3, 4])
+})
+
 test('ordered promises', async () => {
   let sleepCount = 3
   const decrementalSlowMap = x => new Promise(resolve => setTimeout(() => resolve(x), 200 * sleepCount--))
@@ -537,7 +549,7 @@ test('merging1', async () => new Promise((resolve) => {
     s.fork().map(x => x * 2 + 1),
     s.fork().map(x => x * 2 + 2),
     s.fork().map(x => x * 2 + 3)
-  ]).merge(3)
+  ]).merge(3, false)
     .pipe(h.getSlowWritable(res))
     .on('finish', () => {
       expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
