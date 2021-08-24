@@ -44,6 +44,8 @@ _m.flatten = s => s.consumeSync((err, x, push, next) => {
   }
 })
 
+_m.flatMap = (f, s) => s.map(f).flatten()
+
 _m.toArray = (f, s) => s.collect().pull((err, x) => {
   if (err) {
     ;(s.endOfChain || s).emit('error', err)

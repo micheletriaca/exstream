@@ -227,6 +227,13 @@ test('flatten', () => {
     })
 })
 
+test('flatMap', () => {
+  const res = _([1, 2, 3])
+    .flatMap(x => Array(x).fill(x))
+    .value()
+  expect(res).toEqual([1, 2, 2, 3, 3, 3])
+})
+
 test('flatten iterable', () => {
   _([1, 2, 3, 4, 5])
     .batch(3)
