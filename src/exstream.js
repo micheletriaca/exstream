@@ -282,7 +282,8 @@ class Exstream extends EventEmitter {
   }
 
   through (target) {
-    if (_.isExstream(target)) {
+    if (!target) return this
+    else if (_.isExstream(target)) {
       const findParent = x => x.source ? findParent(x.source) : x
       this.#addConsumer(findParent(target))
       return target
