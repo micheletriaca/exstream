@@ -122,7 +122,7 @@ _m.uniq = s => {
   })
 }
 
-_m.pluck = _.curry((f, s) => s.map(x => x[f]))
+_m.pluck = _.curry((field, s) => s.map(x => x[field]))
 
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
@@ -263,18 +263,7 @@ _m.reduce = _.curry((z, f, s) => {
   })
 })
 
-_m.reduce1 = _.curry((f, s) => {
-  return s.consumeSync((err, x, push) => {
-    if (x === _.nil) {
-      // push(null, z)
-      push(null, _.nil)
-    } else if (err) {
-      push(err)
-    } else {
-      s.reduce(x, f)
-    }
-  })
-})
+_m.reduce1 = (f, s) => _m.reduce(s.pull(), f, s)
 
 _m.asyncReduce = _.curry((z, f, s) => {
   return s.consume(async (err, x, push, next) => {
