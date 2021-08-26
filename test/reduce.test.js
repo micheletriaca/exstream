@@ -1,8 +1,5 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
-// const EventEmitter = require('events').EventEmitter
-// const __ = require('highland')
-// const zlib = require('zlib')
 jest.mock('fs')
 const fs = require('fs')
 
@@ -35,4 +32,3 @@ test('async reduce', async () => {
     .toPromise()
   expect(res).toEqual([6])
 })
-
