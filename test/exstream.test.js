@@ -293,23 +293,6 @@ test('async filter', async () => {
   expect(res).toEqual([2])
 })
 
-test('reduce', () => {
-  const res = _([1, 2, 3])
-    .reduce(0, (memo, x) => memo + x)
-    .value()
-  expect(res).toEqual([6])
-})
-
-test('async reduce', async () => {
-  const res = await _([1, 2, 3])
-    .asyncReduce(0, async (memo, x) => {
-      await h.sleep(10)
-      return memo + x
-    })
-    .toPromise()
-  expect(res).toEqual([6])
-})
-
 test('through pipeline', () => {
   _([1, 2, 3])
     .through(_.pipeline()

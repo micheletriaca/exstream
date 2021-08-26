@@ -122,7 +122,7 @@ _m.uniq = s => {
   })
 }
 
-_m.pluck = _.curry((f, s) => s.map(x => x[f]))
+_m.pluck = _.curry((field, s) => s.map(x => x[field]))
 
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
