@@ -261,7 +261,30 @@ _m.reduce = _.curry((z, f, s) => {
   })
 })
 
-_m.reduce1 = _.curry((f, s) => _m.reduce(s.pull(), f, s))
+_m.reduce1 = _.curry((f, s) => {
+  let init = false
+  let z
+  return s.consumeSync((err, x, push) => {
+    if (x === _.nil) {
+      push(null, z)
+      push(null, _.nil)
+    } else if (err) {
+      push(err)
+    } else {
+      if (!init) {
+        init = true
+        z = x
+      } else {
+        try {
+          z = f(z, x)
+        } catch (e) {
+          push(e)
+          push(null, _.nil)
+        }
+      }
+    }
+  })
+})
 
 _m.asyncReduce = _.curry((z, f, s) => {
   return s.consume(async (err, x, push, next) => {

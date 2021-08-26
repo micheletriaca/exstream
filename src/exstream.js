@@ -206,14 +206,11 @@ class Exstream extends EventEmitter {
   }
 
   pull (f) {
-    let res = null
     const s2 = this.consumeSync((err, x) => {
-      s2.source.#removeConsumer(s2)
-      res = err || x
-      if (f) f(err, x)
+      this.#removeConsumer(s2)
+      if (f) f.call(this, err, x)
     })
     s2.resume()
-    return res
   }
 
   each (f) {
