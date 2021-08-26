@@ -5,21 +5,21 @@ test('reduce', () => {
   const res = _([1, 2, 3])
     .reduce((memo, x) => memo + x, 0)
     .value()
-  expect(res).toEqual([6])
+  expect(res).toEqual(6)
 })
 
 test('reduce1', () => {
   const res = _([1, 2, 3])
     .reduce1((memo, x) => memo + x)
     .value()
-  expect(res).toEqual([6])
+  expect(res).toEqual(6)
 })
 
 test('reduce1', () => {
   const res = _([{ a: 1 }, { a: 2 }, { b: 1 }])
     .reduce1((memo, x) => ({ ...memo, ...x }))
     .value()
-  expect(res).toEqual([{ a: 2, b: 1 }])
+  expect(res).toEqual({ a: 2, b: 1 })
 })
 
 test('reduce1 in async chain', async () => {

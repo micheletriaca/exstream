@@ -342,13 +342,19 @@ class Exstream extends EventEmitter {
   }
 
   value () {
+    const res = this.values()
+    if (res.length > 1) throw Error('This stream has emitted more than 1 value. Use .values() instad of .value()')
+    return res[0]
+  }
+
+  values () {
     let curr = this
     let isSync = this.#synchronous
     while (isSync && curr.source) {
       curr = curr.source
       isSync = isSync && curr.#synchronous
     }
-    if (!isSync) throw Error('value method can be called only if all operations are synchronous')
+    if (!isSync) throw Error('.value() and .values() methods can be called only if all operations are synchronous')
     let res
     this.toArray(x => (res = x))
     return res

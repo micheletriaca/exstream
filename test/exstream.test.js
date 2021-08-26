@@ -230,7 +230,7 @@ test('flatten', () => {
 test('flatMap', () => {
   const res = _([1, 2, 3])
     .flatMap(x => Array(x).fill(x))
-    .value()
+    .values()
   expect(res).toEqual([1, 2, 2, 3, 3, 3])
 })
 
@@ -248,8 +248,15 @@ test('synchronous tasks', () => {
   const res = _([1, 2, 3, 4, 5, 6])
     .map(x => x * 2)
     .batch(3)
-    .value()
+    .values()
   expect(res).toEqual([[2, 4, 6], [8, 10, 12]])
+})
+
+test('synchronous reduce', () => {
+  const res = _([1, 2, 3, 4, 5, 6])
+    .reduce1((memo, x) => memo + x)
+    .value()
+  expect(res).toEqual(21)
 })
 
 test('piping', () => new Promise(resolve => {
@@ -278,7 +285,7 @@ test('extend', () => {
 test('filter', () => {
   const res = _([1, 2, 3])
     .filter(x => x % 2 === 0)
-    .value()
+    .values()
   expect(res).toEqual([2])
 })
 
@@ -621,15 +628,15 @@ test('tap', () => {
   const res = _([1, 2, 3])
     .tap(x => sideEffect.push(x))
     .map(x => x * 2)
-    .value()
+    .values()
 
   expect(res).toEqual([2, 4, 6])
 })
 
 test('compact', () => {
-  const res = _([1, 2, 0, null, undefined, ''])
+  const res = _([1, 2, 0, null, undefined, false, ''])
     .compact()
-    .value()
+    .values()
 
   expect(res).toEqual([1, 2])
 })
@@ -639,13 +646,13 @@ test('find', () => {
     .find(x => x === 2)
     .value()
 
-  expect(res).toEqual([2])
+  expect(res).toEqual(2)
 })
 
 test('drop', () => {
   const res = _([1, 2, 3])
     .drop(1)
-    .value()
+    .values()
 
   expect(res).toEqual([2, 3])
 })
