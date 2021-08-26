@@ -261,7 +261,7 @@ _m.reduce = _.curry((z, f, s) => {
   })
 })
 
-_m.reduce1 = (f, s) => _m.reduce(s.pull(), f, s)
+_m.reduce1 = _.curry((f, s) => _m.reduce(s.pull(), f, s))
 
 _m.asyncReduce = _.curry((z, f, s) => {
   return s.consume(async (err, x, push, next) => {
