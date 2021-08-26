@@ -4,14 +4,14 @@ const { Transform } = require('stream')
 
 const _m = module.exports = {}
 
-_m.map = _.curry((f, s) => s.consumeSync((err, x, push) => {
+_m.map = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)
   } else if (x === _.nil) {
     push(err, x)
   } else {
     try {
-      push(null, f(x))
+      push(null, fn(x))
     } catch (e) {
       push(e)
     }
@@ -44,24 +44,24 @@ _m.flatten = s => s.consumeSync((err, x, push, next) => {
   }
 })
 
-_m.flatMap = _.curry((f, s) => s.map(f).flatten())
+_m.flatMap = _.curry((fn, s) => s.map(fn).flatten())
 
-_m.toArray = _.curry((f, s) => s.collect().pull((err, x) => {
+_m.toArray = _.curry((fn, s) => s.collect().pull((err, x) => {
   if (err) {
     ;(s.endOfChain || s).emit('error', err)
   } else {
-    f(x)
+    fn(x)
   }
 }))
 
-_m.filter = _.curry((f, s) => s.consumeSync((err, x, push) => {
+_m.filter = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)
   } else if (x === _.nil) {
     push(err, x)
   } else {
     try {
-      const res = f(x)
+      const res = fn(x)
       if (res) push(null, x)
     } catch (e) {
       push(e)
@@ -69,7 +69,7 @@ _m.filter = _.curry((f, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
-_m.asyncFilter = _.curry((f, s) => s.consume(async (err, x, push, next) => {
+_m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
   if (err) {
     push(err)
     next()
@@ -77,7 +77,7 @@ _m.asyncFilter = _.curry((f, s) => s.consume(async (err, x, push, next) => {
     push(err, x)
   } else {
     try {
-      const res = await f(x)
+      const res = await fn(x)
       if (res) push(null, x)
       next()
     } catch (e) {
@@ -243,16 +243,37 @@ _m.take = _.curry((n, s) => s.slice(0, n))
 
 _m.drop = _.curry((n, s) => s.slice(n, Infinity))
 
-_m.reduce = _.curry((z, f, s) => {
+_m.reduce = _.curry((fn, accumulator, s) => s.consumeSync((err, x, push) => {
+  if (x === _.nil) {
+    push(null, accumulator)
+    push(null, _.nil)
+  } else if (err) {
+    push(err)
+  } else {
+    try {
+      accumulator = fn(accumulator, x)
+    } catch (e) {
+      push(e)
+      push(null, _.nil)
+    }
+  }
+}))
+
+_m.reduce1 = _.curry((fn, s) => {
+  let init = false
+  let accumulator
   return s.consumeSync((err, x, push) => {
     if (x === _.nil) {
-      push(null, z)
+      push(null, accumulator)
       push(null, _.nil)
     } else if (err) {
       push(err)
+    } else if (!init) {
+      init = true
+      accumulator = x
     } else {
       try {
-        z = f(z, x)
+        accumulator = fn(accumulator, x)
       } catch (e) {
         push(e)
         push(null, _.nil)
@@ -261,42 +282,17 @@ _m.reduce = _.curry((z, f, s) => {
   })
 })
 
-_m.reduce1 = _.curry((f, s) => {
-  let init = false
-  let z
-  return s.consumeSync((err, x, push) => {
-    if (x === _.nil) {
-      push(null, z)
-      push(null, _.nil)
-    } else if (err) {
-      push(err)
-    } else {
-      if (!init) {
-        init = true
-        z = x
-      } else {
-        try {
-          z = f(z, x)
-        } catch (e) {
-          push(e)
-          push(null, _.nil)
-        }
-      }
-    }
-  })
-})
-
-_m.asyncReduce = _.curry((z, f, s) => {
+_m.asyncReduce = _.curry((fn, accumulator, s) => {
   return s.consume(async (err, x, push, next) => {
     if (x === _.nil) {
-      push(null, z)
+      push(null, accumulator)
       push(null, _.nil)
     } else if (err) {
       push(err)
       next()
     } else {
       try {
-        z = await f(z, x)
+        accumulator = await fn(accumulator, x)
         next()
       } catch (e) {
         push(e)

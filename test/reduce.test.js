@@ -3,7 +3,7 @@ const h = require('./helpers.js')
 
 test('reduce', () => {
   const res = _([1, 2, 3])
-    .reduce(0, (memo, x) => memo + x)
+    .reduce((memo, x) => memo + x, 0)
     .value()
   expect(res).toEqual([6])
 })
@@ -37,10 +37,10 @@ test('reduce1 in async chain', async () => {
 
 test('async reduce', async () => {
   const res = await _([1, 2, 3])
-    .asyncReduce(0, async (memo, x) => {
+    .asyncReduce(async (memo, x) => {
       await h.sleep(10)
       return memo + x
-    })
+    }, 0)
     .toPromise()
   expect(res).toEqual([6])
 })
