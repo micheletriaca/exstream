@@ -245,9 +245,7 @@ _m.drop = _.curry((n, s) => s.slice(n, Infinity))
 
 _m.reduce = _.curry((z, f, s) => {
   return s.consumeSync((err, x, push) => {
-    if (z === _.nil) {
-      push(null, s.pull())
-    } else if (x === _.nil) {
+    if (x === _.nil) {
       push(null, z)
       push(null, _.nil)
     } else if (err) {
