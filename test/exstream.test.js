@@ -190,6 +190,18 @@ test('pick', () => {
   expect(res).toEqual([{ a: 1, c: 3 }, { a: 1, c: 3 }, { c: 3 }])
 })
 
+test('pick on non object', () => {
+  let exc = false
+  try {
+    const res = _([1, 2, 3]).pick(['a']).values()
+    console.log(res)
+  } catch (e) {
+    console.log(e)
+    exc = true
+  }
+  expect(exc).toBe(true)
+})
+
 test('uniq', () => {
   _([1, 2, 2, 2, 5]).uniq().toArray(res => {
     expect(res).toEqual([1, 2, 5])

@@ -131,8 +131,14 @@ _m.pluck = _.curry((field, s) => s.map(x => x[field]))
 
 _m.pick = _.curry((fields, s) => s.map(x => {
   const res = {}
+  let hasKey
   for (let i = 0, len = fields.length; i < len; i++) {
-    if (fields[i] in x) res[fields[i]] = x[fields[i]]
+    try {
+      hasKey = fields[i] in x
+    } catch (e) {
+      throw Error('Error in .pick(). Expected object, got ' + (typeof x))
+    }
+    if (hasKey) res[fields[i]] = x[fields[i]]
   }
   return res
 }))
