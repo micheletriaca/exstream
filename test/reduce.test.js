@@ -50,7 +50,7 @@ test('reduce after pluck', () => {
     .pluck('a')
     .reduce((memo, x) => memo + x, 0)
     .value()
-  expect(res).toEqual(3)
+  expect(res).toEqual(NaN)
 })
 
 test('reduce1 in async chain', async () => {
