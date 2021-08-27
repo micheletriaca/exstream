@@ -303,6 +303,7 @@ class Exstream extends EventEmitter {
 
   merge (parallelism = 1, preserveOrder = true) {
     this.#synchronous = false
+    if (parallelism === 1 && preserveOrder) preserveOrder = false // We don't want to buffer data unnecessarily
     const merged = new Exstream()
     const ss = this.map(subS => {
       if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
@@ -330,12 +331,10 @@ class Exstream extends EventEmitter {
       .resolve(parallelism, preserveOrder)
       .through(preserveOrder ? new Exstream().flatten() : null)
 
-    if (preserveOrder) return ss
-    else {
-      ss.once('end', () => merged.end())
-        .resume()
+    if (!preserveOrder) {
+      ss.once('end', () => merged.end()).resume()
       return merged
-    }
+    } else return ss
   }
 
   multi = (numThreads, batchSize, s) => {
