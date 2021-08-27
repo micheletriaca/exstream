@@ -124,6 +124,14 @@ _m.uniq = s => {
 
 _m.pluck = _.curry((field, s) => s.map(x => x[field]))
 
+_m.pick = _.curry((fields, s) => s.map(x => {
+  const res = {}
+  for (let i = 0, len = fields.length; i < len; i++) {
+    if (fields[i] in x) res[fields[i]] = x[fields[i]]
+  }
+  return res
+}))
+
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
   const isFn = _.isFunction(cfg)

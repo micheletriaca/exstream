@@ -177,6 +177,11 @@ test('pluck', () => {
   })
 })
 
+test('pick', () => {
+  const res = _([{ a: 1, b: 2, c: 3 }, { a: 1, c: 3 }, { b: 2, c: 3 }]).pick(['a', 'c']).values()
+  expect(res).toEqual([{ a: 1, c: 3 }, { a: 1, c: 3 }, { c: 3 }])
+})
+
 test('uniq', () => {
   _([1, 2, 2, 2, 5]).uniq().toArray(res => {
     expect(res).toEqual([1, 2, 5])
