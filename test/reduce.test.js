@@ -29,6 +29,13 @@ test('reduce from empty list', () => {
   expect(res).toEqual(0)
 })
 
+test('reduce1 from empty list', () => {
+  const res = _([])
+    .reduce1((memo, x) => memo + x)
+    .value()
+  expect(res).toEqual(undefined)
+})
+
 test('reduce1 after pluck', () => {
   const res = _([{ a: 1 }, { a: 2 }, { b: 1 }])
     .pluck('a')
