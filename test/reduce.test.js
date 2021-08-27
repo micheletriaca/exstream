@@ -22,6 +22,13 @@ test('reduce1', () => {
   expect(res).toEqual({ a: 2, b: 1 })
 })
 
+test('reduce from empty list', () => {
+  const res = _([])
+    .reduce((memo, x) => memo + x, 0)
+    .value()
+  expect(res).toEqual(0)
+})
+
 test('reduce1 after pluck', () => {
   const res = _([{ a: 1 }, { a: 2 }, { b: 1 }])
     .pluck('a')
@@ -30,17 +37,10 @@ test('reduce1 after pluck', () => {
   expect(res).toEqual(3)
 })
 
-test('reduce from empty list', () => {
-  const res = _([])
-    .reduce(0, (memo, x) => memo + x)
-    .value()
-  expect(res).toEqual(0)
-})
-
 test('reduce after pluck', () => {
   const res = _([{ a: 1 }, { a: 2 }, { b: 1 }])
     .pluck('a')
-    .reduce(0, (memo, x) => memo + x)
+    .reduce((memo, x) => memo + x, 0)
     .value()
   expect(res).toEqual(3)
 })
