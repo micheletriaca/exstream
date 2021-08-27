@@ -22,6 +22,29 @@ test('reduce1', () => {
   expect(res).toEqual({ a: 2, b: 1 })
 })
 
+test('reduce1 after pluck', () => {
+  const res = _([{ a: 1 }, { a: 2 }, { b: 1 }])
+    .pluck('a')
+    .reduce1((memo, x) => memo + x)
+    .value()
+  expect(res).toEqual(3)
+})
+
+test('reduce from empty list', () => {
+  const res = _([])
+    .reduce(0, (memo, x) => memo + x)
+    .value()
+  expect(res).toEqual(0)
+})
+
+test('reduce after pluck', () => {
+  const res = _([{ a: 1 }, { a: 2 }, { b: 1 }])
+    .pluck('a')
+    .reduce(0, (memo, x) => memo + x)
+    .value()
+  expect(res).toEqual(3)
+})
+
 test('reduce1 in async chain', async () => {
   const res = await _([1, 2, 3])
     .map(async x => {
