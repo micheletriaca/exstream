@@ -226,7 +226,10 @@ _m.errors = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
-_m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toArray(resolve))
+_m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toArray(res => {
+  s.off('error', reject)
+  resolve(res)
+}))
 
 _m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
   transform: function (chunk, enc, cb) {
