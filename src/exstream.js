@@ -157,13 +157,14 @@ class Exstream extends EventEmitter {
       do {
         try {
           nextVal = this.#sourceData.next()
-          if (!nextVal.done) this.#write(nextVal.value)
-          else this.end()
         } catch (e) {
           // es6 generator fatal error. Must end the stream
           this.#write(e)
           this.end()
+          return
         }
+        if (!nextVal.done) this.#write(nextVal.value)
+        else this.end()
       } while (!this.#nilPushed && !this.paused)
     } else if (this.#generator) {
       do {
