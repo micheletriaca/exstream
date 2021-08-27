@@ -4,14 +4,19 @@ const { Transform } = require('stream')
 
 const _m = module.exports = {}
 
-_m.map = _.curry((fn, s) => s.consumeSync((err, x, push) => {
+_m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)
   } else if (x === _.nil) {
     push(err, x)
   } else {
     try {
-      push(null, fn(x))
+      if (!options || !options.wrap) push(null, fn(x))
+      else {
+        const res = fn(x)
+        if (res.then) push(null, res.then(y => ({ input: x, output: y })))
+        else push(null, { input: x, output: res })
+      }
     } catch (e) {
       push(e)
     }

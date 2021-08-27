@@ -120,7 +120,7 @@ test('each', () => {
 const largeArray = n => {
   const res = []
   for (let i = 0; i < n; i++) {
-    res.push(n)
+    res.push(i)
   }
   return res
 }
@@ -134,9 +134,17 @@ test('map hl', () => {
 })
 
 test('map', () => {
-  _(k).map(x => x * 2).toArray(res => {
-    expect(res).toEqual(k2)
-  })
+  const res = _(k).map(x => x * 2).values()
+  expect(res).toEqual(k2)
+})
+
+test('map wrap', () => {
+  const res = _(k)
+    .map(x => x * 2, { wrap: true })
+    .values()
+
+  expect(res.length).toEqual(k2.length)
+  expect(res[345]).toEqual({ input: 345, output: 690 })
 })
 
 test('plain map', () => {
