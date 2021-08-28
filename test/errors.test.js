@@ -138,7 +138,7 @@ test('error in promise chain', async () => {
   expect(res).toEqual([1, 2, 3, 4, 6])
 })
 
-test('synchronous tasks errors', () => {
+test('synchronous tasks errors - chain is not synchronous', () => {
   let exception = false
   try {
     _([1, 2, 3, 4, 5, 6])
@@ -150,4 +150,32 @@ test('synchronous tasks errors', () => {
     exception = true
   }
   expect(exception).toBe(true)
+})
+
+test('synchronous tasks errors - .value() with multiple values', () => {
+  let exception = false
+  try {
+    _([1, 2, 3, 4, 5, 6])
+      .value() // Throw error because the result has more than 1 value
+  } catch (e) {
+    exception = true
+  }
+  expect(exception).toBe(true)
+})
+
+test('synchronous tasks error - runtime error', () => {
+  let exc = false
+  try {
+    _([1, 2, 3, 4, 5, 6])
+      .map(x => {
+        if (x === 3) throw Error('NOO')
+        return x * 2
+      })
+      .values()
+  } catch (e) {
+    exc = true
+    expect(e.message).toBe('NOO')
+    expect(e.originalData).toBe(3)
+  }
+  expect(exc).toBe(true)
 })

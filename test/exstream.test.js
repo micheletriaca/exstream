@@ -117,6 +117,21 @@ test('each', () => {
   _([1, 2, 3]).each(x => expect(x).toBe(i++))
 })
 
+test('each errors', () => {
+  let i = 1
+  const res = []
+  let exc = false
+  _([1, 2, 3, Error('NOO'), Error('NOO'), 4]).on('error', e => {
+    exc = true
+    expect(e.message).toBe('NOO')
+  }).each(x => {
+    res.push(x)
+    expect(x).toBe(i++)
+  })
+  expect(exc).toBe(true)
+  expect(res).toEqual([1, 2, 3, 4])
+})
+
 const largeArray = n => {
   const res = []
   for (let i = 0; i < n; i++) {
@@ -142,6 +157,16 @@ test('map wrap', () => {
   const res = _(k)
     .map(x => x * 2, { wrap: true })
     .values()
+
+  expect(res.length).toEqual(k2.length)
+  expect(res[345]).toEqual({ input: 345, output: 690 })
+})
+
+test('async map wrap', async () => {
+  const res = await _(k)
+    .map(async x => x * 2, { wrap: true })
+    .resolve()
+    .toPromise()
 
   expect(res.length).toEqual(k2.length)
   expect(res[345]).toEqual({ input: 345, output: 690 })
@@ -334,6 +359,16 @@ test('through pipeline', () => {
     .toArray(res => {
       expect(res).toEqual([4, 8, 12])
     })
+})
+
+test('through _.function', async () => {
+  const transform = _.map(x => x.toString(), null)
+
+  const res = await _([1, 2, 3])
+    .through(transform)
+    .toPromise()
+
+  expect(res).toEqual(['1', '2', '3'])
 })
 
 test('through stream', () => {
@@ -645,6 +680,7 @@ test('tap', () => {
     .values()
 
   expect(res).toEqual([2, 4, 6])
+  expect(sideEffect).toEqual([1, 2, 3])
 })
 
 test('compact', () => {
