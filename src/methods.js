@@ -247,18 +247,21 @@ _m.slice = _.curry((start, end, s) => {
   if (start === 0 && end === Infinity) return this
   if (start >= end) throw new Error('start must be lower than end')
 
-  return s.consumeSync((err, x, push) => {
-    const done = x === _.nil
+  const s1 = s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
-    } else if (!done && index++ >= start) {
-      push(null, x)
-    }
-
-    if (done || index >= end) {
+    } else if (x === _.nil) {
       push(null, _.nil)
+    } else {
+      if (index >= end) {
+        s1.end() // if I'm terminating the stream before the end of its source, I've to call .end() instead of pushing nil
+      } else if (index >= start) {
+        push(null, x)
+      }
+      index++
     }
   })
+  return s1
 })
 
 _m.take = _.curry((n, s) => s.slice(0, n))

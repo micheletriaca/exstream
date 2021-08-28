@@ -30,7 +30,7 @@ class Exstream extends EventEmitter {
   #consumers = []
   #autostart = true
   #synchronous = true
-  #onStreamError = e => { this.#write(e); this.end() }
+  #onStreamError = e => { this.write(e); this.end() }
 
   #destroyers = []
 
@@ -42,6 +42,7 @@ class Exstream extends EventEmitter {
       return xs
     } else if (_.isReadableStream(xs)) {
       xs.once('error', this.#onStreamError).pipe(this)
+      this.once('end', () => xs.destroy())
       this.#destroyers.push(() => xs.off('error', this.#onStreamError))
       this.#synchronous = false
     } else if (_.isIterable(xs)) {
@@ -97,7 +98,7 @@ class Exstream extends EventEmitter {
     const wrappedError = _.isDefined(err) ? new ExstreamError(err, this._currentRec) : null
     if (x === _.nil) process.nextTick(() => this.end())
     for (let i = 0, len = this.#consumers.length; i < len; i++) {
-      this.#consumers[i].#write(wrappedError || x)
+      this.#consumers[i].write(wrappedError || x)
     }
   }
 
@@ -109,9 +110,9 @@ class Exstream extends EventEmitter {
   end () {
     if (this.ended) return
     if (!this.#nilPushed) this.#write(_.nil)
+    if (this.paused) this.flushBuffer(true)
     this.ended = true
     this.emit('end')
-    if (this.paused) this.flushBuffer(true)
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
     const source = this.source
     if (source) {
@@ -158,18 +159,18 @@ class Exstream extends EventEmitter {
           nextVal = this.#sourceData.next()
         } catch (e) {
           // es6 generator fatal error. Must end the stream
-          this.#write(e)
+          this.write(e)
           this.end()
           return
         }
-        if (!nextVal.done) this.#write(nextVal.value)
+        if (!nextVal.done) this.write(nextVal.value)
         else this.end()
       } while (!this.#nilPushed && !this.paused)
     } else if (this.#generator) {
       do {
         let syncNext = true
         this._nextCalled = false
-        this.#generator(this.#send, () => {
+        this.#generator((err, x) => this.write(err || x), () => {
           this._nextCalled = true
           if (this.paused && !syncNext) this.resume()
         })
@@ -318,7 +319,7 @@ class Exstream extends EventEmitter {
               merged.off('end', endListener)
               merged.off('drain', next)
               resolve()
-            } else if (!merged.#write(err || x)) {
+            } else if (!merged.write(err || x)) {
               merged.once('drain', next)
             } else {
               next()
@@ -331,7 +332,7 @@ class Exstream extends EventEmitter {
       } else {
         return subS.toPromise()
       }
-    }).through(preserveOrder ? null : new Exstream().errors(err => merged.#write(err)))
+    }).through(preserveOrder ? null : new Exstream().errors(err => merged.write(err)))
       .resolve(parallelism, preserveOrder)
       .through(preserveOrder ? new Exstream().flatten() : null)
 
