@@ -525,14 +525,14 @@ test('async highland', () => {
 
 test('async exstream', () => {
   let i = -1
-  return new Promise(resolve => _((push, next) => {
+  return new Promise(resolve => _((write, next) => {
     i++
     if (i < 10) {
       h.sleep(0).then(() => {
-        push(null, i)
+        write(i)
         next()
       })
-    } else push(null, _.nil)
+    } else write(_.nil)
   }).toArray(res => {
     resolve()
     expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])

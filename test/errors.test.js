@@ -3,16 +3,16 @@ const h = require('./helpers.js')
 
 test('error in source stream - exstream generator', () => {
   let i = 0
-  _((push, next) => {
+  _((write, next) => {
     i++
     if (i < 3) {
-      push(null, i)
+      write(i)
       next()
     } else if (i < 5) {
-      push(Error(i))
+      write(Error(i))
       next()
     } else {
-      push(null, _.nil)
+      write(_.nil)
     }
   })
     .errors((err, push) => {
