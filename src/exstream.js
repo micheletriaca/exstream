@@ -60,7 +60,7 @@ class Exstream extends EventEmitter {
   }
 
   write (x) {
-    if (this.#nilPushed) throw new Error('Cannot write to stream after nil')
+    if (this.#nilPushed) throw Error('Cannot write to stream after nil')
     return this.#write(x)
   }
 
@@ -131,13 +131,12 @@ class Exstream extends EventEmitter {
   }
 
   flushBuffer (force = false) {
-    if (this.#buffer.length) {
-      let i = 0
-      for (const len = this.#buffer.length; i < len; i++) {
-        if (!this.#write(this.#buffer[i], force)) break // write can synchronously pause the stream in case of back pressure
-      }
-      this.#buffer = this.#buffer.slice(i + 1)
+    if (!this.#buffer.length) return
+    let i = 0
+    for (const len = this.#buffer.length; i < len; i++) {
+      if (!this.#write(this.#buffer[i], force)) break // write can synchronously pause the stream in case of back pressure
     }
+    this.#buffer = this.#buffer.slice(i + 1)
   }
 
   pause () {
@@ -230,7 +229,7 @@ class Exstream extends EventEmitter {
 
   #addConsumer = (s, skipCheck = false) => {
     if (!skipCheck && this.#consumers.length) {
-      throw new Error(
+      throw Error(
         'This stream has already been transformed or consumed. Please ' +
         'fork() or observe() the stream if you want to perform ' +
         'parallel transformations.'
@@ -298,7 +297,12 @@ class Exstream extends EventEmitter {
       return new Exstream(target)
     } else if (_.isFunction(target)) {
       return target(this)
-    } else throw Error('You must pass a non consumed exstream instance, a pipeline or a node stream')
+    } else {
+      throw Error(
+        'Error in .through(). You must pass a non consumed' +
+        'exstream instance, a pipeline or a node stream'
+      )
+    }
   }
 
   merge (parallelism = 1, preserveOrder = true) {
@@ -306,7 +310,7 @@ class Exstream extends EventEmitter {
     if (parallelism === 1 && preserveOrder) preserveOrder = false // We don't want to buffer data unnecessarily
     const merged = new Exstream()
     const ss = this.map(subS => {
-      if (!_.isExstream(subS)) throw Error('Merge can merge ONLY exstream instances')
+      if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
       if (!preserveOrder) {
         return new Promise(resolve => {
           const subS2 = subS.consume((err, x, push, next) => {
