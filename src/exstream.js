@@ -355,8 +355,12 @@ class Exstream extends EventEmitter {
       isSync = isSync && curr.#synchronous
     }
     if (!isSync) throw Error('.value() and .values() methods can be called only if all operations are synchronous')
-    let res
-    this.toArray(x => (res = x))
+    const res = []
+    this.consumeSync((err, x, push) => {
+      if (err) throw err
+      if (x !== _.nil) res.push(x)
+      else push(null, _.nil)
+    }).resume()
     return res
   }
 }
