@@ -600,17 +600,6 @@ test('merging3', async () => {
   expect(excep).toBe(true)
 })
 
-test('multithread', async () => new Promise((resolve) => {
-  _(h.randomStringGenerator(100000))
-    .multi(3, 10000, _.pipeline()
-      .map(x => x.toUpperCase())
-      .map(x => x + '\n')
-    )
-    .merge()
-    .pipe(fs.createWriteStream('rand'))
-    .on('finish', resolve)
-}))
-
 test('pipe pipeline', async () => new Promise((resolve) => {
   const p = _.pipeline()
     .map(x => x.toString())

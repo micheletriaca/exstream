@@ -341,10 +341,6 @@ class Exstream extends EventEmitter {
     } else return ss
   }
 
-  multi = (numThreads, batchSize, s) => {
-    return this.batch(batchSize).map(x => new Exstream(x).through(s))
-  }
-
   value () {
     const res = this.values()
     if (res.length > 1) throw Error('This stream has emitted more than 1 value. Use .values() instad of .value()')
