@@ -225,7 +225,6 @@ class Exstream extends EventEmitter {
       }
     })
     s2.resume()
-    return s2
   }
 
   #addConsumer = (s, skipCheck = false) => {
