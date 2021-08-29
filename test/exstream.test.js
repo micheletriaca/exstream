@@ -706,3 +706,18 @@ test('drop', () => {
 
   expect(res).toEqual([2, 3])
 })
+
+test('where', () => {
+  const res = _([{ a: 'a', b: 'b' }, { a: 'a', b: 'c' }, { a: 'b', b: 'b' }])
+    .where({ a: 'a', b: 'b' })
+    .values()
+  expect(res).toEqual([{ a: 'a', b: 'b' }])
+})
+
+test('ratelimit', async () => {
+  const s = _(h.randomStringGenerator(Infinity)).ratelimit(1, 10)
+  setTimeout(() => s.destroy(), 55)
+  const res = await s.toPromise()
+  expect(res.length).toBe(5)
+})
+

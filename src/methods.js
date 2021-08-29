@@ -23,6 +23,47 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
+_m.where = (props, s) => s.filter(x => {
+  for (const p in props) {
+    if (x[p] !== props[p]) return false
+  }
+  return true
+})
+
+_m.ratelimit = (num, ms, s) => {
+  let sent = 0
+  let startWindow
+  return s.consume((err, x, push, next) => {
+    if (err) {
+      push(err)
+      next()
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else if (sent === 0) {
+      startWindow = process.hrtime.bigint()
+      sent++
+      push(null, x)
+      next()
+    } else if (sent < num) {
+      sent++
+      push(null, x)
+      next()
+    } else if (Number((process.hrtime.bigint() - startWindow) / 1000000n) > ms) {
+      startWindow = process.hrtime.bigint()
+      sent = 1
+      push(null, x)
+      next()
+    } else {
+      setTimeout(() => {
+        startWindow = process.hrtime.bigint()
+        sent = 1
+        push(null, x)
+        next()
+      }, ms - Math.round(Number((process.hrtime.bigint() - startWindow) / 1000000n)))
+    }
+  })
+}
+
 _m.collect = s => {
   const xs = []
   return s.consumeSync((err, x, push) => {
