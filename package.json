@@ -4,7 +4,8 @@
   "description": "",
   "main": "src/index.js",
   "scripts": {
-    "test": "jest --verbose"
+    "test": "jest --verbose",
+    "lint": "eslint . --max-warnings 0"
   },
   "keywords": [],
   "author": "Michele Triaca",
@@ -21,6 +22,8 @@
     "eslint-plugin-jest": "^24.4.0",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "^5.1.0",
+    "eslint-plugin-security": "1.4.0",
+    "eslint-plugin-sonarjs": "0.10.0",
     "highland": "^2.13.5",
     "jest": "^27.0.6"
   }

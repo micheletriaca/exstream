@@ -1,5 +1,5 @@
 const _ = require('../src/index')
-const csv = require('csv')
+// const csv = require('csv')
 
 test('csv', () => {
   _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
