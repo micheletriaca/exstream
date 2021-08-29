@@ -17,7 +17,6 @@ module.exports = {
   },
   extends: [
     'standard',
-    // 'node-opinionated',
     // 'plugin:jest/recommended'
     // 'plugin:promise/recommended',
   ],
