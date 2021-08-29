@@ -714,13 +714,6 @@ test('where', () => {
   expect(res).toEqual([{ a: 'a', b: 'b' }])
 })
 
-test('ratelimit', async () => {
-  const s = _(h.randomStringGenerator(Infinity)).ratelimit(1, 10)
-  setTimeout(() => s.destroy(), 55)
-  const res = await s.toPromise()
-  expect(res.length).toBe(5)
-})
-
 test('multipipe', () => new Promise(resolve => {
   // This demonstrates how to pipe multiple input streams into an exstream writer. You can even control parallelism
   // and order. The whole chain has back-pressure
