@@ -7,7 +7,7 @@ const _ = Object.assign(
   xs => new Exstream(xs),
   utils,
   csv,
-  methods
+  methods,
 )
 
 _.extend = (name, fn) => { Exstream.prototype[name] = fn }

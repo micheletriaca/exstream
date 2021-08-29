@@ -1,7 +1,8 @@
 module.exports = {
   env: {
     es6: true, // ES6 globals + ES6 syntax
-    node: true
+    node: true,
+    'jest/globals': true,
   },
   parser: '@babel/eslint-parser',
   parserOptions: {
@@ -9,18 +10,29 @@ module.exports = {
     ecmaVersion: 2021, // ES6 syntax only
     ecmaFeatures: {
       impliedStrict: true,
-      globalReturn: false
+      globalReturn: false,
     },
     allowImportExportEverywhere: false,
-    requireConfigFile: false
+    requireConfigFile: false,
   },
   extends: [
-    'standard'
-    // 'plugin:jest/recommended',
+    'standard',
+    // 'node-opinionated',
+    // 'plugin:jest/recommended'
     // 'plugin:promise/recommended',
   ],
   plugins: [
     'jest',
-    'promise'
-  ]
+    'promise',
+  ],
+  overrides: [
+    {
+      files: ['**'],
+      rules: {
+        // 'max-lines': ['warn', 100],
+        'max-nested-callbacks': ['warn', 3],
+        'comma-dangle': ['warn', 'always-multiline'],
+      },
+    },
+  ],
 }

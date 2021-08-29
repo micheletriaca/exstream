@@ -237,7 +237,7 @@ test('uniqBy', () => {
   _([
     { a: 1, b: 1, c: 1 },
     { a: 1, b: 2, c: 2 },
-    { a: 1, b: 3, c: 1 }
+    { a: 1, b: 3, c: 1 },
   ]).uniqBy(['a', 'c']).toArray(res => {
     expect(res).toEqual([{ a: 1, b: 1, c: 1 }, { a: 1, b: 2, c: 2 }])
   })
@@ -245,7 +245,7 @@ test('uniqBy', () => {
   _([
     { a: 1, b: 1, c: 1 },
     { a: 1, b: 2, c: 2 },
-    { a: 1, b: 3, c: 1 }
+    { a: 1, b: 3, c: 1 },
   ]).uniqBy('c').toArray(res => {
     expect(res).toEqual([{ a: 1, b: 1, c: 1 }, { a: 1, b: 2, c: 2 }])
   })
@@ -354,7 +354,7 @@ test('through pipeline', () => {
   _([1, 2, 3])
     .through(_.pipeline()
       .map(x => x * 2)
-      .map(x => x * 2)
+      .map(x => x * 2),
     )
     .toArray(res => {
       expect(res).toEqual([4, 8, 12])
@@ -375,7 +375,7 @@ test('through stream', () => {
   _([1, 2, 3])
     .through(_()
       .map(x => x * 2)
-      .map(x => x * 2)
+      .map(x => x * 2),
     )
     .toArray(res => {
       expect(res).toEqual([4, 8, 12])
@@ -544,7 +544,7 @@ test('toNodeStream', () => {
     .map(x => x.toString())
     .toNodeStream()
     .on('end', resolve)
-    .pipe(process.stdout)
+    .pipe(process.stdout),
   )
 })
 
@@ -605,7 +605,7 @@ test('merging1', async () => new Promise((resolve) => {
   _([
     s.fork().map(x => x * 2 + 1),
     s.fork().map(x => x * 2 + 2),
-    s.fork().map(x => x * 2 + 3)
+    s.fork().map(x => x * 2 + 3),
   ]).merge(3, false)
     .pipe(h.getSlowWritable(res))
     .on('finish', () => {
@@ -618,7 +618,7 @@ test('merging1', async () => new Promise((resolve) => {
 test('merging2', async () => new Promise((resolve) => {
   _([
     _(fs.createReadStream('out')),
-    _(fs.createReadStream('out'))
+    _(fs.createReadStream('out')),
   ]).merge()
     .pipe(fs.createWriteStream('out3'))
     .on('finish', resolve)
@@ -733,7 +733,7 @@ test('multipipe', () => new Promise(resolve => {
       '1', '0', '1', '0', '1',
       '0', '1', '0', '1', '0',
       '1', '0', '1', '0', '1',
-      'a', 'b'
+      'a', 'b',
     ])
   })
 }))

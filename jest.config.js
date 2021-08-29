@@ -12,7 +12,7 @@ module.exports = {
   notifyMode: 'change',
   testEnvironment: 'node',
   coverageThreshold: {
-    global: {branches: 92, functions: 92, lines: 92, statements: 92}
+    global: { branches: 92, functions: 92, lines: 92, statements: 92 },
   },
   coverageReporters: ['text', 'text-summary', 'json', 'json-summary', 'lcov', 'clover', 'html'],
 }
