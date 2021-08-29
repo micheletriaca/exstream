@@ -15,14 +15,17 @@ module.exports = {
     allowImportExportEverywhere: false,
     requireConfigFile: false,
   },
-  extends: [
-    'standard',
-    // 'plugin:jest/recommended'
-    // 'plugin:promise/recommended',
-  ],
   plugins: [
     'jest',
     'promise',
+    'sonarjs',
+  ],
+  extends: [
+    'standard',
+    'plugin:security/recommended',
+    // 'plugin:sonarjs/recommended',
+    // 'plugin:jest/recommended'
+    // 'plugin:promise/recommended',
   ],
   overrides: [
     {
@@ -31,6 +34,7 @@ module.exports = {
         // 'max-lines': ['warn', 100],
         'max-nested-callbacks': ['warn', 3],
         'comma-dangle': ['warn', 'always-multiline'],
+        'security/detect-object-injection': 'off',
       },
     },
   ],
