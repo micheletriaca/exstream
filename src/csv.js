@@ -24,7 +24,7 @@ _m.csvStringify = (opts, s) => {
     quoted: false,
     quotedEmpty: false,
     // TODO -> FINAL NEWLINE
-    ...opts
+    ...opts,
   }
 
   const escapedQuote = opts.escape + opts.quote
@@ -89,7 +89,7 @@ _m.csv = (opts, s) => {
     separator: ',',
     encoding: 'utf8',
     header: false,
-    ...opts
+    ...opts,
   }
 
   const newLine = Buffer.from('\n', opts.encoding)[0]

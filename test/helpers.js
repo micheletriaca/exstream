@@ -11,7 +11,7 @@ const getSlowWritable = (res = [], writeDelay = 50, highWaterMark = 0) => new Wr
     res.push(rec)
     if (writeDelay === 0) callback()
     else sleep(writeDelay).then(callback)
-  }
+  },
 })
 
 const randomStringGenerator = (iterations = 3, simulateErrorAtIndex = -1) => {
@@ -40,5 +40,5 @@ module.exports = {
   sleep,
   getSlowWritable,
   randomStringGenerator,
-  fibonacci
+  fibonacci,
 }

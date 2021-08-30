@@ -234,7 +234,7 @@ class Exstream extends EventEmitter {
       throw Error(
         'This stream has already been transformed or consumed. Please ' +
         'fork() or observe() the stream if you want to perform ' +
-        'parallel transformations.'
+        'parallel transformations.',
       )
     }
     s.source = this
@@ -302,7 +302,7 @@ class Exstream extends EventEmitter {
     } else {
       throw Error(
         'Error in .through(). You must pass a non consumed' +
-        'exstream instance, a pipeline or a node stream'
+        'exstream instance, a pipeline or a node stream',
       )
     }
   }

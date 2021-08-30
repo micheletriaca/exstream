@@ -277,7 +277,7 @@ _m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
     this.push(chunk)
     cb()
   },
-  ...options
+  ...options,
 })))
 
 _m.slice = _.curry((start, end, s) => {
@@ -411,7 +411,7 @@ _m.pipeline = () => new Proxy({
     for (const { method, args } of this.definitions) curr = curr[method](...args)
     s.endOfChain = curr
     return s
-  }
+  },
 }, {
   get (target, propKey, receiver) {
     if (target[propKey] || !Exstream.prototype[propKey]) return Reflect.get(...arguments)
@@ -419,5 +419,5 @@ _m.pipeline = () => new Proxy({
       target.definitions.push({ method: propKey, args })
       return this
     }
-  }
+  },
 })

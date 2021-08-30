@@ -1,5 +1,5 @@
 const _ = require('../src/index')
-const csv = require('csv')
+// const csv = require('csv')
 
 test('csv', () => {
   _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
@@ -7,7 +7,7 @@ test('csv', () => {
     .toArray(res => {
       expect(res).toEqual([
         { a: '1', b: '2', c: '3' },
-        { a: 'ciao "amico"', b: 'multiline\nrow', c: '3' }
+        { a: 'ciao "amico"', b: 'multiline\nrow', c: '3' },
       ])
     })
 
@@ -17,7 +17,7 @@ test('csv', () => {
       expect(res).toEqual([
         { aa: 'a', bb: 'b', cc: 'c' },
         { aa: '1', bb: '2', cc: '3' },
-        { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' }
+        { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' },
       ])
     })
 
@@ -26,7 +26,7 @@ test('csv', () => {
     .toArray(res => {
       expect(res).toEqual([
         { aa: '1', bb: '2', cc: '3' },
-        { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' }
+        { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' },
       ])
     })
 
@@ -36,7 +36,7 @@ test('csv', () => {
       expect(res).toEqual([
         ['a', 'b', 'c'],
         ['1', '2', '3'],
-        ['ciao "amico"', 'multi,li"n"e\nrow', '3"bis"']
+        ['ciao "amico"', 'multi,li"n"e\nrow', '3"bis"'],
       ])
     })
 })
@@ -94,7 +94,7 @@ test('csv fast mode', () => {
   expect(res).toEqual([
     { a: '1', b: '2', c: '3' },
     { a: '4', b: '5', c: '6' },
-    { a: 'u', b: 'v', c: 'z' }
+    { a: 'u', b: 'v', c: 'z' },
   ])
 
   res = _([Buffer.from('a,b,c\n1,2,3\n4,5'), Buffer.from(',6\nu,v,z')])
@@ -105,7 +105,7 @@ test('csv fast mode', () => {
     ['a', 'b', 'c'],
     ['1', '2', '3'],
     ['4', '5', '6'],
-    ['u', 'v', 'z']
+    ['u', 'v', 'z'],
   ])
 })
 
