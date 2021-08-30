@@ -15,7 +15,7 @@ Here is a sync example:
 ```javascript
 const exs = require('exstream.js');
 
-const res = _([1, 2, 3])
+const res = exs([1, 2, 3])
   .reduce((memo, x) => memo + x, 0)
   .value()
 
