@@ -1,6 +1,8 @@
 # Exstream
 
+![test](https://github.com/micheletriaca/exstream/actions/workflows/main.yaml/badge.svg)
 [![codecov](https://codecov.io/gh/micheletriaca/exstream/branch/master/graph/badge.svg?token=THUY7JE2UC)](https://codecov.io/gh/micheletriaca/exstream)
+
 
 ```shell
 yarn add exstream.js
