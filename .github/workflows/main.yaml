@@ -6,7 +6,7 @@ on:
     branches: [master]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     # runs-on: ${{ matrix.os }}
 
@@ -29,3 +29,4 @@ jobs:
     - run: yarn test
     - run: yarn test --coverage
     - uses: codecov/codecov-action@v2  
+      if: matrix.node-version == '12.x'
