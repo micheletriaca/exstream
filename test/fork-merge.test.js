@@ -65,7 +65,7 @@ test('fork and merging basics with toPromise', async () => {
 
 test('fork and merging - promise in the source stream as well', async () => {
   const source = _([1, 2, 3, 4]).map(async i => i + 1).resolve()
-  const first = source.fork().map(i => i * 2)
+  const first = source.fork().map(async i => i * 2).resolve()
   const second = source.fork().map(async i => i * 3).resolve()
   source.start()
   const results = await _([
