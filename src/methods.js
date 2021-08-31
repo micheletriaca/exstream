@@ -295,7 +295,11 @@ _m.slice = _.curry((start, end, s) => {
       push(null, _.nil)
     } else {
       if (index >= end) {
-        s1.end() // if I'm terminating the stream before the end of its source, I've to call .end() instead of pushing nil
+        // if I'm terminating the stream before the end of its source,
+        // I've to call .end() or .destroy() instead of pushing nil in
+        // order to back propagate destroy and to remove the stream from
+        // the consumers of its source
+        s1.destroy()
       } else if (index >= start) {
         push(null, x)
       }
