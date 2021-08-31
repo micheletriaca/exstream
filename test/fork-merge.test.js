@@ -61,7 +61,7 @@ test('fork and merging basics with toPromise', async () => {
     second,
   ]).merge(2)
     .toPromise()
-  console.log(results)
+  expect(results).toEqual([2, 4, 6, 8, 3, 6, 9, 12])
 })
 
 test('fork and merging - promise in the source stream as well', async () => {
@@ -75,6 +75,20 @@ test('fork and merging - promise in the source stream as well', async () => {
   ]).merge(2)
     .toPromise()
   console.log(results)
+  expect(results).toEqual([4, 6, 8, 10, 6, 9, 12, 15])
+})
+
+test('take() in a fork', async () => {
+  const source = _([1, 2, 3, 4]).map(async i => i + 1).resolve()
+  const first = source.fork().map(async i => i * 2).resolve()
+  const second = source.fork().take(1).map(async i => i * 3).resolve()
+  source.start()
+  const results = await _([
+    first,
+    second,
+  ]).merge(2)
+    .toPromise()
+  expect(results).toEqual([4, 6, 8, 10, 6])
 })
 
 test('merging1', async () => new Promise((resolve) => {
