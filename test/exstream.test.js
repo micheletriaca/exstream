@@ -1,3 +1,5 @@
+jest.setTimeout(2000)
+
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
@@ -599,42 +601,6 @@ test('fork and back pressure', async () => new Promise(resolve => {
   setImmediate(() => stream.start())
 }))
 
-test('merging1', async () => new Promise((resolve) => {
-  const res = []
-  const s = _([1, 2, 3])
-  _([
-    s.fork().map(x => x * 2 + 1),
-    s.fork().map(x => x * 2 + 2),
-    s.fork().map(x => x * 2 + 3),
-  ]).merge(3, false)
-    .pipe(h.getSlowWritable(res))
-    .on('finish', () => {
-      expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
-      resolve()
-    })
-  s.start()
-}))
-
-test('merging2', async () => new Promise((resolve) => {
-  _([
-    _(fs.createReadStream('out')),
-    _(fs.createReadStream('out')),
-  ]).merge()
-    .pipe(fs.createWriteStream('out3'))
-    .on('finish', resolve)
-}))
-
-test('merging3', async () => {
-  let excep = false
-  await _([1, 2])
-    .merge()
-    .toPromise()
-    .catch(e => {
-      excep = true
-    })
-  expect(excep).toBe(true)
-})
-
 test('pipe pipeline', async () => new Promise((resolve) => {
   const p = _.pipeline()
     .map(x => x.toString())
@@ -736,4 +702,13 @@ test('multipipe', () => new Promise(resolve => {
       'a', 'b',
     ])
   })
+}))
+
+test('merging2', async () => new Promise((resolve) => {
+  _([
+    _(fs.createReadStream('out')),
+    _(fs.createReadStream('out')),
+  ]).merge()
+    .pipe(fs.createWriteStream('out3'))
+    .on('finish', resolve)
 }))
