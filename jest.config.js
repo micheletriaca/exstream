@@ -11,6 +11,7 @@ module.exports = {
   // notify: true,
   notifyMode: 'change',
   testEnvironment: 'node',
+  setupFilesAfterEnv: ['./jest-setup-after-environment'],
   coverageThreshold: {
     global: { branches: 92, functions: 92, lines: 92, statements: 92 },
   },
