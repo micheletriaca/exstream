@@ -26,7 +26,6 @@ jobs:
     - run: yarn install
     - run: yarn lint
     - run: yarn audit    
-    - run: yarn test
     - run: yarn test --coverage
     - uses: codecov/codecov-action@v2  
       if: matrix.node-version == '14.x'
