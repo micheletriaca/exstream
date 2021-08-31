@@ -51,13 +51,13 @@ test('fork and merging with promises in second fork', done => {
   source.start()
 })
 
-// test('fork and merging basics with toPromise', async () => {
-//   const source = _([1, 2, 3, 4])
-//   const results = await _([
-//     source.fork().map(i => i * 2),
-//     source.fork().map(i => i * 3),
-//   ]).merge()
-//     .toPromise()
-//   source.start()
-//   console.log(results)
-// })
+test('fork and merging basics with toPromise', async () => {
+  const source = _([1, 2, 3, 4])
+  source.start()
+  const results = await _([
+    source.fork().map(i => i * 2),
+    source.fork().map(i => i * 3),
+  ]).merge()
+    .toPromise()
+  console.log(results)
+})
