@@ -27,6 +27,7 @@ function createWriteStream (file) {
   return h.getSlowWritable(mockFiles[file], 0, 10)
 }
 
+fs.__getMockFiles = () => ({ ...mockFiles })
 fs.__setMockFiles = __setMockFiles
 fs.createReadStream = createReadStream
 fs.createWriteStream = createWriteStream

@@ -8,14 +8,14 @@ test('reduce', () => {
   expect(res).toEqual(6)
 })
 
-test('reduce1', () => {
+test('reduce1 - sum', () => {
   const res = _([1, 2, 3])
     .reduce1((memo, x) => memo + x)
     .value()
   expect(res).toEqual(6)
 })
 
-test('reduce1', () => {
+test('reduce1 - to object', () => {
   const res = _([{ a: 1 }, { a: 2 }, { b: 1 }])
     .reduce1((memo, x) => ({ ...memo, ...x }))
     .value()

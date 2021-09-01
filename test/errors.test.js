@@ -57,19 +57,20 @@ test('fatal error in source stream - async generator', async () => {
       expect(res).toEqual(expect.not.arrayContaining(errSkipped))
     })
 
-  let errorsCalled = false
   let errGenerated = null
+  let errCatched = null
   await _(asyncGenerator())
     .errors((err, push) => {
-      errorsCalled = true
       errGenerated = err
       push(err)
     })
     .toPromise()
     .catch(err => {
-      expect(errorsCalled).toBe(true)
-      expect(err).toBe(errGenerated)
+      errCatched = err
     })
+
+  expect(errGenerated).not.toBe(null)
+  expect(errCatched).toBe(errGenerated)
 })
 
 test('error in map', () => {
@@ -173,9 +174,9 @@ test('synchronous tasks error - runtime error', () => {
       })
       .values()
   } catch (e) {
-    exc = true
-    expect(e.message).toBe('NOO')
-    expect(e.originalData).toBe(3)
+    exc = e
   }
-  expect(exc).toBe(true)
+  expect(exc).not.toBe(null)
+  expect(exc.message).toBe('NOO')
+  expect(exc.originalData).toBe(3)
 })

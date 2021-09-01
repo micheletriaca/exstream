@@ -24,7 +24,7 @@ module.exports = {
     'standard',
     'plugin:security/recommended',
     // 'plugin:sonarjs/recommended',
-    // 'plugin:jest/recommended'
+    'plugin:jest/recommended',
     // 'plugin:promise/recommended',
   ],
   overrides: [
