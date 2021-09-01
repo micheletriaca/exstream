@@ -665,7 +665,7 @@ test('pipeToFile', () => {
       .pipe(fs.createWriteStream('fibo'))
       .on('finish', () => {
         resolve()
-        expect(fs.__getMockFiles().fibo).toBe('0\n1\n1\n2\n3\n')
+        expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
       })
   })
 })
