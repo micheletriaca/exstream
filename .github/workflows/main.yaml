@@ -27,5 +27,9 @@ jobs:
     - run: yarn lint
     - run: yarn audit    
     - run: yarn test --coverage
-    - uses: codecov/codecov-action@v2  
+    - name: Coveralls
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
       if: matrix.node-version == '14.x'
+    # - uses: codecov/codecov-action@v2  
