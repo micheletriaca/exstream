@@ -68,7 +68,7 @@ test('backpressure', () => {
   })
 })
 
-test('test write', () => {
+test('write', () => {
   const x = _()
   const y = []
   return new Promise((resolve) => {
@@ -206,9 +206,27 @@ test('batch', () => {
   })
 })
 
+test('pluck on non object', () => {
+  _([1, 2, 3]).pluck('a').toArray(res => {
+    expect(res).toEqual([undefined, undefined, undefined])
+  })
+})
+
 test('pluck', () => {
   _([{ a: 1 }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a').toArray(res => {
     expect(res).toEqual([1, 2, 3, undefined])
+  })
+})
+
+test('pluck nested', () => {
+  _([{ a: { b: { c: [1, 2, 3] } } }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a.b.c[1]').toArray(res => {
+    expect(res).toEqual([2, undefined, undefined, undefined])
+  })
+})
+
+test('pluck default values', () => {
+  _([{ a: { b: { c: [1, 2, 3] } } }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a.b.c[1]', -1).toArray(res => {
+    expect(res).toEqual([2, -1, -1, -1])
   })
 })
 
@@ -468,19 +486,20 @@ test('promise in constructor', () => {
 })
 
 test('generator', () => {
-  return new Promise(resolve => {
-    _(h.fibonacci(10))
-      .pipe(h.getSlowWritable())
-      .on('finish', resolve)
-  })
+  const res = _(h.fibonacci(6)).values()
+  expect(res).toEqual([0, 1, 1, 2, 3, 5])
 })
 
 test('generator end event', () => {
+  const res = []
   return new Promise(resolve => {
-    _(h.fibonacci(10))
-      .on('end', resolve)
+    _(h.fibonacci(6))
+      .on('end', () => {
+        resolve()
+        expect(res).toEqual(['0', '1', '1', '2', '3', '5'])
+      })
       .map(x => x.toString())
-      .pipe(process.stdout)
+      .pipe(h.getSlowWritable(res, 0, 0))
   })
 })
 
@@ -542,12 +561,17 @@ test('async exstream', () => {
 })
 
 test('toNodeStream', () => {
-  return new Promise(resolve => _([1, 2, 3])
-    .map(x => x.toString())
-    .toNodeStream()
-    .on('end', resolve)
-    .pipe(process.stdout),
-  )
+  const res = []
+  return new Promise(resolve => {
+    _([1, 2, 3])
+      .map(x => x.toString())
+      .toNodeStream()
+      .on('end', () => {
+        resolve()
+        expect(res.map(x => x.toString())).toEqual(['1', '2', '3'])
+      })
+      .pipe(h.getSlowWritable(res, 0, 0))
+  })
 })
 
 test('through node stream', () => {
@@ -581,25 +605,45 @@ test('forking', async () => {
   expect(r3).toEqual([5, 7, 9])
 })
 
-test('fork and back pressure', async () => new Promise(resolve => {
+test('merging1', async () => new Promise((resolve) => {
   const res = []
-  const stream = _([1, 2, 3, 4, 5]).map(String)
-  stream.on('end', () => console.log('stream end'))
-  const l = stream.fork()
-  const r = stream.fork()
-  r.on('end', () => console.log('r end'))
-    .take(2)
-    .on('end', () => console.log('r take end'))
-    .pipe(h.getSlowWritable(res, 0))
-    .on('finish', () => console.log('r finish'))
-  l.on('end', () => {
-    console.log('l end')
-    resolve()
-    expect(res).toEqual(['1', '1', '2', '2', '3', '4', '5'])
-  }).pipe(h.getSlowWritable(res, 0))
-    .on('finish', () => console.log('l finish'))
-  setImmediate(() => stream.start())
+  const s = _([1, 2, 3])
+  _([
+    s.fork().map(x => x * 2 + 1),
+    s.fork().map(x => x * 2 + 2),
+    s.fork().map(x => x * 2 + 3),
+  ]).merge(3, false)
+    .pipe(h.getSlowWritable(res))
+    .on('finish', () => {
+      expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
+      resolve()
+    })
+  s.start()
 }))
+
+test('merging2', async () => new Promise((resolve) => {
+  _([
+    _(fs.createReadStream('out')),
+    _(fs.createReadStream('out')),
+  ]).merge()
+    .pipe(fs.createWriteStream('out3'))
+    .on('finish', () => {
+      resolve()
+      const o = out.map(x => x.toString()).join('')
+      expect(fs.__getMockFiles().out3.join('')).toEqual(o + o)
+    })
+}))
+
+test('merging3', async () => {
+  let excep = false
+  await _([1, 2])
+    .merge()
+    .toPromise()
+    .catch(e => {
+      excep = true
+    })
+  expect(excep).toBe(true)
+})
 
 test('pipe pipeline', async () => new Promise((resolve) => {
   const p = _.pipeline()
@@ -618,10 +662,13 @@ test('pipe pipeline', async () => new Promise((resolve) => {
 
 test('pipeToFile', () => {
   return new Promise(resolve => {
-    _(h.fibonacci(10000))
+    _(h.fibonacci(5))
       .map(x => x.toString() + '\n')
       .pipe(fs.createWriteStream('fibo'))
-      .on('finish', resolve)
+      .on('finish', () => {
+        resolve()
+        expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
+      })
   })
 })
 

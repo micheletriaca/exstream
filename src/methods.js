@@ -168,7 +168,16 @@ _m.uniq = s => {
   })
 }
 
-_m.pluck = _.curry((field, s) => s.map(x => x[field]))
+_m.pluck = _.curry((field, defaultValue, s) => {
+  const fieldPath = _.splitFieldPath(field)
+  const traverse = (v, path, idx = 0) => {
+    if (idx === path.length) return v
+    else if (!Object.hasOwnProperty.call(v, path[idx])) return defaultValue
+    else return traverse(v[path[idx]], path, idx + 1)
+  }
+
+  return s.map(x => traverse(x, fieldPath))
+})
 
 _m.pick = _.curry((fields, s) => s.map(x => {
   const res = {}
@@ -295,7 +304,11 @@ _m.slice = _.curry((start, end, s) => {
       push(null, _.nil)
     } else {
       if (index >= end) {
-        s1.end() // if I'm terminating the stream before the end of its source, I've to call .end() instead of pushing nil
+        // if I'm terminating the stream before the end of its source,
+        // I've to call .end() or .destroy() instead of pushing nil in
+        // order to back propagate destroy and to remove the stream from
+        // the consumers of its source
+        s1.destroy()
       } else if (index >= start) {
         push(null, x)
       }

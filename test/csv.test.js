@@ -110,23 +110,5 @@ test('csv fast mode', () => {
 })
 
 /*
-TODO -> FIX ERROR HANDLING
-test('csv errors', () => {
-  const res = _(Buffer.from('1,2",3,4\n'))
-    .csv()
-    .value()
-  console.log(res)
-})
-
-test('csv errors', async () => {
-  try {
-    const res = await _([Buffer.from('1,2,3,4\n1,2",3,4\n')])
-      .through(csv.parse())
-      .errors(() => {})
-      .toPromise()
-    expect(res).toEqual([['1', '2', '3', '4']])
-  } catch (e) {
-    console.log(e)
-  }
-})
+TODO -> FIX ERROR HANDLING AND WRITE TESTS ABOUT IT
 */

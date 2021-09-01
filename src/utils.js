@@ -14,3 +14,8 @@ _.escapeRegExp = text => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 _.partial = function (f, ...args) { return function (...args2) { return f.call(this, ...args, ...args2) } }
 _.ncurry = function (n, fn, ...o) { return o.length >= n ? fn.apply(this, o.slice(0, n)) : _.partial.call(this, _.ncurry, n, fn, ...o) }
 _.curry = function (fn, ...args) { return _.ncurry.call(this, fn.length, fn, ...args) }
+_.splitFieldPath = x => x
+  .replace(/\[([^\]]+)\]/g, '.$1')
+  .replace(/['"]/g, '')
+  .replace(/^\./, '')
+  .split('.')
