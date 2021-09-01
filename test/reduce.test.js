@@ -75,3 +75,88 @@ test('async reduce', async () => {
     .toPromise()
   expect(res).toEqual([6])
 })
+
+test('reduce errors', async () => {
+  let e
+  try {
+    _([1, 2, 3])
+      .reduce((memo, x) => {
+        if (x === 3) throw Error('NOOO')
+        return memo + x
+      }, 0)
+      .values()
+  } catch (ex) {
+    e = ex
+  }
+  expect(e).not.toBe(null)
+  expect(e.message).toBe('NOOO')
+})
+
+test('reduce1 errors', async () => {
+  let e
+  try {
+    _([1, 2, 3])
+      .reduce1((memo, x) => {
+        if (x === 3) throw Error('NOOO')
+        return memo + x
+      })
+      .value()
+  } catch (ex) {
+    e = ex
+  }
+  expect(e).not.toBe(null)
+  expect(e.message).toBe('NOOO')
+})
+
+test('reduce1 errors pass through', async () => {
+  const errs = []
+  const res = _([1, 2, 3])
+    .map(x => Error(x + ''))
+    .reduce1((memo, x) => memo + x)
+    .errors(err => errs.push(err))
+    .value()
+  expect(res).toEqual(undefined)
+  expect(errs.length).toBe(3)
+  expect(errs[2].message).toBe('3')
+})
+
+test('reduce errors pass through', async () => {
+  const errs = []
+  const res = _([1, 2, 3])
+    .map(x => Error(x + ''))
+    .reduce((memo, x) => memo + x, 0)
+    .errors(err => errs.push(err))
+    .value()
+  expect(res).toEqual(0)
+  expect(errs.length).toBe(3)
+  expect(errs[2].message).toBe('3')
+})
+
+test('async reduce errors', async () => {
+  const errs = []
+  const res = await _([1, 2, 3])
+    .asyncReduce(async (memo, x) => {
+      if (x === 3) throw Error('NOOO')
+      return memo + x
+    }, 0)
+    .toPromise()
+    .catch(e => {
+      errs.push(e)
+      return undefined
+    })
+  expect(res).toEqual(undefined)
+  expect(errs.length).toBe(1)
+  expect(errs[0].message).toBe('NOOO')
+})
+
+test('async reduce errors pass through', async () => {
+  const errs = []
+  const res = await _([1, 2, 3])
+    .map(x => Error(x + ''))
+    .asyncReduce(async (memo, x) => memo + x, 0)
+    .errors(x => errs.push(x))
+    .toPromise()
+  expect(res).toEqual([0])
+  expect(errs.length).toBe(3)
+  expect(errs[2].message).toBe('3')
+})
