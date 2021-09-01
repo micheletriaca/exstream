@@ -236,10 +236,8 @@ test('pick', () => {
 test('pick on non object', () => {
   let exc = false
   try {
-    const res = _([1, 2, 3]).pick(['a']).values()
-    console.log(res)
+    _([1, 2, 3]).pick(['a']).values()
   } catch (e) {
-    console.log(e)
     exc = true
   }
   expect(exc).toBe(true)

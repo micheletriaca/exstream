@@ -30,7 +30,6 @@ test('fatal error in source stream - generator', () => {
       errSkipped.push(err)
     })
     .toArray(res => {
-      console.log(res)
       expect(res.length).toBe(2)
       expect(res).toEqual(expect.not.arrayContaining(errSkipped))
     })
@@ -87,19 +86,18 @@ test('error in map', () => {
 })
 
 test('error in resolve', async () => {
-  let errorCatched = false
+  let error
   const res = await _([1, 2, 3]).map(async x => {
     await h.sleep(10)
     if (x === 2) throw Error('can\'t be 2')
     return x
   }).resolve()
     .errors((err) => {
-      console.error(err.originalData)
-      errorCatched = true
+      error = err
     })
     .toPromise()
 
-  expect(errorCatched).toBe(true)
+  expect(error).not.toBe(null)
   expect(res).toEqual([1, 3])
 })
 
