@@ -30,7 +30,6 @@ test('fatal error in source stream - generator', () => {
       errSkipped.push(err)
     })
     .toArray(res => {
-      console.log(res)
       expect(res.length).toBe(2)
       expect(res).toEqual(expect.not.arrayContaining(errSkipped))
     })
@@ -87,19 +86,18 @@ test('error in map', () => {
 })
 
 test('error in resolve', async () => {
-  let errorCatched = false
+  let error
   const res = await _([1, 2, 3]).map(async x => {
     await h.sleep(10)
     if (x === 2) throw Error('can\'t be 2')
     return x
   }).resolve()
     .errors((err) => {
-      console.error(err.originalData)
-      errorCatched = true
+      error = err
     })
     .toPromise()
 
-  expect(errorCatched).toBe(true)
+  expect(error).not.toBe(null)
   expect(res).toEqual([1, 3])
 })
 
@@ -179,4 +177,45 @@ test('synchronous tasks error - runtime error', () => {
   expect(exc).not.toBe(null)
   expect(exc.message).toBe('NOO')
   expect(exc.originalData).toBe(3)
+})
+
+test('piping an error', async () => {
+  const res = []
+  const errs = []
+  return new Promise(resolve => {
+    _([1, 2, 3])
+      .map(x => { throw Error('NOO') })
+      .on('error', e => errs.push(e))
+      .pipe(h.getSlowWritable(res, 0, 10))
+      .on('finish', () => {
+        resolve()
+        expect(res).toEqual([])
+        expect(errs.length).toBe(3)
+        expect(errs[2].message).toBe('NOO')
+      })
+  })
+})
+
+test('error propagation', async () => {
+  const errs = []
+  const res = await _([1, 2, 3])
+    .map(x => Error('NOO'))
+    .ratelimit(1, 10000)
+    .batch(3)
+    .flatten()
+    .filter(x => x)
+    .asyncFilter(async x => x)
+    .uniq()
+    .uniqBy(x => x)
+    .csv()
+    .csvStringify()
+    .resolve()
+    .slice(1, 3)
+    .makeAsync(10)
+    .errors(err => errs.push(err))
+    .toPromise()
+
+  expect(res).toEqual([])
+  expect(errs.length).toBe(3)
+  expect(errs[2].message).toBe('NOO')
 })

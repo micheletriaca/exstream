@@ -4,7 +4,8 @@
   "description": "",
   "main": "src/index.js",
   "scripts": {
-    "test": "jest --verbose",
+    "test": "jest --verbose --runInBand",
+    "ci:test": "jest --runInBand",
     "lint": "eslint . --max-warnings 0"
   },
   "keywords": [],
@@ -26,6 +27,6 @@
     "eslint-plugin-security": "1.4.0",
     "eslint-plugin-sonarjs": "0.10.0",
     "highland": "^2.13.5",
-    "jest": "^27.0.6"
+    "jest": "^27.1.0"
   }
 }

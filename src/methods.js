@@ -291,6 +291,7 @@ _m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
 
 _m.slice = _.curry((start, end, s) => {
   let index = 0
+  let done = false
   start = typeof start !== 'number' || start < 0 ? 0 : start
   end = typeof end !== 'number' ? Infinity : end
 
@@ -301,14 +302,15 @@ _m.slice = _.curry((start, end, s) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
-      push(null, _.nil)
+      if (!done) push(null, _.nil)
     } else {
-      if (index >= end) {
+      if (!done && index >= end) {
         // if I'm terminating the stream before the end of its source,
         // I've to call .end() or .destroy() instead of pushing nil in
         // order to back propagate destroy and to remove the stream from
         // the consumers of its source
         s1.destroy()
+        done = true
       } else if (index >= start) {
         push(null, x)
       }
@@ -322,26 +324,33 @@ _m.take = _.curry((n, s) => s.slice(0, n))
 
 _m.drop = _.curry((n, s) => s.slice(n, Infinity))
 
-_m.reduce = _.curry((fn, accumulator, s) => s.consumeSync((err, x, push) => {
-  if (x === _.nil) {
-    push(null, accumulator)
-    push(null, _.nil)
-  } else if (err) {
-    push(err)
-  } else {
-    try {
-      accumulator = fn(accumulator, x)
-    } catch (e) {
-      push(e)
+_m.reduce = _.curry((fn, accumulator, s) => {
+  const s1 = s.consumeSync((err, x, push) => {
+    if (x === _.nil) {
+      push(null, accumulator)
       push(null, _.nil)
+    } else if (err) {
+      push(err)
+    } else {
+      try {
+        accumulator = fn(accumulator, x)
+      } catch (e) {
+        try {
+          push(e)
+        } finally {
+          accumulator = undefined
+          s1.destroy()
+        }
+      }
     }
-  }
-}))
+  })
+  return s1
+})
 
 _m.reduce1 = _.curry((fn, s) => {
   let init = false
   let accumulator
-  return s.consumeSync((err, x, push) => {
+  const s1 = s.consumeSync((err, x, push) => {
     if (x === _.nil) {
       push(null, accumulator)
       push(null, _.nil)
@@ -354,15 +363,20 @@ _m.reduce1 = _.curry((fn, s) => {
       try {
         accumulator = fn(accumulator, x)
       } catch (e) {
-        push(e)
-        push(null, _.nil)
+        try {
+          push(e)
+        } finally {
+          accumulator = undefined
+          s1.destroy()
+        }
       }
     }
   })
+  return s1
 })
 
 _m.asyncReduce = _.curry((fn, accumulator, s) => {
-  return s.consume(async (err, x, push, next) => {
+  const s1 = s.consume(async (err, x, push, next) => {
     if (x === _.nil) {
       push(null, accumulator)
       push(null, _.nil)
@@ -374,11 +388,16 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
         accumulator = await fn(accumulator, x)
         next()
       } catch (e) {
-        push(e)
-        push(null, _.nil)
+        try {
+          push(e)
+        } finally {
+          accumulator = undefined
+          s1.destroy()
+        }
       }
     }
   })
+  return s1
 })
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {

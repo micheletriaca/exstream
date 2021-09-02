@@ -68,6 +68,8 @@ class Exstream extends EventEmitter {
   #write = (x, skipBackPressure = false) => {
     if (x === _.nil) this.#nilPushed = true
     const isError = x instanceof Error
+    const xx = isError ? null : x
+    const err = isError ? x : undefined
 
     if (this.paused && !skipBackPressure) {
       this.#buffer.push(x)
@@ -75,7 +77,7 @@ class Exstream extends EventEmitter {
       this.#nextCalled = false
       let syncNext = true
       this._currentRec = x
-      this.#consumeFn(isError ? x : undefined, isError ? undefined : x, this.#send, () => {
+      this.#consumeFn(err, xx, this.#send, () => {
         this.#nextCalled = true
         this._currentRec = null
         if (this.paused && !syncNext) this.resume()
@@ -84,11 +86,9 @@ class Exstream extends EventEmitter {
       if (!this.#nextCalled) this.pause()
     } else if (this.#consumeSyncFn) {
       this._currentRec = x
-      this.#consumeSyncFn(isError ? x : undefined, isError ? undefined : x, this.#send)
-    } else if (isError) {
-      this.#send(x)
+      this.#consumeSyncFn(err, xx, this.#send)
     } else {
-      this.#send(null, x)
+      this.#send(err, xx)
     }
 
     return !this.paused || skipBackPressure
@@ -244,7 +244,7 @@ class Exstream extends EventEmitter {
 
   #removeConsumer = s => {
     this.#consumers = this.#consumers.filter(c => c !== s)
-    if (s.source === this) s.source = null
+    s.source = null
     this.#checkBackPressure()
   }
 
@@ -257,7 +257,10 @@ class Exstream extends EventEmitter {
       if (x === _.nil) {
         dest.off('drain', next)
         process.nextTick(() => end.call(dest))
-      } else if (!dest.write(x || err)) {
+      } else if (err) {
+        this.emit('error', err)
+        next()
+      } else if (!dest.write(x)) {
         dest.once('drain', next)
       } else {
         next()
