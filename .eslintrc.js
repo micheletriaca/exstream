@@ -34,6 +34,7 @@ module.exports = {
         // 'max-lines': ['warn', 100],
         'max-nested-callbacks': ['warn', 3],
         'comma-dangle': ['warn', 'always-multiline'],
+        'jest/no-done-callback': 'off',
         'security/detect-object-injection': 'off',
       },
     },
