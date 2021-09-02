@@ -178,3 +178,44 @@ test('synchronous tasks error - runtime error', () => {
   expect(exc.message).toBe('NOO')
   expect(exc.originalData).toBe(3)
 })
+
+test('piping an error', async () => {
+  const res = []
+  const errs = []
+  return new Promise(resolve => {
+    _([1, 2, 3])
+      .map(x => { throw Error('NOO') })
+      .on('error', e => errs.push(e))
+      .pipe(h.getSlowWritable(res, 0, 10))
+      .on('finish', () => {
+        resolve()
+        expect(res).toEqual([])
+        expect(errs.length).toBe(3)
+        expect(errs[2].message).toBe('NOO')
+      })
+  })
+})
+
+test('error propagation', async () => {
+  const errs = []
+  const res = await _([1, 2, 3])
+    .map(x => Error('NOO'))
+    .ratelimit(1, 10000)
+    .batch(3)
+    .flatten()
+    .filter(x => x)
+    .asyncFilter(async x => x)
+    .uniq()
+    .uniqBy(x => x)
+    .csv()
+    .csvStringify()
+    .resolve()
+    .slice(1, 3)
+    .makeAsync(10)
+    .errors(err => errs.push(err))
+    .toPromise()
+
+  expect(res).toEqual([])
+  expect(errs.length).toBe(3)
+  expect(errs[2].message).toBe('NOO')
+})

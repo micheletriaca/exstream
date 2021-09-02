@@ -3,7 +3,7 @@ const methods = require('./methods')
 const csv = require('./csv')
 const utils = require('./utils')
 
-const _ = Object.assign(
+const _ = module.exports = Object.assign(
   xs => new Exstream(xs),
   utils,
   csv,
@@ -43,4 +43,3 @@ _.extend('toPromise', function () { return _.toPromise(this) })
 _.extend('toNodeStream', function (options) { return _.toNodeStream(options, this) })
 _.extend('where', function (props) { return _.where(props, this) })
 _.extend('ratelimit', function (num, ms) { return _.ratelimit(num, ms, this) })
-module.exports = _
