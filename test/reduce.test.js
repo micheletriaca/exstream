@@ -84,15 +84,44 @@ test('reduce errors', async () => {
         if (x === 3) throw Error('NOOO')
         return memo + x
       }, 0)
-      .values()
+      .value()
   } catch (ex) {
     e = ex
   }
   expect(e).not.toBe(null)
   expect(e.message).toBe('NOOO')
+  // expect(res).toBe(undefined)
+})
+
+test('reduce errors - 2', async () => {
+  let e
+  const res = _([1, 2, 3])
+    .reduce((memo, x) => {
+      if (x === 3) throw Error('NOOO')
+      return memo + x
+    }, 0)
+    .errors(ex => (e = ex))
+    .value()
+  expect(e).not.toBe(null)
+  expect(e.message).toBe('NOOO')
+  expect(res).toBe(undefined)
 })
 
 test('reduce1 errors', async () => {
+  let e
+  const res = _([1, 2, 3])
+    .reduce1((memo, x) => {
+      if (x === 3) throw Error('NOOO')
+      return memo + x
+    })
+    .errors(ex => (e = ex))
+    .value()
+  expect(e).not.toBe(null)
+  expect(e.message).toBe('NOOO')
+  expect(res).toBe(undefined)
+})
+
+test('reduce1 errors - 2', async () => {
   let e
   try {
     _([1, 2, 3])

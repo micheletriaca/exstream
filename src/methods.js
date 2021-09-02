@@ -335,8 +335,12 @@ _m.reduce = _.curry((fn, accumulator, s) => {
       try {
         accumulator = fn(accumulator, x)
       } catch (e) {
-        push(e)
-        s1.destroy()
+        try {
+          push(e)
+        } finally {
+          accumulator = undefined
+          s1.destroy()
+        }
       }
     }
   })
@@ -359,8 +363,12 @@ _m.reduce1 = _.curry((fn, s) => {
       try {
         accumulator = fn(accumulator, x)
       } catch (e) {
-        push(e)
-        s1.destroy()
+        try {
+          push(e)
+        } finally {
+          accumulator = undefined
+          s1.destroy()
+        }
       }
     }
   })
@@ -380,8 +388,12 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
         accumulator = await fn(accumulator, x)
         next()
       } catch (e) {
-        push(e)
-        s1.destroy()
+        try {
+          push(e)
+        } finally {
+          accumulator = undefined
+          s1.destroy()
+        }
       }
     }
   })
