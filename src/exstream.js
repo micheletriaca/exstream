@@ -244,7 +244,7 @@ class Exstream extends EventEmitter {
 
   #removeConsumer = s => {
     this.#consumers = this.#consumers.filter(c => c !== s)
-    if (s.source === this) s.source = null
+    s.source = null
     this.#checkBackPressure()
   }
 

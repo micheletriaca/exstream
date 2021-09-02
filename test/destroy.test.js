@@ -170,7 +170,7 @@ test('destroy test', () => {
   process.nextTick(() => expect(res).toEqual(['1', '2']))
 })
 
-test('graceful end test', () => {
+test('graceful end', () => {
   const res = []
   const s = _()
   s.consumeSync((err, x, push) => {
@@ -186,4 +186,21 @@ test('graceful end test', () => {
   expect(res).toEqual(['1', '2'])
   s.end()
   process.nextTick(() => expect(res).toEqual(['1', '2', '3', '4']))
+})
+
+test('endless stream', () => {
+  return new Promise(resolve => {
+    const res = []
+    const nodeStream = h.getSlowWritable(res, 0, 10)
+    const s = _(['1', '2', '3'])
+    s.pipe(nodeStream, { end: false })
+    setImmediate(() => {
+      resolve()
+      expect(res).toEqual(['1', '2', '3'])
+      expect(s.ended).toBe(true)
+      expect(nodeStream.writableEnded).toBe(false)
+      nodeStream.end()
+      expect(nodeStream.writableEnded).toBe(true)
+    })
+  })
 })

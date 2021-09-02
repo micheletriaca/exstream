@@ -100,8 +100,8 @@ _m.csv = (opts, s) => {
   const escapedQuote = opts.escape + opts.quote
 
   function getFirstRow (row) {
-    if (opts.header === true) return row
     if (_.isFunction(opts.header)) return opts.header(row)
+    else return row
   }
 
   function convertObj (row) {
