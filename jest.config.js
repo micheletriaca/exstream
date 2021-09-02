@@ -5,14 +5,18 @@
 
 module.exports = {
   collectCoverage: true,
+  collectCoverageFrom: ['src/**/*.js'],
   coverageDirectory: 'coverage',
-  coverageProvider: 'v8',
-  verbose: false,
-  // notify: true,
-  notifyMode: 'change',
-  testEnvironment: 'node',
-  coverageThreshold: {
-    global: { branches: 90, functions: 92, lines: 92, statements: 92 },
-  },
+  coverageProvider: 'babel',
   coverageReporters: ['text', 'lcov'],
+  coverageThreshold: {
+    global: {
+      branches: 95,
+      functions: 95,
+      lines: 95,
+      statements: 95,
+    },
+  },
+  verbose: false,
+  testEnvironment: 'node',
 }
