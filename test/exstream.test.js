@@ -3,7 +3,6 @@ jest.setTimeout(2000)
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
-const __ = require('highland')
 const zlib = require('zlib')
 jest.mock('fs')
 const fs = require('fs')
@@ -505,22 +504,6 @@ test('async generator no exstream', async () => {
     res.push(x)
   }
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-})
-
-test('async highland', () => {
-  let i = -1
-  return new Promise(resolve => __((push, next) => {
-    i++
-    if (i < 10) {
-      h.sleep(0).then(() => {
-        push(null, i)
-        next()
-      })
-    } else push(null, __.nil)
-  }).toArray(res => {
-    resolve()
-    expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-  }))
 })
 
 test('async exstream', () => {
