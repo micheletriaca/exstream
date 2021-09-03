@@ -23,14 +23,14 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
-_m.where = (props, s) => s.filter(x => {
+_m.where = _.curry((props, s) => s.filter(x => {
   for (const p in props) {
     if (x[p] !== props[p]) return false
   }
   return true
-})
+}))
 
-_m.ratelimit = (num, ms, s) => {
+_m.ratelimit = _.curry((num, ms, s) => {
   let sent = 0
   let startWindow
   return s.consume((err, x, push, next) => {
@@ -62,7 +62,7 @@ _m.ratelimit = (num, ms, s) => {
       }, ms - Math.round(Number((process.hrtime.bigint() - startWindow) / 1000000n)))
     }
   })
-}
+})
 
 _m.collect = s => {
   const xs = []
@@ -135,6 +135,8 @@ _m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
 
 _m.batch = _.curry((size, s) => {
   let buffer = []
+  size = parseFloat(size)
+  if (isNaN(size)) throw Error('error in .batch(). size must be a valid number')
   return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
@@ -186,7 +188,7 @@ _m.pick = _.curry((fields, s) => s.map(x => {
     try {
       hasKey = fields[i] in x
     } catch (e) {
-      throw Error('Error in .pick(). Expected object, got ' + (typeof x))
+      throw Error('error in .pick(). expected object, got ' + (typeof x))
     }
     if (hasKey) res[fields[i]] = x[fields[i]]
   }
@@ -235,7 +237,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
       if (promises.length === 0) push(err, x)
       else ended = true
     } else if (!_.isPromise(x)) {
-      push(Error('item must be a promise'))
+      push(Error('error in .resolve(). item must be a promise'))
       next()
     } else {
       const resPointer = {}
@@ -291,26 +293,25 @@ _m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
 
 _m.slice = _.curry((start, end, s) => {
   let index = 0
-  let done = false
-  start = typeof start !== 'number' || start < 0 ? 0 : start
-  end = typeof end !== 'number' ? Infinity : end
+  start = parseFloat(start)
+  end = parseFloat(end)
 
-  if (start === 0 && end === Infinity) return this
-  if (start >= end) throw new Error('start must be lower than end')
+  if (start === 0 && end === Infinity) return s
+  if (start >= end) throw Error('error in .slice(). start must be lower than end')
+  if (isNaN(start) || isNaN(end)) throw Error('error in .slice(). start and end must be numbers')
 
   const s1 = s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
-      if (!done) push(null, _.nil)
+      push(null, _.nil)
     } else {
-      if (!done && index >= end) {
+      if (index >= end) {
         // if I'm terminating the stream before the end of its source,
         // I've to call .end() or .destroy() instead of pushing nil in
         // order to back propagate destroy and to remove the stream from
         // the consumers of its source
         s1.destroy()
-        done = true
       } else if (index >= start) {
         push(null, x)
       }

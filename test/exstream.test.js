@@ -119,21 +119,6 @@ test('each', () => {
   _([1, 2, 3]).each(x => expect(x).toBe(i++))
 })
 
-test('each errors', () => {
-  let i = 1
-  const res = []
-  let exc = false
-  _([1, 2, 3, Error('NOO'), Error('NOO'), 4]).on('error', e => {
-    exc = true
-    expect(e.message).toBe('NOO')
-  }).each(x => {
-    res.push(x)
-    expect(x).toBe(i++)
-  })
-  expect(exc).toBe(true)
-  expect(res).toEqual([1, 2, 3, 4])
-})
-
 const largeArray = n => {
   const res = []
   for (let i = 0; i < n; i++) {
@@ -141,18 +126,13 @@ const largeArray = n => {
   }
   return res
 }
-const k = largeArray(100000)
+const k = largeArray(1000)
 const k2 = k.map(x => x * 2)
 
-test('map hl', () => {
-  __(k).map(x => x * 2).toArray(res => {
+test('map1', () => {
+  _(k).map(x => x * 2).toArray(res => {
     expect(res).toEqual(k2)
   })
-})
-
-test('map', () => {
-  const res = _(k).map(x => x * 2).values()
-  expect(res).toEqual(k2)
 })
 
 test('map wrap', () => {
@@ -174,19 +154,6 @@ test('async map wrap', async () => {
   expect(res[345]).toEqual({ input: 345, output: 690 })
 })
 
-test('plain map', () => {
-  const k3 = k.map(x => x * 2)
-  expect(k3).toEqual(k2)
-})
-
-test('old plain map', () => {
-  const k3 = []
-  for (let i = 0, len = k.length; i < len; i++) {
-    k3.push(k[i] * 2)
-  }
-  expect(k3).toEqual(k2)
-})
-
 test('map object', () => {
   _({ a: 1, b: 2 }).map(x => x).toArray(res => {
     expect(res).toEqual([['a', 1], ['b', 2]])
@@ -204,6 +171,20 @@ test('batch', () => {
   _([1, 2, 3, 4, 5]).batch(3).toArray(res => {
     expect(res).toEqual([[1, 2, 3], [4, 5]])
   })
+})
+
+test('batch strange params', () => {
+  _([1, 2, 3, 4, 5]).batch('3').toArray(res => {
+    expect(res).toEqual([[1, 2, 3], [4, 5]])
+  })
+  let e
+  try {
+    _([1, 2, 3, 4, 5]).batch('nan')
+  } catch (ex) {
+    e = ex
+  }
+  expect(e).not.toBe(null)
+  expect(e.message).toBe('error in .batch(). size must be a valid number')
 })
 
 test('pluck on non object', () => {

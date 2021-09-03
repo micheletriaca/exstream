@@ -9,6 +9,7 @@ _.isPromise = x => x instanceof Promise
 _.isAsyncIterable = x => _.isDefined(x) && typeof x[Symbol.asyncIterator] === 'function'
 _.isFunction = x => typeof x === 'function'
 _.isString = x => typeof x === 'string'
+_.isError = x => x instanceof Error
 _.isReadableStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
 _.escapeRegExp = text => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 _.partial = function (f, ...args) { return function (...args2) { return f.call(this, ...args, ...args2) } }
