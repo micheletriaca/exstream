@@ -51,6 +51,7 @@ class Exstream extends EventEmitter {
       const r = Readable.from(xs)
       r.once('error', this.#onStreamError).pipe(this)
       this.#destroyers.push(() => r.off('error', this.#onStreamError))
+      this.once('end', () => r.destroy())
       this.#synchronous = false
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
@@ -67,7 +68,7 @@ class Exstream extends EventEmitter {
 
   #write = (x, skipBackPressure = false) => {
     if (x === _.nil) this.#nilPushed = true
-    const isError = x instanceof Error
+    const isError = _.isError(x)
     const xx = isError ? null : x
     const err = isError ? x : undefined
 
@@ -304,7 +305,7 @@ class Exstream extends EventEmitter {
       return target(this)
     } else {
       throw Error(
-        'Error in .through(). You must pass a non consumed' +
+        'error in .through(). you must pass a non consumed' +
         'exstream instance, a pipeline or a node stream',
       )
     }
@@ -348,7 +349,7 @@ class Exstream extends EventEmitter {
 
   value () {
     const res = this.values()
-    if (res.length > 1) throw Error('This stream has emitted more than 1 value. Use .values() instad of .value()')
+    if (res.length > 1) throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
     return res[0]
   }
 

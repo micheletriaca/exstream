@@ -140,7 +140,7 @@ test('reduce1 errors - 2', async () => {
 test('reduce1 errors pass through', async () => {
   const errs = []
   const res = _([1, 2, 3])
-    .map(x => Error(x + ''))
+    .map(x => { throw Error(x + '') })
     .reduce1((memo, x) => memo + x)
     .errors(err => errs.push(err))
     .value()
@@ -152,7 +152,7 @@ test('reduce1 errors pass through', async () => {
 test('reduce errors pass through', async () => {
   const errs = []
   const res = _([1, 2, 3])
-    .map(x => Error(x + ''))
+    .map(x => { throw Error(x + '') })
     .reduce((memo, x) => memo + x, 0)
     .errors(err => errs.push(err))
     .value()
@@ -181,7 +181,7 @@ test('async reduce errors', async () => {
 test('async reduce errors pass through', async () => {
   const errs = []
   const res = await _([1, 2, 3])
-    .map(x => Error(x + ''))
+    .map(x => { throw Error(x + '') })
     .asyncReduce(async (memo, x) => memo + x, 0)
     .errors(x => errs.push(x))
     .toPromise()
