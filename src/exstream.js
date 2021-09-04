@@ -26,6 +26,7 @@ class Exstream extends EventEmitter {
 
   #consumeFn = null
   #consumeSyncFn = null
+  #currentRec = null
   #nextCalled = true
   #consumers = []
   #autostart = true
@@ -63,10 +64,10 @@ class Exstream extends EventEmitter {
 
   write (x) {
     if (this.#nilPushed) throw Error('Cannot write to stream after nil')
-    return this.#write(x)
+    return this._write(x)
   }
 
-  #write = (x, skipBackPressure = false) => {
+  _write (x, skipBackPressure = false) {
     if (x === _.nil) this.#nilPushed = true
     const isError = _.isError(x)
     const xx = isError ? null : x
@@ -74,20 +75,20 @@ class Exstream extends EventEmitter {
 
     if (this.paused && !skipBackPressure) {
       this.#buffer.push(x)
+    } else if (this.#consumeSyncFn) {
+      this.#currentRec = x
+      this.#consumeSyncFn(err, xx, this.#send)
     } else if (this.#consumeFn) {
       this.#nextCalled = false
       let syncNext = true
-      this._currentRec = x
+      this.#currentRec = x
       this.#consumeFn(err, xx, this.#send, () => {
         this.#nextCalled = true
-        this._currentRec = null
+        this.#currentRec = null
         if (this.paused && !syncNext) this.resume()
       })
       syncNext = false
       if (!this.#nextCalled) this.pause()
-    } else if (this.#consumeSyncFn) {
-      this._currentRec = x
-      this.#consumeSyncFn(err, xx, this.#send)
     } else {
       this.#send(err, xx)
     }
@@ -96,7 +97,7 @@ class Exstream extends EventEmitter {
   }
 
   #send = (err, x) => {
-    const wrappedError = _.isDefined(err) ? new ExstreamError(err, this._currentRec) : null
+    const wrappedError = _.isDefined(err) ? new ExstreamError(err, this.#currentRec) : null
     if (x === _.nil) process.nextTick(() => this.end())
     for (let i = 0, len = this.#consumers.length; i < len; i++) {
       this.#consumers[i].write(wrappedError || x)
@@ -111,7 +112,7 @@ class Exstream extends EventEmitter {
 
   end () {
     if (this.ended) return
-    if (!this.#nilPushed) this.#write(_.nil)
+    if (!this.#nilPushed) this._write(_.nil)
     if (this.paused) this.flushBuffer(true)
     this.ended = true
     this.emit('end')
@@ -137,7 +138,7 @@ class Exstream extends EventEmitter {
     if (!this.#buffer.length) return
     let i = 0
     for (const len = this.#buffer.length; i < len; i++) {
-      if (!this.#write(this.#buffer[i], force)) break // write can synchronously pause the stream in case of back pressure
+      if (!this._write(this.#buffer[i], force)) break // write can synchronously pause the stream in case of back pressure
     }
     this.#buffer = this.#buffer.slice(i + 1)
   }
@@ -172,13 +173,13 @@ class Exstream extends EventEmitter {
       const w = x => this.write(x)
       do {
         let syncNext = true
-        this._nextCalled = false
+        this.#nextCalled = false
         this.#generator(w, () => {
-          this._nextCalled = true
+          this.#nextCalled = true
           if (this.paused && !syncNext) this.resume()
         })
         syncNext = false
-        if (!this._nextCalled) this.pause()
+        if (!this.#nextCalled) this.pause()
       } while (!this.paused && !this.#nilPushed)
     }
 
@@ -364,8 +365,8 @@ class Exstream extends EventEmitter {
     const res = []
     this.consumeSync((err, x, push) => {
       if (err) throw err
-      if (x !== _.nil) res.push(x)
-      else push(null, _.nil)
+      else if (x === _.nil) push(null, _.nil)
+      else res.push(x)
     }).resume()
     return res
   }
