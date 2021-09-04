@@ -226,6 +226,7 @@ test('error propagation', async () => {
     .batch(3)
     .flatten()
     .filter(x => x)
+    .reject(x => x)
     .asyncFilter(async x => x)
     .uniq()
     .uniqBy(x => x)
@@ -300,6 +301,20 @@ test('filter errors', () => {
     .errors(e => (ex = e))
     .values()
   expect(res).toEqual([1, 2])
+  expect(ex).not.toBe(null)
+  expect(ex.originalData).toBe(3)
+})
+
+test('reject errors', () => {
+  let ex
+  const res = _([1, 2, 3])
+    .reject(x => {
+      if (x === 3) throw Error('NOO')
+      return true
+    })
+    .errors(e => (ex = e))
+    .values()
+  expect(res).toEqual([])
   expect(ex).not.toBe(null)
   expect(ex.originalData).toBe(3)
 })

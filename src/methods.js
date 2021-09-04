@@ -115,6 +115,21 @@ _m.filter = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
+_m.reject = _.curry((fn, s) => s.consumeSync((err, x, push) => {
+  if (err) {
+    push(err)
+  } else if (x === _.nil) {
+    push(err, x)
+  } else {
+    try {
+      const res = fn(x)
+      if (!res) push(null, x)
+    } catch (e) {
+      push(e)
+    }
+  }
+}))
+
 _m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
   if (err) {
     push(err)

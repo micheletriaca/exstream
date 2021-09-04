@@ -337,6 +337,13 @@ test('filter', () => {
   expect(res).toEqual([2])
 })
 
+test('reject', () => {
+  const res = _([1, 2, 3])
+    .reject(x => x % 2 === 0)
+    .values()
+  expect(res).toEqual([1, 3])
+})
+
 test('async filter', async () => {
   const res = await _([1, 2, 3])
     .asyncFilter(async x => {
