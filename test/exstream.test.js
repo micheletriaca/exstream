@@ -366,6 +366,12 @@ test('through pipeline', () => {
     })
 })
 
+test('through accepts null', () => {
+  const s = _([1, 2, 3])
+  const s1 = s.through(null)
+  expect(s).toBe(s1)
+})
+
 test('through _.function', async () => {
   const transform = _.map(x => x.toString(), null)
 
@@ -513,20 +519,16 @@ test('async generator no exstream', async () => {
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
-test('async exstream', () => {
+test('async exstream', async () => {
   let i = -1
-  return new Promise(resolve => _((write, next) => {
-    i++
-    if (i < 10) {
-      h.sleep(0).then(() => {
-        write(i)
-        next()
-      })
+  const res = await _(async (write, next) => {
+    if (++i < 10) {
+      await h.sleep(0)
+      write(i)
+      next()
     } else write(_.nil)
-  }).toArray(res => {
-    resolve()
-    expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-  }))
+  }).toPromise()
+  expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
 test('toNodeStream', () => {

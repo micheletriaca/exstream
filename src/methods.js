@@ -244,40 +244,42 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
 
-  return s.consume((err, x, push, next) => {
+  function handlePromiseResult (isError, res, resPointer, push, next) {
+    resPointer.result = res
+    resPointer.isError = isError
+    const idx = promises.indexOf(resPointer)
+
+    if (preserveOrder) {
+      while (_.has(promises[0], 'result')) {
+        const item = promises.shift()
+        if (item.isError) push(item.result)
+        else push(null, item.result)
+      }
+    } else {
+      promises.splice(idx, 1)
+      if (isError) push(res)
+      else push(null, res)
+    }
+
+    if (ended && promises.length === 0) push(null, _.nil)
+    else if (!preserveOrder || idx === 0) next()
+  }
+
+  return s.consume((err, el, push, next) => {
     if (err) {
       push(err)
       next()
-    } else if (x === _.nil) {
-      if (promises.length === 0) push(err, x)
+    } else if (el === _.nil) {
+      if (promises.length === 0) push(null, _.nil)
       else ended = true
-    } else if (!_.isPromise(x)) {
+    } else if (!_.isPromise(el)) {
       push(Error('error in .resolve(). item must be a promise'))
       next()
     } else {
       const resPointer = {}
       promises.push(resPointer)
-      const handlePromiseResult = isError => res => {
-        const idx = promises.indexOf(resPointer)
-        if (preserveOrder) {
-          resPointer.result = res
-          resPointer.isError = isError
-          while (_.has(promises[0], 'result')) {
-            const item = promises.shift()
-            if (item.isError) push(item.result)
-            else push(null, item.result)
-          }
-          if (ended && promises.length === 0) push(null, _.nil)
-          else if (idx === 0) next()
-        } else {
-          promises.splice(idx, 1)
-          if (isError) push(res)
-          else push(null, res)
-          if (ended && promises.length === 0) push(null, _.nil)
-          else next()
-        }
-      }
-      x.then(handlePromiseResult(false), handlePromiseResult(true))
+      el.then(res => handlePromiseResult(false, res, resPointer, push, next))
+        .catch(res => handlePromiseResult(true, res, resPointer, push, next))
       if (promises.length < parallelism) next()
     }
   })

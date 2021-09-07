@@ -113,7 +113,7 @@ class Exstream extends EventEmitter {
   end () {
     if (this.ended) return
     if (!this.#nilPushed) this._write(_.nil)
-    if (this.paused) this.flushBuffer(true)
+    if (this.paused) this.#flushBuffer(true)
     this.ended = true
     this.emit('end')
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
@@ -134,13 +134,43 @@ class Exstream extends EventEmitter {
     this.end()
   }
 
-  flushBuffer (force = false) {
+  #flushBuffer = (force = false) => {
     if (!this.#buffer.length) return
     let i = 0
     for (const len = this.#buffer.length; i < len; i++) {
       if (!this._write(this.#buffer[i], force)) break // write can synchronously pause the stream in case of back pressure
     }
     this.#buffer = this.#buffer.slice(i + 1)
+  }
+
+  #consumeSourceData = () => {
+    let nextVal
+    do {
+      try {
+        nextVal = this.#sourceData.next()
+      } catch (e) {
+        // es6 generator fatal error. Must end the stream
+        this.write(e)
+        this.end()
+        return
+      }
+      if (!nextVal.done) this.write(nextVal.value)
+      else this.end()
+    } while (!this.#nilPushed && !this.paused)
+  }
+
+  #consumeGenerator = () => {
+    const w = x => this.write(x)
+    do {
+      let syncNext = true
+      this.#nextCalled = false
+      this.#generator(w, () => {
+        this.#nextCalled = true
+        if (this.paused && !syncNext) this.resume()
+      })
+      syncNext = false
+      if (!this.#nextCalled) this.pause()
+    } while (!this.paused && !this.#nilPushed)
   }
 
   pause () {
@@ -150,41 +180,20 @@ class Exstream extends EventEmitter {
 
   resume () {
     if (!this.#autostart || !this.#nextCalled || !this.paused) return
+
     this.paused = false
-
-    this.flushBuffer() // This can pause the stream again if the consumers are slow
-
+    this.#flushBuffer() // This can pause the stream again if the consumers are slow
     if (this.paused) return
+
     if (this.#sourceData) {
-      let nextVal
-      do {
-        try {
-          nextVal = this.#sourceData.next()
-        } catch (e) {
-          // es6 generator fatal error. Must end the stream
-          this.write(e)
-          this.end()
-          return
-        }
-        if (!nextVal.done) this.write(nextVal.value)
-        else this.end()
-      } while (!this.#nilPushed && !this.paused)
+      this.#consumeSourceData() // This can pause the stream again if the consumers are slow
     } else if (this.#generator) {
-      const w = x => this.write(x)
-      do {
-        let syncNext = true
-        this.#nextCalled = false
-        this.#generator(w, () => {
-          this.#nextCalled = true
-          if (this.paused && !syncNext) this.resume()
-        })
-        syncNext = false
-        if (!this.#nextCalled) this.pause()
-      } while (!this.paused && !this.#nilPushed)
+      this.#consumeGenerator() // This can pause the stream again if the consumers are slow
     }
 
-    if (!this.paused && !this.source) this.emit('drain')
-    else if (this.source) this.source.#checkBackPressure()
+    if (this.paused) return
+    if (!this.source) this.emit('drain')
+    else this.source.#checkBackPressure()
   }
 
   #checkBackPressure = () => {
@@ -314,38 +323,36 @@ class Exstream extends EventEmitter {
 
   merge (parallelism = 1, preserveOrder = true) {
     this.#synchronous = false
-    if (parallelism === 1 && preserveOrder) preserveOrder = false // We don't want to buffer data unnecessarily
+
+    const pipeline = preserveOrder
+      ? new Exstream().resolve(parallelism, preserveOrder).flatten()
+      : new Exstream().errors(err => merged.write(err)).resolve(parallelism, preserveOrder)
+
     const merged = new Exstream()
     const ss = this.map(subS => {
       if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
-      if (!preserveOrder) {
-        return new Promise(resolve => {
-          const subS2 = subS.consume((err, x, push, next) => {
-            if (x === _.nil) {
-              merged.off('end', endListener)
-              merged.off('drain', next)
-              resolve()
-            } else if (!merged.write(err || x)) {
-              merged.once('drain', next)
-            } else {
-              next()
-            }
-          })
-          const endListener = () => subS2.destroy()
-          merged.once('end', endListener)
-          subS2.resume()
+      if (preserveOrder) return subS.toPromise()
+      return new Promise(resolve => {
+        const subS2 = subS.consume((err, x, push, next) => {
+          if (x === _.nil) {
+            merged.off('end', endListener)
+            merged.off('drain', next)
+            resolve()
+          } else if (!merged.write(err || x)) {
+            merged.once('drain', next)
+          } else {
+            next()
+          }
         })
-      } else {
-        return subS.toPromise()
-      }
-    }).through(preserveOrder ? null : new Exstream().errors(err => merged.write(err)))
-      .resolve(parallelism, preserveOrder)
-      .through(preserveOrder ? new Exstream().flatten() : null)
+        const endListener = () => subS2.destroy()
+        merged.once('end', endListener)
+        subS2.resume()
+      })
+    }).through(pipeline)
 
-    if (!preserveOrder) {
-      ss.once('end', () => merged.end()).resume()
-      return merged
-    } else return ss
+    if (preserveOrder) return ss
+    ss.once('end', () => merged.end()).resume()
+    return merged
   }
 
   value () {
