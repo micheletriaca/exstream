@@ -1,5 +1,4 @@
 const _ = require('../src/index')
-// const csv = require('csv')
 
 test('csv', () => {
   _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
@@ -115,6 +114,44 @@ test('csv stringify - non string values', () => {
     .values()
     .join('')
   expect(res).toEqual('1,false,true\nnull,5,6\n')
+})
+
+test('csv stringify - injected header', () => {
+  const res = _([['1', '2', '3'], ['4', '5', '6']])
+    .csvStringify({ header: ['h1', null, 'h3'] })
+    .values()
+    .join('')
+  expect(res).toEqual('h1,h3\n1,3\n4,6\n')
+})
+
+test('csv stringify - injected header + objects', () => {
+  const res = _([{ a: 1, b: 2 }, { a: 3, b: 4 }])
+    .csvStringify({ header: ['a'] })
+    .values()
+    .join('')
+  expect(res).toEqual('a\n1\n3\n')
+})
+
+test('csv stringify - autodetect header + objects', () => {
+  const res = _([{ a: 1, b: 2 }, { a: 3, b: 4 }])
+    .csvStringify({ header: true })
+    .values()
+    .join('')
+  expect(res).toEqual('a,b\n1,2\n3,4\n')
+})
+
+test('csv stringify - autodetect header + arrays throw an error', () => {
+  let ex
+  try {
+    _([['1', '2', '3'], ['4', '5', '6']])
+      .csvStringify({ header: true })
+      .values()
+      .join('')
+  } catch (e) {
+    ex = e
+  }
+  expect(ex).not.toBe(null)
+  expect(ex.message).toBe('.csvStringify() called with an invalid header option')
 })
 
 /*

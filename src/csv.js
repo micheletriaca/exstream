@@ -51,34 +51,48 @@ _m.csvStringify = (opts, s) => {
     return opts.quote + replace(x, opts.quote, escapedQuote) + opts.quote
   }
 
+  function processFirstRow (x, push) {
+    const arrayMode = Array.isArray(x)
+    const injectedHeader = Array.isArray(opts.header)
+
+    if (!opts.header) {
+      firstRow = Object.keys(x)
+      processRow(x, push)
+    } else if (arrayMode) {
+      if (!injectedHeader) throw Error('.csvStringify() called with an invalid header option')
+      firstRow = opts.header.map((y, i) => _.isDefined(y) ? i : null).filter(_.isDefined)
+      processRow(opts.header, push)
+      processRow(x, push)
+    } else {
+      firstRow = injectedHeader ? firstRow = opts.header : Object.keys(x)
+      const rowToPush = firstRow.map(processCell).join(opts.separator) + opts.lineEnding
+      if (opts.encoding !== 'utf8') push(null, Buffer.from(rowToPush, opts.encoding))
+      else push(null, rowToPush)
+      processRow(x, push)
+    }
+  }
+
+  function processRow (x, push) {
+    const row = []
+    for (let i = 0, len = firstRow.length; i < len; i++) {
+      const cell = x[firstRow[i]] + ''
+      if (!cell) row.push(opts.quotedEmpty ? doubleQuote : '')
+      else row.push(processCell(cell))
+    }
+    const res = row.join(opts.separator) + opts.lineEnding
+    if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
+    else push(null, res)
+  }
+
   return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(null, _.nil)
+    } else if (!firstRow) {
+      processFirstRow(x, push)
     } else {
-      if (!firstRow) {
-        firstRow = Object.keys(x)
-        if (Array.isArray(x)) firstRow = firstRow.map(x => parseInt(x))
-        if (opts.header) {
-          const rowToPush = firstRow.map(processCell).join(opts.separator) + opts.lineEnding
-          if (opts.encoding !== 'utf8') push(null, Buffer.from(rowToPush, opts.encoding))
-          else push(null, rowToPush)
-        }
-      }
-      const row = Array(x.length)
-      for (let i = 0; i < firstRow.length; i++) {
-        row[i] = x[firstRow[i]] + ''
-        if (!row[i]) {
-          if (opts.quotedEmpty) row[i] = doubleQuote
-          else row[i] = ''
-          continue
-        }
-        row[i] = processCell(row[i])
-      }
-      const res = row.join(opts.separator) + opts.lineEnding
-      if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
-      else push(null, res)
+      processRow(x, push)
     }
   })
 }
