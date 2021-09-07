@@ -1,8 +1,8 @@
 // __mocks__/fs.js
 'use strict'
 
-const h = require('../test/helpers.js')
-const _ = require('../src/index')
+const h = require('../helpers.js')
+const _ = require('../../src/index')
 
 const fs = jest.createMockFromModule('fs')
 
