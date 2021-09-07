@@ -34,10 +34,12 @@ _m.csvStringify = (opts, s) => {
 
   function checkQuote (x) {
     return (
-      x.indexOf(opts.separator) > -1 ||
-      x.indexOf(opts.quote) > -1 ||
-      x.indexOf(opts.lineEnding) > -1 ||
-      (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1)
+      typeof x === 'string' && (
+        x.indexOf(opts.separator) > -1 ||
+        x.indexOf(opts.quote) > -1 ||
+        x.indexOf(opts.lineEnding) > -1 ||
+        (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1)
+      )
     )
   }
 

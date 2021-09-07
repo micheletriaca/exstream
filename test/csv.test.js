@@ -109,6 +109,14 @@ test('csv fast mode', () => {
   ])
 })
 
+test('csv stringify - non string values', () => {
+  const res = _([[1, false, true], [null, 5, 6]])
+    .csvStringify()
+    .values()
+    .join('')
+  expect(res).toEqual('1,false,true\nnull,5,6\n')
+})
+
 /*
 TODO -> FIX ERROR HANDLING AND WRITE TESTS ABOUT IT
 */
