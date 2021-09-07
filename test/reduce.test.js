@@ -189,3 +189,38 @@ test('async reduce errors pass through', async () => {
   expect(errs.length).toBe(3)
   expect(errs[2].message).toBe('3')
 })
+
+test('groupBy basics', async () => {
+  const res = _([
+    { a: 1, b: 1 },
+    { a: 1, b: 2 },
+    { a: 2 },
+  ]).groupBy('a')
+    .value()
+
+  expect(res).toEqual({ 1: [{ a: 1, b: 1 }, { a: 1, b: 2 }], 2: [{ a: 2 }] })
+})
+
+test('groupBy nested', async () => {
+  const res = _([
+    { a: { c: 3 }, b: 1 },
+    { a: { c: 3 }, b: 2 },
+    { a: null },
+  ]).groupBy('a.c')
+    .value()
+
+  // eslint-disable-next-line quote-props
+  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], 'null': [{ a: null }] })
+})
+
+test('groupBy function', async () => {
+  const res = _([
+    { a: { c: 3 }, b: 1 },
+    { a: { c: 3 }, b: 2 },
+    { a: null },
+  ]).groupBy(x => (x.a && x.a.c) || 'null')
+    .value()
+
+  // eslint-disable-next-line quote-props
+  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], 'null': [{ a: null }] })
+})

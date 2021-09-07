@@ -412,6 +412,16 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
   return s1
 })
 
+_m.groupBy = _.curry((fnOrString, s) => {
+  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, 'null') : fnOrString
+  return s.reduce((accumulator, x) => {
+    const key = getter(x)
+    if (!_.has(accumulator, key)) accumulator[key] = []
+    accumulator[key].push(x)
+    return accumulator
+  }, {})
+})
+
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null
   let start = null
