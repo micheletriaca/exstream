@@ -186,14 +186,8 @@ _m.uniq = s => {
 }
 
 _m.pluck = _.curry((field, defaultValue, s) => {
-  const fieldPath = _.splitFieldPath(field)
-  const traverse = (v, path, idx = 0) => {
-    if (idx === path.length) return v
-    else if (!Object.hasOwnProperty.call(v, path[idx])) return defaultValue
-    else return traverse(v[path[idx]], path, idx + 1)
-  }
-
-  return s.map(x => traverse(x, fieldPath))
+  const getter = _.makeGetter(field, defaultValue)
+  return s.map(getter)
 })
 
 _m.pick = _.curry((fields, s) => s.map(x => {

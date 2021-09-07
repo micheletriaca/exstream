@@ -20,3 +20,12 @@ _.splitFieldPath = x => x
   .replace(/['"]/g, '')
   .replace(/^\./, '')
   .split('.')
+_.traverse = (v, path, defaultValue, idx = 0) => {
+  if (idx === path.length) return v
+  else if (!_.isDefined(v) || !Object.hasOwnProperty.call(v, path[idx])) return defaultValue
+  else return _.traverse(v[path[idx]], path, defaultValue, idx + 1)
+}
+_.makeGetter = (fieldPath, defaultValue) => {
+  const fieldTokens = _.splitFieldPath(fieldPath)
+  return x => _.traverse(x, fieldTokens, defaultValue)
+}
