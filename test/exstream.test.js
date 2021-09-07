@@ -429,7 +429,7 @@ test('promises hl style', async () => {
 
   const res = await _([2, 3, 4])
     .map(x => _(sleep(x)))
-    .merge(3)
+    .merge(3, true)
     .toPromise()
 
   expect(res).toEqual([2, 3, 4])
@@ -580,7 +580,7 @@ test('merging with fs', async () => new Promise((resolve) => {
   _([
     _(fs.createReadStream('out')),
     _(fs.createReadStream('out')),
-  ]).merge()
+  ]).merge(1)
     .pipe(fs.createWriteStream('out3'))
     .on('finish', () => {
       resolve()

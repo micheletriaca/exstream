@@ -321,7 +321,7 @@ class Exstream extends EventEmitter {
     }
   }
 
-  merge (parallelism = 1, preserveOrder = true) {
+  merge (parallelism = Infinity, preserveOrder = false) {
     this.#synchronous = false
 
     const pipeline = preserveOrder

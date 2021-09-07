@@ -5,10 +5,10 @@ test('merging basics', done => {
   _([
     _([1, 2]),
     _([3, 4]),
-  ]).merge()
+  ]).merge(1)
     .toArray(results => {
-      expect(results).toEqual([1, 2, 3, 4])
       done()
+      expect(results).toEqual([1, 2, 3, 4])
     })
 })
 
@@ -19,8 +19,21 @@ test('fork and merging basics', done => {
     source.fork().map(i => i * 3),
   ]).merge()
     .toArray(results => {
-      expect(results).toEqual([2, 4, 3, 6])
       done()
+      expect(results).toEqual([2, 3, 4, 6])
+    })
+  source.start()
+})
+
+test('fork and merging basics - preserve order', done => {
+  const source = _([1, 2], 'source')
+  _([
+    source.fork().map(i => i * 2),
+    source.fork().map(i => i * 3),
+  ], 'merge').merge(2, true)
+    .toArray(results => {
+      done()
+      expect(results).toEqual([2, 4, 3, 6])
     })
   source.start()
 })
@@ -30,10 +43,10 @@ test('fork and merging with promises in first fork', done => {
   _([
     source.fork().map(async i => i * 2).resolve().tap(console.log),
     source.fork().map(i => i * 3).tap(console.log),
-  ]).merge(2)
+  ]).merge(2, true)
     .toArray(results => {
-      expect(results).toEqual([2, 4, 3, 6])
       done()
+      expect(results).toEqual([2, 4, 3, 6])
     })
   source.start()
 })
@@ -43,7 +56,7 @@ test('fork and merging with promises in second fork', done => {
   _([
     source.fork().map(i => i * 2).tap(console.log),
     source.fork().map(async i => i * 3).resolve().tap(console.log),
-  ]).merge()
+  ]).merge(1)
     .toArray(results => {
       expect(results).toEqual([2, 4, 3, 6])
       done()
@@ -59,7 +72,7 @@ test('fork and merging basics with toPromise', async () => {
   const results = await _([
     first,
     second,
-  ]).merge(2)
+  ]).merge(2, true)
     .toPromise()
   expect(results).toEqual([2, 4, 6, 8, 3, 6, 9, 12])
 })
@@ -72,7 +85,7 @@ test('fork and merging - promise in the source stream as well', async () => {
   const results = await _([
     first,
     second,
-  ]).merge(2)
+  ]).merge(2, true)
     .toPromise()
   console.log(results)
   expect(results).toEqual([4, 6, 8, 10, 6, 9, 12, 15])
@@ -86,7 +99,7 @@ test('take() in a fork', async () => {
   const results = await _([
     first,
     second,
-  ]).merge(2)
+  ]).merge(2, true)
     .toPromise()
   expect(results).toEqual([4, 6, 8, 10, 6])
 })
