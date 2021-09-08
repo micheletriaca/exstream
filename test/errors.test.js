@@ -45,16 +45,15 @@ test('fatal error in source stream - async generator', async () => {
     }
   }
 
-  await _(asyncGenerator())
+  const res = await _(asyncGenerator())
     .errors((err, push) => {
       errSkipped.push(err)
       push(null, 33)
     })
     .toPromise()
-    .then(res => {
-      expect(res.length).toBe(4)
-      expect(res).toEqual(expect.not.arrayContaining(errSkipped))
-    })
+
+  expect(res.length).toBe(4)
+  expect(res).toEqual(expect.not.arrayContaining(errSkipped))
 
   let errGenerated = null
   let errCatched = null

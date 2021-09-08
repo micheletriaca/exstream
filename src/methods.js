@@ -186,14 +186,8 @@ _m.uniq = s => {
 }
 
 _m.pluck = _.curry((field, defaultValue, s) => {
-  const fieldPath = _.splitFieldPath(field)
-  const traverse = (v, path, idx = 0) => {
-    if (idx === path.length) return v
-    else if (!Object.hasOwnProperty.call(v, path[idx])) return defaultValue
-    else return traverse(v[path[idx]], path, idx + 1)
-  }
-
-  return s.map(x => traverse(x, fieldPath))
+  const getter = _.makeGetter(field, defaultValue)
+  return s.map(getter)
 })
 
 _m.pick = _.curry((fields, s) => s.map(x => {
@@ -244,40 +238,42 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
 
-  return s.consume((err, x, push, next) => {
+  function handlePromiseResult (isError, res, resPointer, push, next) {
+    resPointer.result = res
+    resPointer.isError = isError
+    const idx = promises.indexOf(resPointer)
+
+    if (preserveOrder) {
+      while (_.has(promises[0], 'result')) {
+        const item = promises.shift()
+        if (item.isError) push(item.result)
+        else push(null, item.result)
+      }
+    } else {
+      promises.splice(idx, 1)
+      if (isError) push(res)
+      else push(null, res)
+    }
+
+    if (ended && promises.length === 0) push(null, _.nil)
+    else if (!preserveOrder || idx === 0) next()
+  }
+
+  return s.consume((err, el, push, next) => {
     if (err) {
       push(err)
       next()
-    } else if (x === _.nil) {
-      if (promises.length === 0) push(err, x)
+    } else if (el === _.nil) {
+      if (promises.length === 0) push(null, _.nil)
       else ended = true
-    } else if (!_.isPromise(x)) {
+    } else if (!_.isPromise(el)) {
       push(Error('error in .resolve(). item must be a promise'))
       next()
     } else {
       const resPointer = {}
       promises.push(resPointer)
-      const handlePromiseResult = isError => res => {
-        const idx = promises.indexOf(resPointer)
-        if (preserveOrder) {
-          resPointer.result = res
-          resPointer.isError = isError
-          while (_.has(promises[0], 'result')) {
-            const item = promises.shift()
-            if (item.isError) push(item.result)
-            else push(null, item.result)
-          }
-          if (ended && promises.length === 0) push(null, _.nil)
-          else if (idx === 0) next()
-        } else {
-          promises.splice(idx, 1)
-          if (isError) push(res)
-          else push(null, res)
-          if (ended && promises.length === 0) push(null, _.nil)
-          else next()
-        }
-      }
-      x.then(handlePromiseResult(false), handlePromiseResult(true))
+      el.then(res => handlePromiseResult(false, res, resPointer, push, next))
+        .catch(res => handlePromiseResult(true, res, resPointer, push, next))
       if (promises.length < parallelism) next()
     }
   })
@@ -415,6 +411,19 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
   })
   return s1
 })
+
+_m.groupBy = _.curry((fnOrString, s) => {
+  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, 'null') : fnOrString
+  return s.reduce((accumulator, x) => {
+    const key = getter(x)
+    if (!_.has(accumulator, key)) accumulator[key] = []
+    accumulator[key].push(x)
+    return accumulator
+  }, {})
+})
+
+_m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
+_m.sort = s => _m.sortBy(undefined, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null

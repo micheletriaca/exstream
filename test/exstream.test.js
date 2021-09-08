@@ -366,6 +366,12 @@ test('through pipeline', () => {
     })
 })
 
+test('through accepts null', () => {
+  const s = _([1, 2, 3])
+  const s1 = s.through(null)
+  expect(s).toBe(s1)
+})
+
 test('through _.function', async () => {
   const transform = _.map(x => x.toString(), null)
 
@@ -423,7 +429,7 @@ test('promises hl style', async () => {
 
   const res = await _([2, 3, 4])
     .map(x => _(sleep(x)))
-    .merge(3)
+    .merge(3, true)
     .toPromise()
 
   expect(res).toEqual([2, 3, 4])
@@ -513,20 +519,16 @@ test('async generator no exstream', async () => {
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
-test('async exstream', () => {
+test('async exstream', async () => {
   let i = -1
-  return new Promise(resolve => _((write, next) => {
-    i++
-    if (i < 10) {
-      h.sleep(0).then(() => {
-        write(i)
-        next()
-      })
+  const res = await _(async (write, next) => {
+    if (++i < 10) {
+      await h.sleep(0)
+      write(i)
+      next()
     } else write(_.nil)
-  }).toArray(res => {
-    resolve()
-    expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-  }))
+  }).toPromise()
+  expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
 test('toNodeStream', () => {
@@ -578,7 +580,7 @@ test('merging with fs', async () => new Promise((resolve) => {
   _([
     _(fs.createReadStream('out')),
     _(fs.createReadStream('out')),
-  ]).merge()
+  ]).merge(1)
     .pipe(fs.createWriteStream('out3'))
     .on('finish', () => {
       resolve()
@@ -692,3 +694,20 @@ test('multipipe', () => new Promise(resolve => {
     ])
   })
 }))
+
+test('sort numbers', () => {
+  const res = _([3, 8, 1, 4, 2]).sort().values()
+  expect(res).toEqual([1, 2, 3, 4, 8])
+})
+
+test('sort strings', () => {
+  const res = _(['1', '2', '10', '20']).sort().values()
+  expect(res).toEqual(['1', '10', '2', '20'])
+})
+
+test('sort by', () => {
+  const res = _(['1', '2', '10', '20'])
+    .sortBy((a, b) => parseInt(a) > parseInt(b) ? 1 : -1)
+    .values()
+  expect(res).toEqual(['1', '2', '10', '20'])
+})
