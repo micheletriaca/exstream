@@ -97,7 +97,7 @@ test('standard end propagation', async () => {
       s3Ended = true
       expect(s4Ended).toBe(false)
     })
-    .merge()
+    .merge(1)
     .on('end', () => {
       expect(s1Ended).toBe(true)
       expect(s2Ended).toBe(true)
@@ -139,7 +139,7 @@ test('explicit end', async () => new Promise((resolve) => {
     })
 
   const s2 = s
-    .merge()
+    .merge(1)
     .on('end', () => {
       expect(s1Ended).toBe(true)
       expect(s2Ended).toBe(true)

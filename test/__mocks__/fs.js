@@ -1,8 +1,8 @@
 // __mocks__/fs.js
 'use strict'
 
-const h = require('../test/helpers.js')
-const __ = require('highland')
+const h = require('../helpers.js')
+const _ = require('../../src/index')
 
 const fs = jest.createMockFromModule('fs')
 
@@ -12,12 +12,13 @@ function __setMockFiles (newMockFiles) {
 }
 
 function createReadStream (file) {
-  return __(mockFiles[file])
+  return _(mockFiles[file])
     .batch(1000)
-    .map(x => __(new Promise(resolve => {
-      h.sleep(10).then(() => resolve(x))
-    })))
-    .sequence()
+    .map(async x => {
+      await h.sleep(10)
+      return x
+    })
+    .resolve()
     .flatten()
     .toNodeStream()
 }

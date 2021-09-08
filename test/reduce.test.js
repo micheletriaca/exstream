@@ -140,7 +140,7 @@ test('reduce1 errors - 2', async () => {
 test('reduce1 errors pass through', async () => {
   const errs = []
   const res = _([1, 2, 3])
-    .map(x => Error(x + ''))
+    .map(x => { throw Error(x + '') })
     .reduce1((memo, x) => memo + x)
     .errors(err => errs.push(err))
     .value()
@@ -152,7 +152,7 @@ test('reduce1 errors pass through', async () => {
 test('reduce errors pass through', async () => {
   const errs = []
   const res = _([1, 2, 3])
-    .map(x => Error(x + ''))
+    .map(x => { throw Error(x + '') })
     .reduce((memo, x) => memo + x, 0)
     .errors(err => errs.push(err))
     .value()
@@ -181,11 +181,46 @@ test('async reduce errors', async () => {
 test('async reduce errors pass through', async () => {
   const errs = []
   const res = await _([1, 2, 3])
-    .map(x => Error(x + ''))
+    .map(x => { throw Error(x + '') })
     .asyncReduce(async (memo, x) => memo + x, 0)
     .errors(x => errs.push(x))
     .toPromise()
   expect(res).toEqual([0])
   expect(errs.length).toBe(3)
   expect(errs[2].message).toBe('3')
+})
+
+test('groupBy basics', async () => {
+  const res = _([
+    { a: 1, b: 1 },
+    { a: 1, b: 2 },
+    { a: 2 },
+  ]).groupBy('a')
+    .value()
+
+  expect(res).toEqual({ 1: [{ a: 1, b: 1 }, { a: 1, b: 2 }], 2: [{ a: 2 }] })
+})
+
+test('groupBy nested', async () => {
+  const res = _([
+    { a: { c: 3 }, b: 1 },
+    { a: { c: 3 }, b: 2 },
+    { a: null },
+  ]).groupBy('a.c')
+    .value()
+
+  // eslint-disable-next-line quote-props
+  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], 'null': [{ a: null }] })
+})
+
+test('groupBy function', async () => {
+  const res = _([
+    { a: { c: 3 }, b: 1 },
+    { a: { c: 3 }, b: 2 },
+    { a: null },
+  ]).groupBy(x => (x.a && x.a.c) || 'null')
+    .value()
+
+  // eslint-disable-next-line quote-props
+  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], 'null': [{ a: null }] })
 })

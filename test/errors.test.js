@@ -45,16 +45,15 @@ test('fatal error in source stream - async generator', async () => {
     }
   }
 
-  await _(asyncGenerator())
+  const res = await _(asyncGenerator())
     .errors((err, push) => {
       errSkipped.push(err)
       push(null, 33)
     })
     .toPromise()
-    .then(res => {
-      expect(res.length).toBe(4)
-      expect(res).toEqual(expect.not.arrayContaining(errSkipped))
-    })
+
+  expect(res.length).toBe(4)
+  expect(res).toEqual(expect.not.arrayContaining(errSkipped))
 
   let errGenerated = null
   let errCatched = null
@@ -196,14 +195,37 @@ test('piping an error', async () => {
   })
 })
 
+test('piping an error with pipeline', async () => {
+  const res = []
+  const errs = []
+
+  const p = _.pipeline()
+    .map(x => x)
+    .map(x => { throw Error('NOO') })
+
+  return new Promise(resolve => {
+    _([1, 2, 3])
+      .through(p.generateStream())
+      .on('error', e => errs.push(e))
+      .pipe(h.getSlowWritable(res, 0, 10))
+      .on('finish', () => {
+        resolve()
+        expect(res).toEqual([])
+        expect(errs.length).toBe(3)
+        expect(errs[2].message).toBe('NOO')
+      })
+  })
+})
+
 test('error propagation', async () => {
   const errs = []
   const res = await _([1, 2, 3])
-    .map(x => Error('NOO'))
+    .map(x => { throw Error('NOO') })
     .ratelimit(1, 10000)
     .batch(3)
     .flatten()
     .filter(x => x)
+    .reject(x => x)
     .asyncFilter(async x => x)
     .uniq()
     .uniqBy(x => x)
@@ -218,4 +240,96 @@ test('error propagation', async () => {
   expect(res).toEqual([])
   expect(errs.length).toBe(3)
   expect(errs[2].message).toBe('NOO')
+})
+
+test('resolve non promises', async () => {
+  const errs = []
+  _([1, 2, 3]).resolve().errors(e => errs.push(e)).resume()
+  expect(errs.length).toBe(3)
+  expect(errs[0].message).toBe('error in .resolve(). item must be a promise')
+})
+
+test('resolve promises errors', async () => {
+  const errs = []
+  await _([1, 2, 3])
+    .map(async x => Promise.reject(Error('NOO')))
+    .resolve(1, false)
+    .errors(e => errs.push(e))
+    .toPromise()
+  expect(errs.length).toBe(3)
+  expect(errs[0].message).toBe('NOO')
+})
+
+test('uniqBy errors', () => {
+  const errs = []
+  const res = _([1, 2, 3])
+    .uniqBy(x => {
+      if ('value' in x) return x.value
+    })
+    .errors(e => errs.push(e))
+    .values()
+
+  expect(res).toEqual([])
+  expect(errs.length).toBe(3)
+})
+
+test('each errors', () => {
+  let i = 1
+  const res = []
+  let exc = false
+  _([1, 2, 3, 'NOO', 'NOO', 4])
+    .map(x => { if (_.isString(x)) throw Error(x); else return x })
+    .on('error', e => {
+      exc = true
+      expect(e.message).toBe('NOO')
+    }).each(x => {
+      res.push(x)
+      expect(x).toBe(i++)
+    })
+  expect(exc).toBe(true)
+  expect(res).toEqual([1, 2, 3, 4])
+})
+
+test('filter errors', () => {
+  let ex
+  const res = _([1, 2, 3])
+    .filter(x => {
+      if (x === 3) throw Error('NOO')
+      return true
+    })
+    .errors(e => (ex = e))
+    .values()
+  expect(res).toEqual([1, 2])
+  expect(ex).not.toBe(null)
+  expect(ex.originalData).toBe(3)
+})
+
+test('reject errors', () => {
+  let ex
+  const res = _([1, 2, 3])
+    .reject(x => {
+      if (x === 3) throw Error('NOO')
+      return true
+    })
+    .errors(e => (ex = e))
+    .values()
+  expect(res).toEqual([])
+  expect(ex).not.toBe(null)
+  expect(ex.originalData).toBe(3)
+})
+
+test('async filter errors', async () => {
+  let e
+  const res = await _([1, 2, 3])
+    .asyncFilter(async x => {
+      await h.sleep(100)
+      if (x === 3) throw Error('NOO')
+      return true
+    })
+    .errors(ex => (e = ex))
+    .toPromise()
+
+  expect(res).toEqual([1, 2])
+  expect(e).not.toBe(null)
+  expect(e.message).toBe('NOO')
 })

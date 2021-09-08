@@ -17,6 +17,8 @@ module.exports = {
       statements: 95,
     },
   },
+  roots: ['<rootDir>/test/'],
+  setupFilesAfterEnv: ['<rootDir>/test/jest.setup.js'],
   verbose: false,
   testEnvironment: 'node',
 }

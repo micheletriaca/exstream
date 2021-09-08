@@ -9,6 +9,7 @@ _.isPromise = x => x instanceof Promise
 _.isAsyncIterable = x => _.isDefined(x) && typeof x[Symbol.asyncIterator] === 'function'
 _.isFunction = x => typeof x === 'function'
 _.isString = x => typeof x === 'string'
+_.isError = x => x instanceof Error
 _.isReadableStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
 _.escapeRegExp = text => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 _.partial = function (f, ...args) { return function (...args2) { return f.call(this, ...args, ...args2) } }
@@ -19,3 +20,12 @@ _.splitFieldPath = x => x
   .replace(/['"]/g, '')
   .replace(/^\./, '')
   .split('.')
+_.traverse = (v, path, defaultValue, idx = 0) => {
+  if (idx === path.length) return v
+  else if (!_.isDefined(v) || !Object.hasOwnProperty.call(v, path[idx])) return defaultValue
+  else return _.traverse(v[path[idx]], path, defaultValue, idx + 1)
+}
+_.makeGetter = (fieldPath, defaultValue) => {
+  const fieldTokens = _.splitFieldPath(fieldPath)
+  return x => _.traverse(x, fieldTokens, defaultValue)
+}

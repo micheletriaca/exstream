@@ -3,7 +3,6 @@ jest.setTimeout(2000)
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
-const __ = require('highland')
 const zlib = require('zlib')
 jest.mock('fs')
 const fs = require('fs')
@@ -119,21 +118,6 @@ test('each', () => {
   _([1, 2, 3]).each(x => expect(x).toBe(i++))
 })
 
-test('each errors', () => {
-  let i = 1
-  const res = []
-  let exc = false
-  _([1, 2, 3, Error('NOO'), Error('NOO'), 4]).on('error', e => {
-    exc = true
-    expect(e.message).toBe('NOO')
-  }).each(x => {
-    res.push(x)
-    expect(x).toBe(i++)
-  })
-  expect(exc).toBe(true)
-  expect(res).toEqual([1, 2, 3, 4])
-})
-
 const largeArray = n => {
   const res = []
   for (let i = 0; i < n; i++) {
@@ -141,18 +125,13 @@ const largeArray = n => {
   }
   return res
 }
-const k = largeArray(100000)
+const k = largeArray(1000)
 const k2 = k.map(x => x * 2)
 
-test('map hl', () => {
-  __(k).map(x => x * 2).toArray(res => {
+test('map1', () => {
+  _(k).map(x => x * 2).toArray(res => {
     expect(res).toEqual(k2)
   })
-})
-
-test('map', () => {
-  const res = _(k).map(x => x * 2).values()
-  expect(res).toEqual(k2)
 })
 
 test('map wrap', () => {
@@ -174,19 +153,6 @@ test('async map wrap', async () => {
   expect(res[345]).toEqual({ input: 345, output: 690 })
 })
 
-test('plain map', () => {
-  const k3 = k.map(x => x * 2)
-  expect(k3).toEqual(k2)
-})
-
-test('old plain map', () => {
-  const k3 = []
-  for (let i = 0, len = k.length; i < len; i++) {
-    k3.push(k[i] * 2)
-  }
-  expect(k3).toEqual(k2)
-})
-
 test('map object', () => {
   _({ a: 1, b: 2 }).map(x => x).toArray(res => {
     expect(res).toEqual([['a', 1], ['b', 2]])
@@ -204,6 +170,20 @@ test('batch', () => {
   _([1, 2, 3, 4, 5]).batch(3).toArray(res => {
     expect(res).toEqual([[1, 2, 3], [4, 5]])
   })
+})
+
+test('batch strange params', () => {
+  _([1, 2, 3, 4, 5]).batch('3').toArray(res => {
+    expect(res).toEqual([[1, 2, 3], [4, 5]])
+  })
+  let e
+  try {
+    _([1, 2, 3, 4, 5]).batch('nan')
+  } catch (ex) {
+    e = ex
+  }
+  expect(e).not.toBe(null)
+  expect(e.message).toBe('error in .batch(). size must be a valid number')
 })
 
 test('pluck on non object', () => {
@@ -357,6 +337,13 @@ test('filter', () => {
   expect(res).toEqual([2])
 })
 
+test('reject', () => {
+  const res = _([1, 2, 3])
+    .reject(x => x % 2 === 0)
+    .values()
+  expect(res).toEqual([1, 3])
+})
+
 test('async filter', async () => {
   const res = await _([1, 2, 3])
     .asyncFilter(async x => {
@@ -377,6 +364,12 @@ test('through pipeline', () => {
     .toArray(res => {
       expect(res).toEqual([4, 8, 12])
     })
+})
+
+test('through accepts null', () => {
+  const s = _([1, 2, 3])
+  const s1 = s.through(null)
+  expect(s).toBe(s1)
 })
 
 test('through _.function', async () => {
@@ -436,7 +429,7 @@ test('promises hl style', async () => {
 
   const res = await _([2, 3, 4])
     .map(x => _(sleep(x)))
-    .merge(3)
+    .merge(3, true)
     .toPromise()
 
   expect(res).toEqual([2, 3, 4])
@@ -526,36 +519,16 @@ test('async generator no exstream', async () => {
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
-test('async highland', () => {
+test('async exstream', async () => {
   let i = -1
-  return new Promise(resolve => __((push, next) => {
-    i++
-    if (i < 10) {
-      h.sleep(0).then(() => {
-        push(null, i)
-        next()
-      })
-    } else push(null, __.nil)
-  }).toArray(res => {
-    resolve()
-    expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-  }))
-})
-
-test('async exstream', () => {
-  let i = -1
-  return new Promise(resolve => _((write, next) => {
-    i++
-    if (i < 10) {
-      h.sleep(0).then(() => {
-        write(i)
-        next()
-      })
+  const res = await _(async (write, next) => {
+    if (++i < 10) {
+      await h.sleep(0)
+      write(i)
+      next()
     } else write(_.nil)
-  }).toArray(res => {
-    resolve()
-    expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-  }))
+  }).toPromise()
+  expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
 test('toNodeStream', () => {
@@ -607,7 +580,7 @@ test('merging with fs', async () => new Promise((resolve) => {
   _([
     _(fs.createReadStream('out')),
     _(fs.createReadStream('out')),
-  ]).merge()
+  ]).merge(1)
     .pipe(fs.createWriteStream('out3'))
     .on('finish', () => {
       resolve()
@@ -721,3 +694,20 @@ test('multipipe', () => new Promise(resolve => {
     ])
   })
 }))
+
+test('sort numbers', () => {
+  const res = _([3, 8, 1, 4, 2]).sort().values()
+  expect(res).toEqual([1, 2, 3, 4, 8])
+})
+
+test('sort strings', () => {
+  const res = _(['1', '2', '10', '20']).sort().values()
+  expect(res).toEqual(['1', '10', '2', '20'])
+})
+
+test('sort by', () => {
+  const res = _(['1', '2', '10', '20'])
+    .sortBy((a, b) => parseInt(a) > parseInt(b) ? 1 : -1)
+    .values()
+  expect(res).toEqual(['1', '2', '10', '20'])
+})

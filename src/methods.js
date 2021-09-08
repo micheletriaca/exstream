@@ -23,14 +23,14 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
-_m.where = (props, s) => s.filter(x => {
+_m.where = _.curry((props, s) => s.filter(x => {
   for (const p in props) {
     if (x[p] !== props[p]) return false
   }
   return true
-})
+}))
 
-_m.ratelimit = (num, ms, s) => {
+_m.ratelimit = _.curry((num, ms, s) => {
   let sent = 0
   let startWindow
   return s.consume((err, x, push, next) => {
@@ -62,7 +62,7 @@ _m.ratelimit = (num, ms, s) => {
       }, ms - Math.round(Number((process.hrtime.bigint() - startWindow) / 1000000n)))
     }
   })
-}
+})
 
 _m.collect = s => {
   const xs = []
@@ -115,6 +115,21 @@ _m.filter = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
+_m.reject = _.curry((fn, s) => s.consumeSync((err, x, push) => {
+  if (err) {
+    push(err)
+  } else if (x === _.nil) {
+    push(err, x)
+  } else {
+    try {
+      const res = fn(x)
+      if (!res) push(null, x)
+    } catch (e) {
+      push(e)
+    }
+  }
+}))
+
 _m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
   if (err) {
     push(err)
@@ -135,6 +150,8 @@ _m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
 
 _m.batch = _.curry((size, s) => {
   let buffer = []
+  size = parseFloat(size)
+  if (isNaN(size)) throw Error('error in .batch(). size must be a valid number')
   return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
@@ -169,14 +186,8 @@ _m.uniq = s => {
 }
 
 _m.pluck = _.curry((field, defaultValue, s) => {
-  const fieldPath = _.splitFieldPath(field)
-  const traverse = (v, path, idx = 0) => {
-    if (idx === path.length) return v
-    else if (!Object.hasOwnProperty.call(v, path[idx])) return defaultValue
-    else return traverse(v[path[idx]], path, idx + 1)
-  }
-
-  return s.map(x => traverse(x, fieldPath))
+  const getter = _.makeGetter(field, defaultValue)
+  return s.map(getter)
 })
 
 _m.pick = _.curry((fields, s) => s.map(x => {
@@ -186,7 +197,7 @@ _m.pick = _.curry((fields, s) => s.map(x => {
     try {
       hasKey = fields[i] in x
     } catch (e) {
-      throw Error('Error in .pick(). Expected object, got ' + (typeof x))
+      throw Error('error in .pick(). expected object, got ' + (typeof x))
     }
     if (hasKey) res[fields[i]] = x[fields[i]]
   }
@@ -227,40 +238,42 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
 
-  return s.consume((err, x, push, next) => {
+  function handlePromiseResult (isError, res, resPointer, push, next) {
+    resPointer.result = res
+    resPointer.isError = isError
+    const idx = promises.indexOf(resPointer)
+
+    if (preserveOrder) {
+      while (_.has(promises[0], 'result')) {
+        const item = promises.shift()
+        if (item.isError) push(item.result)
+        else push(null, item.result)
+      }
+    } else {
+      promises.splice(idx, 1)
+      if (isError) push(res)
+      else push(null, res)
+    }
+
+    if (ended && promises.length === 0) push(null, _.nil)
+    else if (!preserveOrder || idx === 0) next()
+  }
+
+  return s.consume((err, el, push, next) => {
     if (err) {
       push(err)
       next()
-    } else if (x === _.nil) {
-      if (promises.length === 0) push(err, x)
+    } else if (el === _.nil) {
+      if (promises.length === 0) push(null, _.nil)
       else ended = true
-    } else if (!_.isPromise(x)) {
-      push(Error('item must be a promise'))
+    } else if (!_.isPromise(el)) {
+      push(Error('error in .resolve(). item must be a promise'))
       next()
     } else {
       const resPointer = {}
       promises.push(resPointer)
-      const handlePromiseResult = isError => res => {
-        const idx = promises.indexOf(resPointer)
-        if (preserveOrder) {
-          resPointer.result = res
-          resPointer.isError = isError
-          while (_.has(promises[0], 'result')) {
-            const item = promises.shift()
-            if (item.isError) push(item.result)
-            else push(null, item.result)
-          }
-          if (ended && promises.length === 0) push(null, _.nil)
-          else if (idx === 0) next()
-        } else {
-          promises.splice(idx, 1)
-          if (isError) push(res)
-          else push(null, res)
-          if (ended && promises.length === 0) push(null, _.nil)
-          else next()
-        }
-      }
-      x.then(handlePromiseResult(false), handlePromiseResult(true))
+      el.then(res => handlePromiseResult(false, res, resPointer, push, next))
+        .catch(res => handlePromiseResult(true, res, resPointer, push, next))
       if (promises.length < parallelism) next()
     }
   })
@@ -291,26 +304,25 @@ _m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
 
 _m.slice = _.curry((start, end, s) => {
   let index = 0
-  let done = false
-  start = typeof start !== 'number' || start < 0 ? 0 : start
-  end = typeof end !== 'number' ? Infinity : end
+  start = parseFloat(start)
+  end = parseFloat(end)
 
-  if (start === 0 && end === Infinity) return this
-  if (start >= end) throw new Error('start must be lower than end')
+  if (start === 0 && end === Infinity) return s
+  if (start >= end) throw Error('error in .slice(). start must be lower than end')
+  if (isNaN(start) || isNaN(end)) throw Error('error in .slice(). start and end must be numbers')
 
   const s1 = s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
-      if (!done) push(null, _.nil)
+      push(null, _.nil)
     } else {
-      if (!done && index >= end) {
+      if (index >= end) {
         // if I'm terminating the stream before the end of its source,
         // I've to call .end() or .destroy() instead of pushing nil in
         // order to back propagate destroy and to remove the stream from
         // the consumers of its source
         s1.destroy()
-        done = true
       } else if (index >= start) {
         push(null, x)
       }
@@ -399,6 +411,19 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
   })
   return s1
 })
+
+_m.groupBy = _.curry((fnOrString, s) => {
+  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, 'null') : fnOrString
+  return s.reduce((accumulator, x) => {
+    const key = getter(x)
+    if (!_.has(accumulator, key)) accumulator[key] = []
+    accumulator[key].push(x)
+    return accumulator
+  }, {})
+})
+
+_m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
+_m.sort = s => _m.sortBy(undefined, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null
