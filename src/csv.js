@@ -57,6 +57,7 @@ _m.csvStringify = (opts, s) => {
 
     if (!opts.header) {
       firstRow = Object.keys(x)
+      if (arrayMode) firstRow = firstRow.map(x => parseInt(x))
       processRow(x, push)
     } else if (arrayMode) {
       if (!injectedHeader) throw Error('.csvStringify() called with an invalid header option')
@@ -64,7 +65,7 @@ _m.csvStringify = (opts, s) => {
       processRow(opts.header, push)
       processRow(x, push)
     } else {
-      firstRow = injectedHeader ? firstRow = opts.header : Object.keys(x)
+      firstRow = injectedHeader ? opts.header : Object.keys(x)
       const rowToPush = firstRow.map(processCell).join(opts.separator) + opts.lineEnding
       if (opts.encoding !== 'utf8') push(null, Buffer.from(rowToPush, opts.encoding))
       else push(null, rowToPush)
@@ -73,11 +74,11 @@ _m.csvStringify = (opts, s) => {
   }
 
   function processRow (x, push) {
-    const row = []
+    const row = Array(firstRow.length)
     for (let i = 0, len = firstRow.length; i < len; i++) {
       const cell = x[firstRow[i]] + ''
-      if (!cell) row.push(opts.quotedEmpty ? doubleQuote : '')
-      else row.push(processCell(cell))
+      if (!cell) row[i] = opts.quotedEmpty ? doubleQuote : ''
+      else row[i] = processCell(cell)
     }
     const res = row.join(opts.separator) + opts.lineEnding
     if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
