@@ -208,14 +208,14 @@ class Exstream extends EventEmitter {
     this.#synchronous = false
     const res = new Exstream()
     res.#consumeFn = fn
-    ;(this.endOfChain || this).#addConsumer(res)
+    this.#addConsumer(res)
     return res
   }
 
   consumeSync (fn) {
     const res = new Exstream()
     res.#consumeSyncFn = fn
-    ;(this.endOfChain || this).#addConsumer(res)
+    this.#addConsumer(res)
     return res
   }
 
@@ -241,16 +241,17 @@ class Exstream extends EventEmitter {
   }
 
   #addConsumer = (s, skipCheck = false) => {
-    if (!skipCheck && this.#consumers.length) {
+    const realSource = this.endOfChain || this
+    if (!skipCheck && realSource.#consumers.length) {
       throw Error(
         'This stream has already been transformed or consumed. Please ' +
         'fork() or observe() the stream if you want to perform ' +
         'parallel transformations.',
       )
     }
-    s.source = this
-    this.#consumers.push(s)
-    this.#checkBackPressure()
+    s.source = realSource
+    realSource.#consumers.push(s)
+    realSource.#checkBackPressure()
   }
 
   #removeConsumer = s => {
