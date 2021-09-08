@@ -3,6 +3,7 @@ const __ = require('../src/index.js')
 const database = { existing: '1' }
 const query = jest.fn().mockImplementation(async param => database[param])
 const exit = jest.fn()
+const sourceInput = jest.fn()
 
 const innerPipeline = __.pipeline()
   .map(query)
@@ -13,7 +14,9 @@ const mainFlow = param => {
   console.log('do something with', { param })
   const source = __([param])
     .through(innerPipeline)
-    .tap(item => console.log(item)) // uncomment this make everything work :)
+    // BUG: no tap, no party...
+    .tap(sourceInput)
+    // .tap(item => console.log(item))
 
   const fork1 = source
     .fork()
@@ -34,6 +37,7 @@ const mainFlow = param => {
 
 beforeEach(() => {
   exit.mockReset()
+  sourceInput.mockReset()
 })
 
 test('through is not executed without a tap', async () => {
@@ -49,5 +53,6 @@ test('through is not executed without a tap', async () => {
 test('wrong param 1', async () => {
   const results = await mainFlow('wrong').toPromise()
   expect(results).toEqual([])
+  expect(sourceInput).toHaveBeenCalledTimes(0)
   expect(exit).toHaveBeenCalledTimes(0)
 })
