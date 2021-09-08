@@ -14,15 +14,11 @@ const mainFlow = param => {
   console.log('do something with', { param })
   const source = __([param])
     .through(innerPipeline)
-    // BUG: no tap, no party...
-    .tap(sourceInput)
-    // .tap(item => console.log(item))
 
   const fork1 = source
     .fork()
     .map(query)
     .resolve()
-    // .tap(item => console.log(item))
 
   const fork2 = source
     .fork()
@@ -31,7 +27,6 @@ const mainFlow = param => {
   source.start()
   return __([fork1, fork2])
     .merge(2, false)
-    // .tap(item => console.log(item))
     .tap(exit)
 }
 
