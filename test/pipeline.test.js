@@ -72,3 +72,20 @@ test('pipeline with pipe and multiple through', done => {
     expect(res).toEqual([4, 8, 12])
   })
 })
+
+test('wow', async () => {
+  const source = _(['1'])
+    .tap(sourceInput)
+
+  const fork1 = source.fork()
+  const fork2 = source.fork()
+
+  const results = await _([fork1, fork2])
+    .merge()
+    .tap(exit)
+    .toPromise()
+
+  expect(sourceInput).toHaveBeenCalledTimes(1)
+  expect(exit).toHaveBeenCalledTimes(2)
+  expect(results).toEqual(['1', '1'])
+})
