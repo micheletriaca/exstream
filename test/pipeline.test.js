@@ -1,35 +1,53 @@
 const __ = require('../src/index.js')
 
-const query = jest.fn().mockImplementation(async () => ({}))
-const aggregate = (a, b) => ({ ...a, ...b })
+const database = { existing: '1' }
+const query = jest.fn().mockImplementation(async param => database[param])
+const exit = jest.fn()
 
 const innerPipeline = __.pipeline()
   .map(query)
   .resolve()
+  .filter(result => result === '1')
 
 const mainFlow = param => {
   console.log('do something with', { param })
   const source = __([param])
     .through(innerPipeline)
-    // .tap(item => console.log(item)) // uncomment this make everything work :)
+    .tap(item => console.log(item)) // uncomment this make everything work :)
 
   const fork1 = source
     .fork()
     .map(query)
     .resolve()
-    // .flatten() // this make it all fails, it should not.
+    // .tap(item => console.log(item))
 
   const fork2 = source
     .fork()
+    // .map(() => 2) // uncomment this to see surprises
 
   source.start()
   return __([fork1, fork2])
-    .merge()
-    .reduce1(aggregate)
-    .tap(item => console.log(item))
+    .merge(2, false)
+    // .tap(item => console.log(item))
+    .tap(exit)
 }
 
-test('through', async () => {
-  const [result] = await mainFlow('something').toPromise()
-  expect(result).toEqual({})
+beforeEach(() => {
+  exit.mockReset()
+})
+
+test('through is not executed without a tap', async () => {
+  const results = await mainFlow('existing').toPromise()
+  console.log(results)
+  expect(results).toHaveLength(2)
+  expect(results).toEqual(['1', undefined])
+  expect(exit).toHaveBeenCalledTimes(2)
+  expect(exit).toHaveBeenLastCalledWith(undefined)
+  // expect(exit).toHaveBeenNthCalledWith(2, '1', undefined)
+})
+
+test('wrong param 1', async () => {
+  const results = await mainFlow('wrong').toPromise()
+  expect(results).toEqual([])
+  expect(exit).toHaveBeenCalledTimes(0)
 })
