@@ -112,7 +112,7 @@ test('merging1', async () => new Promise((resolve) => {
     s.fork().map(x => x * 2 + 2),
     s.fork().map(x => x * 2 + 3),
   ]).merge(3, false)
-    .pipe(h.getSlowWritable(res))
+    .pipe(h.getSlowWritable(res, 5))
     .on('finish', () => {
       expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
       resolve()
