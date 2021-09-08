@@ -694,3 +694,20 @@ test('multipipe', () => new Promise(resolve => {
     ])
   })
 }))
+
+test('sort numbers', () => {
+  const res = _([3, 8, 1, 4, 2]).sort().values()
+  expect(res).toEqual([1, 2, 3, 4, 8])
+})
+
+test('sort strings', () => {
+  const res = _(['1', '2', '10', '20']).sort().values()
+  expect(res).toEqual(['1', '10', '2', '20'])
+})
+
+test('sort by', () => {
+  const res = _(['1', '2', '10', '20'])
+    .sortBy((a, b) => parseInt(a) > parseInt(b) ? 1 : -1)
+    .values()
+  expect(res).toEqual(['1', '2', '10', '20'])
+})

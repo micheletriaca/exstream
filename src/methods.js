@@ -422,6 +422,9 @@ _m.groupBy = _.curry((fnOrString, s) => {
   }, {})
 })
 
+_m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
+_m.sort = s => _m.sortBy(undefined, s)
+
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null
   let start = null
