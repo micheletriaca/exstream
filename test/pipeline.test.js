@@ -1,4 +1,4 @@
-const __ = require('../src/index.js')
+const _ = require('../src/index.js')
 
 const database = { existing: '1' }
 const query1 = jest.fn().mockImplementation(async param => database[param])
@@ -6,14 +6,14 @@ const query2 = jest.fn().mockImplementation(async param => param + 1)
 const exit = jest.fn()
 const sourceInput = jest.fn()
 
-const innerPipeline = __.pipeline()
+const innerPipeline = _.pipeline()
   .map(query1)
   .resolve()
   // .tap(item => console.log(item))
   .filter(result => result === '1')
 
 const mainFlow = param => {
-  const source = __([param])
+  const source = _([param])
     .through(innerPipeline)
 
   const fork1 = source
@@ -25,7 +25,7 @@ const mainFlow = param => {
     .fork()
 
   source.start()
-  return __([fork1, fork2])
+  return _([fork1, fork2])
     .merge(2, true)
     .tap(exit)
 }
@@ -50,4 +50,24 @@ test('zero results from main pipe -> nothing goes through forks', async () => {
   expect(results).toEqual([])
   expect(sourceInput).toHaveBeenCalledTimes(0)
   expect(exit).toHaveBeenCalledTimes(0)
+})
+
+test('pipeline with fork', async () => {
+  const p = _.pipeline().map(async x => x).resolve()
+
+  const s = _([1, 2, 3]).through(p)
+  const forks = [s.fork().map(x => x * 2), s.fork().map(async x => x * 3).resolve()]
+  s.start()
+  const res = await _(forks).merge().toPromise()
+  expect(res).toEqual([2, 3, 4, 6, 6, 9])
+})
+
+test('pipeline with pipe and multiple through', done => {
+  const p = _.pipeline().map(async x => x * 2).resolve()
+  const res = []
+
+  _([1, 2, 3]).through(p).through(p).pipe(h.getSlowWritable(res, 0, 0)).on('finish', () => {
+    done()
+    expect(res).toEqual([4, 8, 12])
+  })
 })
