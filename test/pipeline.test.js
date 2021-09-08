@@ -1,4 +1,5 @@
 const _ = require('../src/index.js')
+const h = require('./helpers')
 
 const database = { existing: '1' }
 const query1 = jest.fn().mockImplementation(async param => database[param])
