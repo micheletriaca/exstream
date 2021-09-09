@@ -103,6 +103,7 @@ class Exstream extends EventEmitter {
     // i store it locally because this array could be filtered
     // during the loop if one consumer ends (for ex. it can happen withtake or slice)
     const consumers = this.#consumers
+    if (err && !this.#consumers.length) this.emit('error', wrappedError)
     for (let i = 0, len = consumers.length; i < len; i++) {
       consumers[i].write(wrappedError || x)
     }

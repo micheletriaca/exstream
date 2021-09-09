@@ -87,22 +87,18 @@ test('fork and merging - promise in the source stream as well', async () => {
 
 test('consuming fork in different "transactions" throw exception', done => {
   const source = _([1, 2, 3])
-  source.fork().toArray(res => {
-    console.log(res)
-  })
+  source.fork().toArray(res => {})
   setTimeout(() => {
     let ex
     try {
-      source.fork().map(x => x * 2).toArray(res => {
-        expect(true).toBe(false)
-      })
+      source.fork().map(x => x * 2).toArray(res => {})
     } catch (e) {
       ex = e
     }
     done()
     expect(ex).not.toBe(null)
     expect(ex.message).toBe('this stream is already started. you can\'t fork it anymore')
-  }, 10)
+  }, 50)
 })
 
 test('consuming fork in different "transactions" with disable autostart', done => {
