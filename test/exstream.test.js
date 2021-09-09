@@ -569,7 +569,6 @@ test('forking', async () => {
   const p1 = s.fork().map(x => x * 2 + 1).toPromise()
   const p2 = s.fork().map(x => x * 2 + 2).toPromise()
   const p3 = s.fork().map(x => x * 2 + 3).toPromise()
-  s.start()
   const [r1, r2, r3] = await Promise.all([p1, p2, p3])
   expect(r1).toEqual([3, 5, 7])
   expect(r2).toEqual([4, 6, 8])
@@ -589,9 +588,10 @@ test('merging with fs', async () => new Promise((resolve) => {
     })
 }))
 
-test('pipe pipeline', async () => new Promise((resolve) => {
+test('pipe pipeline', done => {
   const p = _.pipeline()
     .map(x => x.toString())
+    .take(10)
     .collect()
     .map(x => x.join().split('\n'))
     .flatten()
@@ -599,10 +599,10 @@ test('pipe pipeline', async () => new Promise((resolve) => {
 
   const res = []
   fs.createReadStream('out').pipe(p.generateStream()).pipe(h.getSlowWritable(res, 0)).on('finish', () => {
-    resolve()
-    expect(res.length).toBe(10001)
+    done()
+    expect(res.length).toBe(11)
   })
-}))
+})
 
 test('pipeToFile', () => {
   return new Promise(resolve => {

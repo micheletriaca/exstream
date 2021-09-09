@@ -42,7 +42,7 @@ test('merge end propagation', () => {
 
 test('fork end propagation', () => {
   return new Promise(resolve => {
-    const s = _(h.randomStringGenerator(Infinity))
+    const s = _(h.randomStringGenerator(Infinity)).makeAsync(10)
     const s1 = s.fork().take(3)
     const s2 = s.fork()
     const s3 = _([s1, s2]).merge(2, false)
@@ -51,7 +51,7 @@ test('fork end propagation', () => {
       expect(s.ended).toBe(false)
       expect(s1.ended).toBe(true)
       expect(s2.ended).toBe(false)
-      expect(s3.ended).toBe(true)
+      expect(s3.ended).toBe(false)
     })
     s2.once('end', () => {
       expect(s.ended).toBe(false)

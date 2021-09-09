@@ -35,7 +35,6 @@ test('fork and back pressure', async () => new Promise(resolve => {
     expect(res).toEqual(['1', '1', '2', '2', '3', '4', '5'])
   }).pipe(h.getSlowWritable(res, 0))
   // .on('finish', () => console.log('l finish'))
-  setImmediate(() => stream.start())
 }))
 
 test('slice validation', () => {
