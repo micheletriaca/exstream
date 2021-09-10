@@ -190,3 +190,16 @@ test('merge a stream of streams piped in a writable node stream, controlling the
     .toPromise()
   expect(res).toEqual([1, 2, 3, 4, 5, 6])
 })
+
+test('node writable stream can be wrapped in exs', done => {
+  const res = []
+  const ns = h.getSlowWritable(res, 0, 0)
+  _(ns).toArray(res2 => {
+    done()
+    expect(res).toEqual([1])
+    expect(res2).toEqual([]) // the exs istance is writable only, it does not emit any value
+  })
+
+  ns.write(1)
+  ns.end()
+})

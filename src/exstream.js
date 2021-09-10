@@ -43,11 +43,22 @@ class Exstream extends EventEmitter {
       return this
     } else if (_.isExstream(xs)) {
       return xs
-    } else if (_.isNodeStream(xs)) {
+    } else if (_.isNodeStream(xs) && xs.readable) {
       xs.once('error', this.#onStreamError).pipe(this)
       this.once('end', () => xs.destroy())
       this.#destroyers.push(() => xs.off('error', this.#onStreamError))
       this.#synchronous = false
+    } else if (_.isNodeStream(xs) && !xs.readable) {
+      this.readable = false
+      this.resume()
+      const handleFinish = () => { this.emit('finish'); this.destroy() }
+      const handleClose = () => { this.emit('close'); this.destroy() }
+      xs.once('finish', handleFinish)
+      xs.once('close', handleClose)
+      this.#destroyers.push(() => {
+        xs.off('finish', handleFinish)
+        xs.off('finish', handleClose)
+      })
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
     } else if (_.isAsyncIterable(xs)) {
@@ -317,19 +328,10 @@ class Exstream extends EventEmitter {
       const pipelineInstance = target.generateStream()
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
-    } else if (_.isNodeStream(target) && target.readable) {
+    } else if (_.isNodeStream(target)) {
       this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)
-    } else if (_.isNodeStream(target) && !target.readable) {
-      this.#synchronous = false
-      this.pipe(target)
-      const s = new Exstream()
-      s.readable = false
-      s.resume()
-      target.once('finish', () => { s.emit('finish'); s.destroy() })
-      target.once('close', () => { s.emit('close'); s.destroy() })
-      return s
     } else if (_.isFunction(target)) {
       return target(this)
     } else {
