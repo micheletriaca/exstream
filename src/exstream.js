@@ -15,6 +15,7 @@ class ExstreamError extends Error {
 class Exstream extends EventEmitter {
   __exstream__ = true
   writable = true
+  readable = true
 
   #resumedAtLestOnce = false
   paused = true
@@ -42,7 +43,7 @@ class Exstream extends EventEmitter {
       return this
     } else if (_.isExstream(xs)) {
       return xs
-    } else if (_.isReadableStream(xs)) {
+    } else if (_.isNodeStream(xs)) {
       xs.once('error', this.#onStreamError).pipe(this)
       this.once('end', () => xs.destroy())
       this.#destroyers.push(() => xs.off('error', this.#onStreamError))
@@ -120,7 +121,7 @@ class Exstream extends EventEmitter {
     if (!this.#nilPushed) this._write(_.nil)
     if (this.paused) this.#flushBuffer(true)
     this.ended = true
-    this.emit('end')
+    if (this.readable) this.emit('end')
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
     const source = this.source
     if (source) {
@@ -316,10 +317,19 @@ class Exstream extends EventEmitter {
       const pipelineInstance = target.generateStream()
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
-    } else if (_.isReadableStream(target)) {
+    } else if (_.isNodeStream(target) && target.readable) {
       this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)
+    } else if (_.isNodeStream(target) && !target.readable) {
+      this.#synchronous = false
+      this.pipe(target)
+      const s = new Exstream()
+      s.readable = false
+      s.resume()
+      target.once('finish', () => { s.emit('finish'); s.destroy() })
+      target.once('close', () => { s.emit('close'); s.destroy() })
+      return s
     } else if (_.isFunction(target)) {
       return target(this)
     } else {
