@@ -16,6 +16,7 @@ class Exstream extends EventEmitter {
   __exstream__ = true
   writable = true
 
+  #resumedAtLestOnce = false
   paused = true
   ended = false
   #nilPushed = false
@@ -97,10 +98,13 @@ class Exstream extends EventEmitter {
   }
 
   #send = (err, x) => {
-    const wrappedError = _.isDefined(err) ? new ExstreamError(err, this.#currentRec) : null
+    const wrappedError = err ? new ExstreamError(err, this.#currentRec) : null
     if (x === _.nil) process.nextTick(() => this.end())
-    for (let i = 0, len = this.#consumers.length; i < len; i++) {
-      this.#consumers[i].write(wrappedError || x)
+    // i store it locally because this array could be filtered
+    // during the loop if one consumer ends (for ex. it can happen withtake or slice)
+    const consumers = this.#consumers
+    for (let i = 0, len = consumers.length; i < len; i++) {
+      consumers[i].write(wrappedError || x)
     }
   }
 
@@ -181,6 +185,7 @@ class Exstream extends EventEmitter {
   resume () {
     if (!this.#autostart || !this.#nextCalled || !this.paused) return
 
+    this.#resumedAtLestOnce = true
     this.paused = false
     this.#flushBuffer() // This can pause the stream again if the consumers are slow
     if (this.paused) return
@@ -290,9 +295,11 @@ class Exstream extends EventEmitter {
     return dest
   }
 
-  fork () {
+  fork (disableAutostart = false) {
+    if (this.#resumedAtLestOnce) throw Error('this stream is already started. you can\'t fork it anymore')
     this.#synchronous = false
     this.#autostart = false
+    if (!disableAutostart) process.nextTick(() => this.start())
     const res = new Exstream()
     this.#addConsumer(res, true)
     return res

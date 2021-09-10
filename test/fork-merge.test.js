@@ -22,7 +22,6 @@ test('fork and merging basics', done => {
       done()
       expect(results).toEqual([2, 3, 4, 6])
     })
-  source.start()
 })
 
 test('fork and merging basics - preserve order', done => {
@@ -35,7 +34,6 @@ test('fork and merging basics - preserve order', done => {
       done()
       expect(results).toEqual([2, 4, 3, 6])
     })
-  source.start()
 })
 
 test('fork and merging with promises in first fork', done => {
@@ -48,7 +46,6 @@ test('fork and merging with promises in first fork', done => {
       done()
       expect(results).toEqual([2, 4, 3, 6])
     })
-  source.start()
 })
 
 test('fork and merging with promises in second fork', done => {
@@ -61,14 +58,12 @@ test('fork and merging with promises in second fork', done => {
       expect(results).toEqual([2, 4, 3, 6])
       done()
     })
-  source.start()
 })
 
 test('fork and merging basics with toPromise', async () => {
   const source = _([1, 2, 3, 4])
   const first = source.fork().map(i => i * 2)
   const second = source.fork().map(i => i * 3)
-  source.start()
   const results = await _([
     first,
     second,
@@ -81,7 +76,6 @@ test('fork and merging - promise in the source stream as well', async () => {
   const source = _([1, 2, 3, 4]).map(async i => i + 1).resolve()
   const first = source.fork().map(async i => i * 2).resolve()
   const second = source.fork().map(async i => i * 3).resolve()
-  source.start()
   const results = await _([
     first,
     second,
@@ -91,14 +85,68 @@ test('fork and merging - promise in the source stream as well', async () => {
   expect(results).toEqual([4, 6, 8, 10, 6, 9, 12, 15])
 })
 
+test('consuming fork in different "transactions" throw exception', done => {
+  const source = _([1, 2, 3])
+  source.fork().toArray(res => {
+    console.log(res)
+  })
+  setTimeout(() => {
+    let ex
+    try {
+      source.fork().map(x => x * 2).toArray(res => {
+        expect(true).toBe(false)
+      })
+    } catch (e) {
+      ex = e
+    }
+    done()
+    expect(ex).not.toBe(null)
+    expect(ex.message).toBe('this stream is already started. you can\'t fork it anymore')
+  }, 10)
+})
+
+test('consuming fork in different "transactions" with disable autostart', done => {
+  const source = _([1, 2, 3])
+  source.fork(true).toArray(res => {
+    expect(res).toEqual([1, 2, 3])
+  })
+  setTimeout(() => {
+    source.fork().map(x => x * 2).toArray(res => {
+      done()
+      expect(res).toEqual([2, 4, 6])
+    })
+    source.start()
+  }, 10)
+})
+
+test('consuming fork in setImmediate or nextTick works', done => {
+  const finished = jest.fn()
+  const source = _([1, 2, 3])
+  source.fork().toArray(res => {
+    finished()
+    expect(res).toEqual([1, 2, 3])
+  })
+  process.nextTick(() => {
+    source.fork().map(x => x * 2).toArray(res => {
+      finished()
+      expect(res).toEqual([2, 4, 6])
+    })
+  })
+  setImmediate(() => {
+    source.fork().map(x => x * 2).toArray(res => {
+      finished()
+      done()
+      expect(res).toEqual([2, 4, 6])
+      expect(finished).toHaveBeenCalledTimes(3)
+    })
+  })
+})
+
 test('take() in a fork', async () => {
   const source = _([1, 2, 3, 4]).map(async i => i + 1).resolve()
-  const first = source.fork().map(async i => i * 2).resolve()
-  const second = source.fork().take(1).map(async i => i * 3).resolve()
-  source.start()
   const results = await _([
-    first,
-    second,
+    source.fork().map(async i => i * 2).resolve(),
+    source.fork().take(1).map(async i => i * 3).resolve(),
   ]).merge(2, true)
     .toPromise()
   expect(results).toEqual([4, 6, 8, 10, 6])
@@ -117,7 +165,6 @@ test('merging1', async () => new Promise((resolve) => {
       expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
       resolve()
     })
-  s.start()
 }))
 
 test('merging3', async () => {
