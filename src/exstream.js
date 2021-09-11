@@ -33,7 +33,6 @@ class Exstream extends EventEmitter {
   #consumers = []
   #autostart = true
   #synchronous = true
-  #onStreamError = e => { this.write(e); this.end() }
 
   #destroyers = []
 
@@ -44,10 +43,10 @@ class Exstream extends EventEmitter {
     } else if (_.isExstream(xs)) {
       return xs
     } else if (_.isNodeStream(xs) && xs.readable) {
-      xs.once('error', this.#onStreamError).pipe(this)
-      this.once('end', () => xs.destroy())
-      this.#destroyers.push(() => xs.off('error', this.#onStreamError))
       this.#synchronous = false
+      this.#addOnceListener('error', xs, e => { this.write(e); this.end() })
+      this.once('end', () => xs.destroy())
+      xs.pipe(this)
     } else if (_.isNodeStream(xs) && !xs.readable) {
       this.readable = false
       this.resume()
@@ -62,17 +61,22 @@ class Exstream extends EventEmitter {
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
     } else if (_.isAsyncIterable(xs)) {
-      const r = Readable.from(xs)
-      r.once('error', this.#onStreamError).pipe(this)
-      this.#destroyers.push(() => r.off('error', this.#onStreamError))
-      this.once('end', () => r.destroy())
       this.#synchronous = false
+      const r = Readable.from(xs)
+      this.#addOnceListener('error', r, e => { this.write(e); this.end() })
+      r.pipe(this)
+      this.once('end', () => r.destroy())
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
     } else if (_.isFunction(xs)) {
-      this.#generator = xs
       this.#synchronous = false
+      this.#generator = xs
     }
+  }
+
+  #addOnceListener = (event, target, handler) => {
+    target.once(event, handler)
+    this.#destroyers.push(() => target.off(event, handler))
   }
 
   write (x) {
@@ -155,7 +159,8 @@ class Exstream extends EventEmitter {
     if (!this.#buffer.length) return
     let i = 0
     for (const len = this.#buffer.length; i < len; i++) {
-      if (!this._write(this.#buffer[i], force)) break // write can synchronously pause the stream in case of back pressure
+      // write can synchronously pause the stream in case of back pressure
+      if (!this._write(this.#buffer[i], force)) break
     }
     this.#buffer = this.#buffer.slice(i + 1)
   }
@@ -297,12 +302,8 @@ class Exstream extends EventEmitter {
       }
     })
     const onEnd = () => s.end()
-    dest.once('close', onEnd)
-    dest.once('finish', onEnd)
-    this.#destroyers.push(() => {
-      dest.off('close', onEnd)
-      dest.off('finish', onEnd)
-    })
+    this.#addOnceListener('close', dest, onEnd)
+    this.#addOnceListener('finish', dest, onEnd)
     dest.emit('pipe', this)
     setImmediate(() => s.resume())
     return dest
@@ -378,7 +379,9 @@ class Exstream extends EventEmitter {
 
   value () {
     const res = this.values()
-    if (res.length > 1) throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+    if (res.length > 1) {
+      throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+    }
     return res[0]
   }
 
@@ -389,7 +392,9 @@ class Exstream extends EventEmitter {
       curr = curr.source
       isSync = isSync && curr.#synchronous
     }
-    if (!isSync) throw Error('.value() and .values() methods can be called only if all operations are synchronous')
+    if (!isSync) {
+      throw Error('.value() and .values() methods can be called only if all operations are synchronous')
+    }
     const res = []
     this.consumeSync((err, x, push) => {
       if (err) throw err
