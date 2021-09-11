@@ -15,6 +15,7 @@ class ExstreamError extends Error {
 class Exstream extends EventEmitter {
   __exstream__ = true
   writable = true
+  readable = true
 
   #resumedAtLestOnce = false
   paused = true
@@ -42,11 +43,22 @@ class Exstream extends EventEmitter {
       return this
     } else if (_.isExstream(xs)) {
       return xs
-    } else if (_.isReadableStream(xs)) {
+    } else if (_.isNodeStream(xs) && xs.readable) {
       xs.once('error', this.#onStreamError).pipe(this)
       this.once('end', () => xs.destroy())
       this.#destroyers.push(() => xs.off('error', this.#onStreamError))
       this.#synchronous = false
+    } else if (_.isNodeStream(xs) && !xs.readable) {
+      this.readable = false
+      this.resume()
+      const handleFinish = () => { this.emit('finish'); this.destroy() }
+      const handleClose = () => { this.emit('close'); this.destroy() }
+      xs.once('finish', handleFinish)
+      xs.once('close', handleClose)
+      this.#destroyers.push(() => {
+        xs.off('finish', handleFinish)
+        xs.off('finish', handleClose)
+      })
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
     } else if (_.isAsyncIterable(xs)) {
@@ -103,6 +115,7 @@ class Exstream extends EventEmitter {
     // i store it locally because this array could be filtered
     // during the loop if one consumer ends (for ex. it can happen withtake or slice)
     const consumers = this.#consumers
+    if (err && !this.#consumers.length) this.emit('error', wrappedError)
     for (let i = 0, len = consumers.length; i < len; i++) {
       consumers[i].write(wrappedError || x)
     }
@@ -119,7 +132,7 @@ class Exstream extends EventEmitter {
     if (!this.#nilPushed) this._write(_.nil)
     if (this.paused) this.#flushBuffer(true)
     this.ended = true
-    this.emit('end')
+    if (this.readable) this.emit('end')
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
     const source = this.source
     if (source) {
@@ -315,7 +328,7 @@ class Exstream extends EventEmitter {
       const pipelineInstance = target.generateStream()
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
-    } else if (_.isReadableStream(target)) {
+    } else if (_.isNodeStream(target)) {
       this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)

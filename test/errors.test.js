@@ -333,3 +333,11 @@ test('async filter errors', async () => {
   expect(e).not.toBe(null)
   expect(e.message).toBe('NOO')
 })
+
+test('stream in error without consumers emits an error event', done => {
+  _([1]).map(x => { throw Error('an error') }).on('error', e => {
+    done()
+    expect(e).not.toBe(null)
+    expect(e.message).toBe('an error')
+  }).resume()
+})

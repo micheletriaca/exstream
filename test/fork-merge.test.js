@@ -87,22 +87,18 @@ test('fork and merging - promise in the source stream as well', async () => {
 
 test('consuming fork in different "transactions" throw exception', done => {
   const source = _([1, 2, 3])
-  source.fork().toArray(res => {
-    console.log(res)
-  })
+  source.fork().toArray(res => {})
   setTimeout(() => {
     let ex
     try {
-      source.fork().map(x => x * 2).toArray(res => {
-        expect(true).toBe(false)
-      })
+      source.fork().map(x => x * 2).toArray(res => {})
     } catch (e) {
       ex = e
     }
     done()
     expect(ex).not.toBe(null)
     expect(ex.message).toBe('this stream is already started. you can\'t fork it anymore')
-  }, 10)
+  }, 50)
 })
 
 test('consuming fork in different "transactions" with disable autostart', done => {
@@ -176,4 +172,34 @@ test('merging3', async () => {
       excep = true
     })
   expect(excep).toBe(true)
+})
+
+test('final through in a node writer is equivalent to calling pipe', done => {
+  const res = []
+  _([1, 2, 3]).through(h.getSlowWritable(res, 0, 0)).on('finish', () => {
+    done()
+    expect(res).toEqual([1, 2, 3])
+  })
+})
+
+test('merge a stream of streams piped in a writable node stream, controlling the speed with merge', async () => {
+  const res = []
+  await _([[1, 2, 3], [4, 5, 6]])
+    .map(x => _(x).through(h.getSlowWritable(res, 0, 0)))
+    .merge(1)
+    .toPromise()
+  expect(res).toEqual([1, 2, 3, 4, 5, 6])
+})
+
+test('node writable stream can be wrapped in exs', done => {
+  const res = []
+  const ns = h.getSlowWritable(res, 0, 0)
+  _(ns).toArray(res2 => {
+    done()
+    expect(res).toEqual([1])
+    expect(res2).toEqual([]) // the exs istance is writable only, it does not emit any value
+  })
+
+  ns.write(1)
+  ns.end()
 })
