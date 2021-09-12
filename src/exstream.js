@@ -43,35 +43,30 @@ class Exstream extends EventEmitter {
     } else if (_.isExstream(xs)) {
       return xs
     } else if (_.isNodeStream(xs) && xs.readable) {
-      this.#synchronous = false
-      this.#addOnceListener('error', xs, e => { this.write(e); this.end() })
-      this.once('end', () => xs.destroy())
-      xs.pipe(this)
-    } else if (_.isNodeStream(xs) && !xs.readable) {
-      this.readable = false
-      this.resume()
-      const handleFinish = () => { this.emit('finish'); this.destroy() }
-      const handleClose = () => { this.emit('close'); this.destroy() }
-      xs.once('finish', handleFinish)
-      xs.once('close', handleClose)
-      this.#destroyers.push(() => {
-        xs.off('finish', handleFinish)
-        xs.off('finish', handleClose)
-      })
+      this.#pipeReadable(xs)
+    } else if (_.isAsyncIterable(xs)) {
+      this.#pipeReadable(Readable.from(xs))
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
-    } else if (_.isAsyncIterable(xs)) {
-      this.#synchronous = false
-      const r = Readable.from(xs)
-      this.#addOnceListener('error', r, e => { this.write(e); this.end() })
-      r.pipe(this)
-      this.once('end', () => r.destroy())
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
     } else if (_.isFunction(xs)) {
       this.#synchronous = false
       this.#generator = xs
+    } else {
+      throw Error('error creating exstream: invalid source. source can be one of: iterable, ' +
+      'async iterable, exstream function, a promise, a node readable stream')
     }
+  }
+
+  #pipeReadable = xs => {
+    this.#synchronous = false
+    this.#addOnceListener('error', xs, e => {
+      this.write(e)
+      setImmediate(() => this.end())
+    })
+    this.once('end', () => xs.destroy())
+    xs.pipe(this)
   }
 
   #addOnceListener = (event, target, handler) => {
@@ -329,10 +324,20 @@ class Exstream extends EventEmitter {
       const pipelineInstance = target.generateStream()
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
-    } else if (_.isNodeStream(target)) {
+    } else if (_.isNodeStream(target) && target.readable) {
       this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)
+    } else if (_.isNodeStream(target) && !target.readable) {
+      this.#synchronous = false
+      this.pipe(target)
+      const s = new Exstream()
+      s.readable = false
+      s.resume()
+      s.#addOnceListener('error', target, e => { s.write(e); setImmediate(() => s.end()) })
+      s.#addOnceListener('finish', target, () => { s.emit('finish'); setImmediate(() => s.destroy()) })
+      s.#addOnceListener('close', target, () => { s.emit('close'); setImmediate(() => s.destroy()) })
+      return s
     } else if (_.isFunction(target)) {
       return target(this)
     } else {

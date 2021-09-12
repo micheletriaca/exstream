@@ -153,12 +153,6 @@ test('async map wrap', async () => {
   expect(res[345]).toEqual({ input: 345, output: 690 })
 })
 
-test('map object', () => {
-  _({ a: 1, b: 2 }).map(x => x).toArray(res => {
-    expect(res).toEqual([['a', 1], ['b', 2]])
-  })
-})
-
 test('map set', () => {
   const x = new Set([1, 2, 3])
   _(x).map(x => x * 2).toArray(res => {

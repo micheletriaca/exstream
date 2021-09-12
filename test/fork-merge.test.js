@@ -191,15 +191,12 @@ test('merge a stream of streams piped in a writable node stream, controlling the
   expect(res).toEqual([1, 2, 3, 4, 5, 6])
 })
 
-test('node writable stream can be wrapped in exs', done => {
-  const res = []
-  const ns = h.getSlowWritable(res, 0, 0)
-  _(ns).toArray(res2 => {
-    done()
-    expect(res).toEqual([1])
-    expect(res2).toEqual([]) // the exs istance is writable only, it does not emit any value
-  })
-
-  ns.write(1)
-  ns.end()
+test('writable streams cannot be wrapped in an exstream instance', async () => {
+  let ex
+  try {
+    _(h.getSlowWritable([], 0, 0))
+  } catch (e) { ex = e }
+  expect(ex).not.toBe(null)
+  expect(ex.message).toEqual('error creating exstream: invalid source. source can be one of: iterable, ' +
+  'async iterable, exstream function, a promise, a node readable stream')
 })
