@@ -182,9 +182,8 @@ class Exstream extends EventEmitter {
     const next = otherStream => {
       this.#nextCalled = true
       if (otherStream) {
-        this.#generator = null
         otherStream.#consumers = this.#consumers
-        otherStream.#consumers.map(x => (x.source = otherStream))
+        otherStream.#consumers.forEach(x => (x.source = otherStream))
         this.#consumers = []
         this.destroy()
         otherStream.resume()
