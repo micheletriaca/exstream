@@ -31,6 +31,7 @@ class Exstream extends EventEmitter {
   #currentRec = null
   #nextCalled = true
   #consumers = []
+  #observers = []
   #autostart = true
   #synchronous = true
 
@@ -118,6 +119,9 @@ class Exstream extends EventEmitter {
     for (let i = 0, len = consumers.length; i < len; i++) {
       consumers[i].write(wrappedError || x)
     }
+    for (let i = 0, len = this.#observers.length; i < len; i++) {
+      this.#observers[i]._write(wrappedError || x, true)
+    }
   }
 
   start () {
@@ -143,6 +147,7 @@ class Exstream extends EventEmitter {
     this.removeAllListeners()
     this.#destroyers.forEach(x => x())
     this.#destroyers = []
+    this.#observers = []
   }
 
   destroy () {
@@ -320,6 +325,12 @@ class Exstream extends EventEmitter {
     if (!disableAutostart) process.nextTick(() => this.start())
     const res = new Exstream()
     this.#addConsumer(res, true)
+    return res
+  }
+
+  observe () {
+    const res = new Exstream()
+    this.#observers.push(res)
     return res
   }
 
