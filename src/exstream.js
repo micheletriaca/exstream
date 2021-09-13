@@ -177,14 +177,24 @@ class Exstream extends EventEmitter {
   }
 
   #consumeGenerator = () => {
+    let syncNext = true
     const w = x => this.write(x)
+    const next = otherStream => {
+      this.#nextCalled = true
+      if (otherStream) {
+        this.#generator = null
+        otherStream.#consumers = this.#consumers
+        otherStream.#consumers.map(x => (x.source = otherStream))
+        this.#consumers = []
+        this.destroy()
+        otherStream.resume()
+      } else if (this.paused && !syncNext) this.resume()
+    }
+
     do {
-      let syncNext = true
       this.#nextCalled = false
-      this.#generator(w, () => {
-        this.#nextCalled = true
-        if (this.paused && !syncNext) this.resume()
-      })
+      syncNext = true
+      this.#generator(w, next)
       syncNext = false
       if (!this.#nextCalled) this.pause()
     } while (!this.paused && !this.#nilPushed)
