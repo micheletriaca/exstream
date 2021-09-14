@@ -123,7 +123,7 @@ test('error in wrapped writable', async () => {
       write (chunk, enc, cb) {
         cb(Error('an error'))
       },
-    })))
+    }), { writable: true }))
     .merge()
     .errors(e => (errs.push(e)))
     .toPromise()

@@ -43,12 +43,12 @@ class Exstream extends EventEmitter {
       return this
     } else if (_.isExstream(xs)) {
       return xs
-    } else if (_.isNodeStream(xs) && xs.readable) {
+    } else if (_.isNodeStream(xs)) {
       this.#pipeReadable(xs)
-    } else if (_.isAsyncIterable(xs)) {
-      this.#pipeReadable(Readable.from(xs))
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
+    } else if (_.isAsyncIterable(xs)) {
+      this.#pipeReadable(Readable.from(xs))
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
     } else if (_.isFunction(xs)) {
@@ -62,13 +62,13 @@ class Exstream extends EventEmitter {
 
   #pipeReadable = xs => {
     this.#synchronous = false
+    xs.pipe(this)
     this.#addOnceListener('error', xs, e => {
       // sometimes e is not an instance of Error, nobody knows why
       this.write(new ExstreamError(e))
       setImmediate(() => this.end())
     })
     this.once('end', () => xs.destroy())
-    xs.pipe(this)
   }
 
   #addOnceListener = (event, target, handler) => {
@@ -342,7 +342,7 @@ class Exstream extends EventEmitter {
     return res
   }
 
-  through (target) {
+  through (target, { writable = false } = {}) {
     if (!target) return this
     else if (_.isExstream(target)) {
       const findParent = x => x.source ? findParent(x.source) : x
@@ -352,11 +352,11 @@ class Exstream extends EventEmitter {
       const pipelineInstance = target.generateStream()
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
-    } else if (_.isNodeStream(target) && target.readable) {
+    } else if (_.isNodeStream(target) && !writable) {
       this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)
-    } else if (_.isNodeStream(target) && !target.readable) {
+    } else if (_.isNodeStream(target) && writable) {
       this.#synchronous = false
       this.pipe(target)
       const s = new Exstream()
