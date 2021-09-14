@@ -1,5 +1,5 @@
 const _ = require('./utils.js')
-const Exstream = require('./exstream.js')
+const { Exstream, ExstreamError } = require('./exstream.js')
 const { Transform } = require('stream')
 
 const _m = module.exports = {}
@@ -14,8 +14,12 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
       if (!options || !options.wrap) push(null, fn(x))
       else {
         const res = fn(x)
-        if (res.then) push(null, res.then(y => ({ input: x, output: y })))
-        else push(null, { input: x, output: res })
+        if (res.then) {
+          push(null, res
+            .then(y => ({ input: x, output: y }))
+            .catch(e => { throw new ExstreamError(e, x) }),
+          )
+        } else push(null, { input: x, output: res })
       }
     } catch (e) {
       push(e)

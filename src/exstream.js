@@ -63,7 +63,8 @@ class Exstream extends EventEmitter {
   #pipeReadable = xs => {
     this.#synchronous = false
     this.#addOnceListener('error', xs, e => {
-      this.write(e)
+      // sometimes e is not an instance of Error, nobody knows why
+      this.write(new ExstreamError(e))
       setImmediate(() => this.end())
     })
     this.once('end', () => xs.destroy())
@@ -186,6 +187,13 @@ class Exstream extends EventEmitter {
     const w = x => this.write(x)
     const next = otherStream => {
       this.#nextCalled = true
+      if (otherStream && !_.isExstream(otherStream)) {
+        throw Error(
+          'error in generator calling next(otherStream). ' +
+          'otherStream must be an exstream instance, got ' + (typeof otherStream),
+        )
+      }
+
       if (otherStream) {
         otherStream.#consumers = this.#consumers
         otherStream.#consumers.forEach(x => (x.source = otherStream))
@@ -430,4 +438,7 @@ class Exstream extends EventEmitter {
   }
 }
 
-module.exports = Exstream
+module.exports = {
+  Exstream,
+  ExstreamError,
+}
