@@ -1,8 +1,31 @@
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
 const { Transform } = require('stream')
+const { StringDecoder } = require('string_decoder')
 
 const _m = module.exports = {}
+
+_m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
+
+_m.splitBy = _.curry((regexp, encoding, s) => {
+  const decoder = new StringDecoder(encoding)
+  let buffer = ''
+
+  return s.consumeSync((err, x, push) => {
+    if (err) return push(err)
+    const isNil = x === _.nil
+    const str = buffer + (isNil ? decoder.end() : decoder.write(x))
+    const tokens = str.split(regexp)
+    buffer = tokens.pop()
+    for (let i = 0, len = tokens.length; i < len; i++) {
+      push(null, tokens[i])
+    }
+    if (isNil) {
+      push(null, buffer)
+      push(null, _.nil)
+    }
+  })
+})
 
 _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   if (err) {

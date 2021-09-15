@@ -320,6 +320,8 @@ test('error propagation', async () => {
     .reject(x => x)
     .asyncFilter(async x => x)
     .uniq()
+    .split()
+    .splitBy('|')
     .uniqBy(x => x)
     .throttle(10)
     .csv()
