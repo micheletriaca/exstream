@@ -1,6 +1,15 @@
 const _ = require('../src/index')
 
 test('csv', () => {
+  _(['a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n'])
+    .csv({ header: true })
+    .toArray(res => {
+      expect(res).toEqual([
+        { a: '1', b: '2', c: '3' },
+        { a: 'ciao "amico"', b: 'multiline\nrow', c: '3' },
+      ])
+    })
+
   _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
     .csv({ header: true })
     .toArray(res => {
