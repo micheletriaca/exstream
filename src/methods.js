@@ -68,6 +68,25 @@ _m.ratelimit = _.curry((num, ms, s) => {
   })
 })
 
+_m.throttle = _.curry((ms, s) => {
+  let last = 0 - ms
+  return s.consume((err, x, push, next) => {
+    const now = new Date().getTime()
+    if (err) {
+      push(err)
+      next()
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else if (now - ms >= last) {
+      last = now
+      push(null, x)
+      next()
+    } else {
+      next()
+    }
+  })
+})
+
 _m.collect = s => {
   const xs = []
   return s.consumeSync((err, x, push) => {

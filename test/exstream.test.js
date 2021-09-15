@@ -565,6 +565,22 @@ test('switch source + backpressure', done => {
   })
 })
 
+test('throttle', async () => {
+  const gen = async function * () {
+    for (let i = 0; i < 10; i++) {
+      await h.sleep(8)
+      yield i
+    }
+  }
+
+  const res = await _(gen())
+    .throttle(50)
+    .toPromise()
+
+  expect(res.length).toBeLessThan(4)
+  expect(res.length).toBeGreaterThan(1)
+})
+
 test('toNodeStream', () => {
   const res = []
   return new Promise(resolve => {

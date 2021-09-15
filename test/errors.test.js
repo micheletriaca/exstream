@@ -302,6 +302,7 @@ test('error propagation', async () => {
     .asyncFilter(async x => x)
     .uniq()
     .uniqBy(x => x)
+    .throttle(10)
     .csv()
     .csvStringify()
     .resolve()
