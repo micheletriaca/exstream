@@ -209,6 +209,25 @@ test('error in promise chain', async () => {
   expect(res).toEqual([1, 2, 3, 4, 6])
 })
 
+test('error in wrapped promise contains originalData', async () => {
+  const catched = jest.fn()
+
+  const res = await _([1, 2, 3])
+    .map(async x => {
+      if (x === 2) throw Error('an error')
+      else return x * 2
+    }, { wrap: true })
+    .resolve()
+    .errors(e => {
+      if (e.originalData === 2) catched()
+    })
+    .pluck('output')
+    .toPromise()
+
+  expect(res).toEqual([2, 6])
+  expect(catched).toHaveBeenCalledTimes(1)
+})
+
 test('synchronous tasks errors - chain is not synchronous', () => {
   let exception = false
   try {
