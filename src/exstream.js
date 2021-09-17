@@ -7,7 +7,7 @@ class ExstreamError extends Error {
   constructor (originalError, originalData) {
     super(originalError.message)
     if (originalError.__exstreamError__) return originalError
-    this.originalError = originalError
+    this.stack = originalError.stack
     this.originalData = originalData
   }
 }
@@ -28,7 +28,6 @@ class Exstream extends EventEmitter {
 
   #consumeFn = null
   #consumeSyncFn = null
-  #currentRec = null
   #nextCalled = true
   #consumers = []
   #observers = []
@@ -90,16 +89,13 @@ class Exstream extends EventEmitter {
     if (this.paused && !skipBackPressure) {
       this.#buffer.push(x)
     } else if (this.#consumeSyncFn) {
-      this.#currentRec = x
       this.#consumeSyncFn(err, xx, this.#send)
     } else if (this.#consumeFn) {
       this.#nextCalled = false
       let syncNext = true
-      this.#currentRec = x
       this.#consumeFn(err, xx, this.#send, () => {
         this.#nextCalled = true
-        this.#currentRec = null
-        if (this.paused && !syncNext) this.resume()
+        if (this.paused && !syncNext) process.nextTick(() => this.resume())
       })
       syncNext = false
       if (!this.#nextCalled) this.pause()
@@ -111,17 +107,16 @@ class Exstream extends EventEmitter {
   }
 
   #send = (err, x) => {
-    const wrappedError = err ? new ExstreamError(err, this.#currentRec) : null
     if (x === _.nil) process.nextTick(() => this.end())
     // i store it locally because this array could be filtered
     // during the loop if one consumer ends (for ex. it can happen withtake or slice)
     const consumers = this.#consumers
-    if (err && !this.#consumers.length) this.emit('error', wrappedError)
+    if (err && !this.#consumers.length) this.emit('error', err)
     for (let i = 0, len = consumers.length; i < len; i++) {
-      consumers[i].write(wrappedError || x)
+      consumers[i].write(err || x)
     }
     for (let i = 0, len = this.#observers.length; i < len; i++) {
-      this.#observers[i]._write(wrappedError || x, true)
+      this.#observers[i]._write(err || x, true)
     }
   }
 
@@ -200,7 +195,7 @@ class Exstream extends EventEmitter {
         this.#consumers = []
         this.destroy()
         otherStream.resume()
-      } else if (this.paused && !syncNext) this.resume()
+      } else if (this.paused && !syncNext) process.nextTick(() => this.resume())
     }
 
     do {

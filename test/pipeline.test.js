@@ -81,11 +81,25 @@ test('pipeline in pipe', done => {
   })
 })
 
-test('pipeline as node stream + toArray', done => {
+test('pipeline as node stream toArray', done => {
   const p = _.pipeline().map(async x => x * 2).resolve()
 
   _([1, 2, 3]).pipe(p.generateStream()).toArray(res => {
     done()
-    expect(res).toEqual([4, 8, 12])
+    expect(res).toEqual([2, 4, 6])
   })
+})
+
+test('error propagation in async chain', async () => {
+  const errs = []
+  const res = await _([{ a: 0 }, { a: 1 }, { a: 2 }])
+    .collect()
+    .flatten()
+    .map(x => ({ a: x.a === 1 ? x.b.c : x.a }))
+    .map(async x => x)
+    .resolve()
+    .errors(e => errs.push(e))
+    .toPromise()
+  expect(res).toEqual([{ a: 0 }, { a: 2 }])
+  expect(errs.length).toBe(1)
 })

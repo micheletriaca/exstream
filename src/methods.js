@@ -34,18 +34,18 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
     push(err, x)
   } else {
     try {
-      if (!options || !options.wrap) push(null, fn(x))
-      else {
-        const res = fn(x)
-        if (res.then) {
-          push(null, res
-            .then(y => ({ input: x, output: y }))
-            .catch(e => { throw new ExstreamError(e, x) }),
-          )
-        } else push(null, { input: x, output: res })
+      let res = fn(x)
+      const probablyPromise = res && res.then && res.catch && !_.isExstream(res)
+      if (probablyPromise) res = res.catch(e => { throw new ExstreamError(e, x) })
+      if (!options || !options.wrap) {
+        return push(null, res)
+      } else if (probablyPromise) {
+        push(null, res.then(y => ({ input: x, output: y })))
+      } else {
+        push(null, { input: x, output: res })
       }
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
     }
   }
 }))
@@ -156,7 +156,7 @@ _m.filter = _.curry((fn, s) => s.consumeSync((err, x, push) => {
       const res = fn(x)
       if (res) push(null, x)
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
     }
   }
 }))
@@ -171,7 +171,7 @@ _m.reject = _.curry((fn, s) => s.consumeSync((err, x, push) => {
       const res = fn(x)
       if (!res) push(null, x)
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
     }
   }
 }))
@@ -188,7 +188,7 @@ _m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
       if (res) push(null, x)
       next()
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
       next()
     }
   }
@@ -243,7 +243,7 @@ _m.pick = _.curry((fields, s) => s.map(x => {
     try {
       hasKey = fields[i] in x
     } catch (e) {
-      throw Error('error in .pick(). expected object, got ' + (typeof x))
+      throw new ExstreamError(Error('error in .pick(). expected object, got ' + (typeof x)), x)
     }
     if (hasKey) res[fields[i]] = x[fields[i]]
   }
@@ -270,7 +270,7 @@ _m.uniqBy = _.curry((cfg, s) => {
           push(null, x)
         }
       } catch (e) {
-        push(e)
+        push(new ExstreamError(e, x))
       }
     }
   })
@@ -313,7 +313,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
       if (promises.length === 0) push(null, _.nil)
       else ended = true
     } else if (!_.isPromise(el)) {
-      push(Error('error in .resolve(). item must be a promise'))
+      push(new ExstreamError(Error('error in .resolve(). item must be a promise'), el))
       next()
     } else {
       const resPointer = {}
@@ -394,7 +394,7 @@ _m.reduce = _.curry((fn, accumulator, s) => {
         accumulator = fn(accumulator, x)
       } catch (e) {
         try {
-          push(e)
+          push(new ExstreamError(e, x))
         } finally {
           accumulator = undefined
           s1.destroy()
@@ -422,7 +422,7 @@ _m.reduce1 = _.curry((fn, s) => {
         accumulator = fn(accumulator, x)
       } catch (e) {
         try {
-          push(e)
+          push(new ExstreamError(e, x))
         } finally {
           accumulator = undefined
           s1.destroy()
@@ -447,7 +447,7 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
         next()
       } catch (e) {
         try {
-          push(e)
+          push(new ExstreamError(e, x))
         } finally {
           accumulator = undefined
           s1.destroy()
@@ -468,7 +468,7 @@ _m.groupBy = _.curry((fnOrString, s) => {
   }, {})
 })
 
-_m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
+_m.sortBy = _.curry((fn, s) => s.collect().flatMap(x => x.sort(fn)))
 _m.sort = s => _m.sortBy(undefined, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
