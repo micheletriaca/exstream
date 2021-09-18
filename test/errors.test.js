@@ -150,7 +150,7 @@ test('error in map', () => {
     else return x
   })
     .errors((err, push) => {
-      if (err.originalData === 2) push(null, 5)
+      if (err.exstreamInput === 2) push(null, 5)
     })
     .toArray(res => {
       expect(res).toEqual([1, 5, 3])
@@ -209,7 +209,7 @@ test('error in promise chain', async () => {
   expect(res).toEqual([1, 2, 3, 4, 6])
 })
 
-test('error in wrapped promise contains originalData', async () => {
+test('error in wrapped promise contains exstreamInput', async () => {
   const catched = jest.fn()
 
   const res = await _([1, 2, 3])
@@ -219,7 +219,7 @@ test('error in wrapped promise contains originalData', async () => {
     }, { wrap: true })
     .resolve()
     .errors(e => {
-      if (e.originalData === 2) catched()
+      if (e.exstreamInput === 2) catched()
     })
     .pluck('output')
     .toPromise()
@@ -267,7 +267,7 @@ test('synchronous tasks error - runtime error', () => {
   }
   expect(exc).not.toBe(null)
   expect(exc.message).toBe('NOO')
-  expect(exc.originalData).toBe(3)
+  expect(exc.exstreamInput).toBe(3)
 })
 
 test('piping an error', async () => {
@@ -396,7 +396,7 @@ test('filter errors', () => {
     .values()
   expect(res).toEqual([1, 2])
   expect(ex).not.toBe(null)
-  expect(ex.originalData).toBe(3)
+  expect(ex.exstreamInput).toBe(3)
 })
 
 test('reject errors', () => {
@@ -410,7 +410,7 @@ test('reject errors', () => {
     .values()
   expect(res).toEqual([])
   expect(ex).not.toBe(null)
-  expect(ex.originalData).toBe(3)
+  expect(ex.exstreamInput).toBe(3)
 })
 
 test('async filter errors', async () => {

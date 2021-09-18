@@ -3,12 +3,20 @@ const { Readable } = require('stream')
 const _ = require('./utils')
 
 class ExstreamError extends Error {
-  __exstreamError__ = true
-  constructor (originalError, originalData) {
-    super(originalError.message)
-    if (originalError.__exstreamError__) return originalError
-    this.stack = originalError.stack
-    this.originalData = originalData
+  constructor (e, exstreamInput) {
+    super(e.message)
+    if (e.exstreamError) {
+      return e
+    } else if (e instanceof Error) {
+      e.exstreamError = true
+      e.exstreamInput = exstreamInput
+      return e
+    } else {
+      Object.assign(this, e)
+      this.stack = e.stack
+      this.exstreamError = true
+      this.exstreamInput = exstreamInput
+    }
   }
 }
 
