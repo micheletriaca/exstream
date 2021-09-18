@@ -436,3 +436,47 @@ test('stream in error without consumers emits an error event', done => {
     expect(e.message).toBe('an error')
   }).resume()
 })
+
+test('stopOnError', () => {
+  let ex
+  const res = _([1, 2, 3])
+    .map(x => {
+      if (x === 2) throw Error('an error')
+      return x
+    })
+    .stopOnError(e => (ex = e))
+    .values()
+
+  expect(ex).not.toBe(null)
+  expect(ex.message).toBe('an error')
+  expect(res).toEqual([1])
+})
+
+test('stopOnError repush', () => {
+  const res = _([1, 2, 3])
+    .map(x => {
+      if (x === 2) throw Error('an error')
+      return x
+    })
+    .stopOnError((e, push) => push(null, 22))
+    .values()
+
+  expect(res).toEqual([1, 22])
+})
+
+test('stopOnError repush error', () => {
+  let ex
+  try {
+    _([1, 2, 3])
+      .map(x => {
+        if (x === 2) throw Error('an error')
+        return x
+      })
+      .stopOnError((e, push) => push(Error('another error')))
+      .values()
+  } catch (e) {
+    ex = e
+  }
+  expect(ex).not.toBe(null)
+  expect(ex.message).toBe('another error')
+})

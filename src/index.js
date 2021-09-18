@@ -12,6 +12,7 @@ const _ = module.exports = Object.assign(
 
 _.extend = (name, fn) => { Exstream.prototype[name] = fn }
 _.extend('errors', function (fn) { return _.errors(fn, this) })
+_.extend('stopOnError', function (fn) { return _.stopOnError(fn, this) })
 _.extend('map', function (fn, options = null) { return _.map(fn, options, this) })
 _.extend('flatMap', function (fn) { return _.flatMap(fn, this) })
 _.extend('tap', function (fn) { return _.tap(fn, this) })
