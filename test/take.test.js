@@ -72,3 +72,18 @@ test('slice parameter validation', () => {
   expect(ex).not.toBe(null)
   expect(ex.message).toBe('error in .slice(). start and end must be numbers')
 })
+
+test('head', () => {
+  const res = _([1, 2, 3]).head().value()
+  expect(res).toBe(1)
+})
+
+test('last', () => {
+  const res = _([1, 2, 3]).last().value()
+  expect(res).toBe(3)
+})
+
+test('last without source', () => {
+  const res = _([]).last().values()
+  expect(res).toEqual([])
+})

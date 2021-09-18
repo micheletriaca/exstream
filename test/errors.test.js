@@ -328,6 +328,8 @@ test('error propagation', async () => {
     .throttle(10)
     .csv()
     .csvStringify()
+    .head()
+    .last()
     .resolve()
     .slice(1, 3)
     .makeAsync(10)

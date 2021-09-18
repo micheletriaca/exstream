@@ -556,6 +556,23 @@ _m.compact = s => s.filter(x => x)
 
 _m.find = _.curry((fn, s) => s.filter(fn).take(1))
 
+_m.head = s => s.take(1)
+
+_m.last = s => {
+  const nothing = {}
+  let last = nothing
+  return s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      if (last !== nothing) push(null, last)
+      push(null, _.nil)
+    } else {
+      last = x
+    }
+  })
+}
+
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,
   definitions: [],
