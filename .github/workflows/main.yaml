@@ -32,4 +32,5 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
       if: matrix.node-version == '14.x'
+      continue-on-error: true
     # - uses: codecov/codecov-action@v2  
