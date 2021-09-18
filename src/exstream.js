@@ -13,7 +13,7 @@ class ExstreamError extends Error {
       return e
     } else {
       Object.assign(this, e)
-      this.stack = e.stack
+      if (e.stack) this.stack = e.stack
       this.exstreamError = true
       this.exstreamInput = exstreamInput
     }
