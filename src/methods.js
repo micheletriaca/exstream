@@ -27,6 +27,45 @@ _m.splitBy = _.curry((regexp, encoding, s) => {
   })
 })
 
+_m.encode = _.curry((encoding, s) => {
+  if (encoding !== 'base64') throw Error('.encode() supports only base64 at the moment')
+  const decoder = new StringDecoder(encoding)
+  return s.consumeSync((err, x, push) => {
+    if (err) return push(err)
+    try {
+      const isNil = x === _.nil
+      const str = (isNil ? decoder.end() : decoder.write(Buffer.from(x)))
+      push(null, str)
+      if (isNil) push(null, _.nil)
+    } catch (e) {
+      push(new ExstreamError({
+        message:
+          'error in .encode(). expected string, Buffer, ' +
+          'ArrayBuffer, Array, or Array-like Object. Got ' + (typeof x),
+      }, x))
+    }
+  })
+})
+
+_m.decode = _.curry((encoding, s) => {
+  if (encoding !== 'base64') throw Error('.decode() supports only base64 at the moment')
+  let buffer = ''
+  return s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else {
+      const toProcess = buffer + x
+      const remaining = toProcess.length % 4
+      const len = toProcess.length - remaining
+      buffer = toProcess.slice(len)
+      const validBase64 = toProcess.slice(0, len)
+      if (validBase64) push(null, Buffer.from(toProcess.slice(0, len), 'base64'))
+    }
+  })
+})
+
 _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)

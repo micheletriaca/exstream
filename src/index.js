@@ -42,6 +42,8 @@ _.extend('groupBy', function (fnOrString) { return _.groupBy(fnOrString, this) }
 _.extend('sort', function () { return _.sort(this) })
 _.extend('sortBy', function (fn) { return _.sortBy(fn, this) })
 _.extend('split', function (encoding = 'utf8') { return _.split(encoding, this) })
+_.extend('encode', function (encoding) { return _.encode(encoding, this) })
+_.extend('decode', function (encoding) { return _.decode(encoding, this) })
 _.extend('splitBy', function (regexp, encoding = 'utf8') { return _.splitBy(regexp, encoding, this) })
 _.extend('reduce1', function (fn) { return _.reduce1(fn, this) })
 _.extend('asyncReduce', function (memo, fn) { return _.asyncReduce(memo, fn, this) })

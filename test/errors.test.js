@@ -320,6 +320,8 @@ test('error propagation', async () => {
     .reject(x => x)
     .asyncFilter(async x => x)
     .uniq()
+    .encode('base64')
+    .decode('base64')
     .split()
     .splitBy('|')
     .uniqBy(x => x)
