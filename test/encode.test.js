@@ -31,6 +31,18 @@ test('decode', () => {
   expect(res.toString()).toEqual('ciao, come va?')
 })
 
+test('incomplete decode', done => {
+  const s = _()
+  s.decode('base64').map(x => x.toString()).toArray(res => {
+    done()
+    expect(res.join('')).toBe('ciao,')
+  })
+
+  s.write('Y2l')
+  s.write('hbyw')
+  s.end()
+})
+
 test('encode buffer', () => {
   const res = _([Buffer.from('ciao'), Buffer.from(', come va?')])
     .encode('base64')

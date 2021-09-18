@@ -54,6 +54,7 @@ _m.decode = _.curry((encoding, s) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
+      if (buffer) push(null, Buffer.from(buffer, 'base64'))
       push(null, _.nil)
     } else {
       const toProcess = buffer + x
@@ -61,7 +62,7 @@ _m.decode = _.curry((encoding, s) => {
       const len = toProcess.length - remaining
       buffer = toProcess.slice(len)
       const validBase64 = toProcess.slice(0, len)
-      if (validBase64) push(null, Buffer.from(toProcess.slice(0, len), 'base64'))
+      if (validBase64) push(null, Buffer.from(validBase64, 'base64'))
     }
   })
 })
