@@ -97,6 +97,8 @@ _m.where = _.curry((props, s) => s.filter(x => {
   return true
 }))
 
+_m.findWhere = _.curry((props, s) => s.where(props).take(1))
+
 _m.ratelimit = _.curry((num, ms, s) => {
   let sent = 0
   let startWindow

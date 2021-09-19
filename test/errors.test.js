@@ -330,6 +330,7 @@ test('error propagation', async () => {
     .csvStringify()
     .head()
     .last()
+    .findWhere()
     .resolve()
     .slice(1, 3)
     .makeAsync(10)

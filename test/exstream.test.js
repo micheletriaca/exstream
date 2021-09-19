@@ -747,6 +747,13 @@ test('where', () => {
   expect(res).toEqual([{ a: 'a', b: 'b' }])
 })
 
+test('findWhere', () => {
+  const res = _([{ a: 'a', b: 'b' }, { a: 'b', b: 'c' }, { a: 'a', b: 'b' }])
+    .findWhere({ a: 'a' })
+    .value()
+  expect(res).toEqual({ a: 'a', b: 'b' })
+})
+
 test('multipipe', () => new Promise(resolve => {
   // This demonstrates how to pipe multiple input streams into an exstream writer. You can even control parallelism
   // and order. The whole chain has back-pressure
