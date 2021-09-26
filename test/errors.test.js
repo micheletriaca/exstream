@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
+const { Readable, Writable } = require('stream')
 
 test('error in source stream - exstream generator', () => {
   let i = 0
@@ -69,6 +70,60 @@ test('fatal error in source stream - async generator', async () => {
 
   expect(errGenerated).not.toBe(null)
   expect(errCatched).toBe(errGenerated)
+})
+
+test('error in source stream - node stream', done => {
+  const errs = []
+  let i = 0
+  _(new Readable({
+    objectMode: true,
+    read (size) {
+      if (i === 4) {
+        this.push(null)
+      } else if (i > 2 && i < 4) {
+        this.emit('error', Error('an error'))
+      } else {
+        this.push(i)
+      }
+      i++
+    },
+  }))
+    .errors(e => (errs.push(e)))
+    .toArray(res => {
+      done()
+      expect(res).toEqual([0, 1, 2])
+      expect(errs.length).toBe(1)
+      expect(errs[0].message).toBe('an error')
+    })
+})
+
+test('error in wrapped writable', async () => {
+  const errs = []
+  const res = await _([1, 2])
+    .map(x => _([x]).through(new Writable({
+      objectMode: true,
+      write (chunk, enc, cb) {
+        cb(Error('an error'))
+      },
+    })))
+    .merge()
+    .errors(e => (errs.push(e)))
+    .toPromise()
+  expect(res).toEqual([])
+  expect(errs.length).toBe(2)
+  expect(errs[0].message).toBe('an error')
+})
+
+test('invalid source', () => {
+  let ex
+  try {
+    _(1)
+  } catch (e) {
+    ex = e
+  }
+  expect(ex).not.toBe(null)
+  expect(ex.message).toEqual('error creating exstream: invalid source. source can be one of: iterable, ' +
+  'async iterable, exstream function, a promise, a node readable stream')
 })
 
 test('error in map', () => {
@@ -332,4 +387,12 @@ test('async filter errors', async () => {
   expect(res).toEqual([1, 2])
   expect(e).not.toBe(null)
   expect(e.message).toBe('NOO')
+})
+
+test('stream in error without consumers emits an error event', done => {
+  _([1]).map(x => { throw Error('an error') }).on('error', e => {
+    done()
+    expect(e).not.toBe(null)
+    expect(e.message).toBe('an error')
+  }).resume()
 })

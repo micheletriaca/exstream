@@ -1,6 +1,6 @@
 const _ = module.exports = {}
 _.nil = Symbol('exstream nil')
-_.isExstream = x => !!x.__exstream__
+_.isExstream = x => x && !!x.__exstream__
 _.isExstreamPipeline = x => !!x.__exstream_pipeline__
 _.isDefined = x => x !== null && x !== undefined
 _.has = (x, prop) => _.isDefined(x) && Object.hasOwnProperty.call(x, prop)
@@ -10,7 +10,7 @@ _.isAsyncIterable = x => _.isDefined(x) && typeof x[Symbol.asyncIterator] === 'f
 _.isFunction = x => typeof x === 'function'
 _.isString = x => typeof x === 'string'
 _.isError = x => x instanceof Error
-_.isReadableStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
+_.isNodeStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
 _.escapeRegExp = text => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 _.partial = function (f, ...args) { return function (...args2) { return f.call(this, ...args, ...args2) } }
 _.ncurry = function (n, fn, ...o) { return o.length >= n ? fn.apply(this, o.slice(0, n)) : _.partial.call(this, _.ncurry, n, fn, ...o) }

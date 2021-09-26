@@ -15,6 +15,7 @@ class ExstreamError extends Error {
 class Exstream extends EventEmitter {
   __exstream__ = true
   writable = true
+  readable = true
 
   #resumedAtLestOnce = false
   paused = true
@@ -30,9 +31,9 @@ class Exstream extends EventEmitter {
   #currentRec = null
   #nextCalled = true
   #consumers = []
+  #observers = []
   #autostart = true
   #synchronous = true
-  #onStreamError = e => { this.write(e); this.end() }
 
   #destroyers = []
 
@@ -42,25 +43,36 @@ class Exstream extends EventEmitter {
       return this
     } else if (_.isExstream(xs)) {
       return xs
-    } else if (_.isReadableStream(xs)) {
-      xs.once('error', this.#onStreamError).pipe(this)
-      this.once('end', () => xs.destroy())
-      this.#destroyers.push(() => xs.off('error', this.#onStreamError))
-      this.#synchronous = false
+    } else if (_.isNodeStream(xs) && xs.readable) {
+      this.#pipeReadable(xs)
+    } else if (_.isAsyncIterable(xs)) {
+      this.#pipeReadable(Readable.from(xs))
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
-    } else if (_.isAsyncIterable(xs)) {
-      const r = Readable.from(xs)
-      r.once('error', this.#onStreamError).pipe(this)
-      this.#destroyers.push(() => r.off('error', this.#onStreamError))
-      this.once('end', () => r.destroy())
-      this.#synchronous = false
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
     } else if (_.isFunction(xs)) {
-      this.#generator = xs
       this.#synchronous = false
+      this.#generator = xs
+    } else {
+      throw Error('error creating exstream: invalid source. source can be one of: iterable, ' +
+      'async iterable, exstream function, a promise, a node readable stream')
     }
+  }
+
+  #pipeReadable = xs => {
+    this.#synchronous = false
+    this.#addOnceListener('error', xs, e => {
+      this.write(e)
+      setImmediate(() => this.end())
+    })
+    this.once('end', () => xs.destroy())
+    xs.pipe(this)
+  }
+
+  #addOnceListener = (event, target, handler) => {
+    target.once(event, handler)
+    this.#destroyers.push(() => target.off(event, handler))
   }
 
   write (x) {
@@ -103,8 +115,12 @@ class Exstream extends EventEmitter {
     // i store it locally because this array could be filtered
     // during the loop if one consumer ends (for ex. it can happen withtake or slice)
     const consumers = this.#consumers
+    if (err && !this.#consumers.length) this.emit('error', wrappedError)
     for (let i = 0, len = consumers.length; i < len; i++) {
       consumers[i].write(wrappedError || x)
+    }
+    for (let i = 0, len = this.#observers.length; i < len; i++) {
+      this.#observers[i]._write(wrappedError || x, true)
     }
   }
 
@@ -119,7 +135,7 @@ class Exstream extends EventEmitter {
     if (!this.#nilPushed) this._write(_.nil)
     if (this.paused) this.#flushBuffer(true)
     this.ended = true
-    this.emit('end')
+    if (this.readable) this.emit('end')
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
     const source = this.source
     if (source) {
@@ -131,6 +147,7 @@ class Exstream extends EventEmitter {
     this.removeAllListeners()
     this.#destroyers.forEach(x => x())
     this.#destroyers = []
+    this.#observers = []
   }
 
   destroy () {
@@ -142,7 +159,8 @@ class Exstream extends EventEmitter {
     if (!this.#buffer.length) return
     let i = 0
     for (const len = this.#buffer.length; i < len; i++) {
-      if (!this._write(this.#buffer[i], force)) break // write can synchronously pause the stream in case of back pressure
+      // write can synchronously pause the stream in case of back pressure
+      if (!this._write(this.#buffer[i], force)) break
     }
     this.#buffer = this.#buffer.slice(i + 1)
   }
@@ -164,14 +182,23 @@ class Exstream extends EventEmitter {
   }
 
   #consumeGenerator = () => {
+    let syncNext = true
     const w = x => this.write(x)
+    const next = otherStream => {
+      this.#nextCalled = true
+      if (otherStream) {
+        otherStream.#consumers = this.#consumers
+        otherStream.#consumers.forEach(x => (x.source = otherStream))
+        this.#consumers = []
+        this.destroy()
+        otherStream.resume()
+      } else if (this.paused && !syncNext) this.resume()
+    }
+
     do {
-      let syncNext = true
       this.#nextCalled = false
-      this.#generator(w, () => {
-        this.#nextCalled = true
-        if (this.paused && !syncNext) this.resume()
-      })
+      syncNext = true
+      this.#generator(w, next)
       syncNext = false
       if (!this.#nextCalled) this.pause()
     } while (!this.paused && !this.#nilPushed)
@@ -284,12 +311,8 @@ class Exstream extends EventEmitter {
       }
     })
     const onEnd = () => s.end()
-    dest.once('close', onEnd)
-    dest.once('finish', onEnd)
-    this.#destroyers.push(() => {
-      dest.off('close', onEnd)
-      dest.off('finish', onEnd)
-    })
+    this.#addOnceListener('close', dest, onEnd)
+    this.#addOnceListener('finish', dest, onEnd)
     dest.emit('pipe', this)
     setImmediate(() => s.resume())
     return dest
@@ -305,6 +328,12 @@ class Exstream extends EventEmitter {
     return res
   }
 
+  observe () {
+    const res = new Exstream()
+    this.#observers.push(res)
+    return res
+  }
+
   through (target) {
     if (!target) return this
     else if (_.isExstream(target)) {
@@ -315,10 +344,20 @@ class Exstream extends EventEmitter {
       const pipelineInstance = target.generateStream()
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
-    } else if (_.isReadableStream(target)) {
+    } else if (_.isNodeStream(target) && target.readable) {
       this.#synchronous = false
       this.pipe(target)
       return new Exstream(target)
+    } else if (_.isNodeStream(target) && !target.readable) {
+      this.#synchronous = false
+      this.pipe(target)
+      const s = new Exstream()
+      s.readable = false
+      s.resume()
+      s.#addOnceListener('error', target, e => { s.write(e); setImmediate(() => s.end()) })
+      s.#addOnceListener('finish', target, () => { s.emit('finish'); setImmediate(() => s.destroy()) })
+      s.#addOnceListener('close', target, () => { s.emit('close'); setImmediate(() => s.destroy()) })
+      return s
     } else if (_.isFunction(target)) {
       return target(this)
     } else {
@@ -365,7 +404,9 @@ class Exstream extends EventEmitter {
 
   value () {
     const res = this.values()
-    if (res.length > 1) throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+    if (res.length > 1) {
+      throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+    }
     return res[0]
   }
 
@@ -376,7 +417,9 @@ class Exstream extends EventEmitter {
       curr = curr.source
       isSync = isSync && curr.#synchronous
     }
-    if (!isSync) throw Error('.value() and .values() methods can be called only if all operations are synchronous')
+    if (!isSync) {
+      throw Error('.value() and .values() methods can be called only if all operations are synchronous')
+    }
     const res = []
     this.consumeSync((err, x, push) => {
       if (err) throw err
