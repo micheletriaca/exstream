@@ -31,6 +31,7 @@ class Exstream extends EventEmitter {
   #currentRec = null
   #nextCalled = true
   #consumers = []
+  #observers = []
   #autostart = true
   #synchronous = true
 
@@ -118,6 +119,9 @@ class Exstream extends EventEmitter {
     for (let i = 0, len = consumers.length; i < len; i++) {
       consumers[i].write(wrappedError || x)
     }
+    for (let i = 0, len = this.#observers.length; i < len; i++) {
+      this.#observers[i]._write(wrappedError || x, true)
+    }
   }
 
   start () {
@@ -143,6 +147,7 @@ class Exstream extends EventEmitter {
     this.removeAllListeners()
     this.#destroyers.forEach(x => x())
     this.#destroyers = []
+    this.#observers = []
   }
 
   destroy () {
@@ -177,14 +182,23 @@ class Exstream extends EventEmitter {
   }
 
   #consumeGenerator = () => {
+    let syncNext = true
     const w = x => this.write(x)
+    const next = otherStream => {
+      this.#nextCalled = true
+      if (otherStream) {
+        otherStream.#consumers = this.#consumers
+        otherStream.#consumers.forEach(x => (x.source = otherStream))
+        this.#consumers = []
+        this.destroy()
+        otherStream.resume()
+      } else if (this.paused && !syncNext) this.resume()
+    }
+
     do {
-      let syncNext = true
       this.#nextCalled = false
-      this.#generator(w, () => {
-        this.#nextCalled = true
-        if (this.paused && !syncNext) this.resume()
-      })
+      syncNext = true
+      this.#generator(w, next)
       syncNext = false
       if (!this.#nextCalled) this.pause()
     } while (!this.paused && !this.#nilPushed)
@@ -311,6 +325,12 @@ class Exstream extends EventEmitter {
     if (!disableAutostart) process.nextTick(() => this.start())
     const res = new Exstream()
     this.#addConsumer(res, true)
+    return res
+  }
+
+  observe () {
+    const res = new Exstream()
+    this.#observers.push(res)
     return res
   }
 
