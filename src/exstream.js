@@ -364,6 +364,7 @@ class Exstream extends EventEmitter {
       this.pipe(target)
       const s = new Exstream()
       s.readable = false
+      s.source = this
       s.resume()
       s.#addOnceListener('error', target, e => { s.write(e); setImmediate(() => s.end()) })
       s.#addOnceListener('finish', target, () => { s.emit('finish'); setImmediate(() => s.destroy()) })

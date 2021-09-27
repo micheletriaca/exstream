@@ -199,3 +199,24 @@ test('writable streams cannot be wrapped in an exstream instance', async () => {
   console.log(ex)
   expect(ex).not.toBe(null)
 })
+
+test('complex control flow with through, fork, merge and writable', async () => {
+  const res = []
+  const res2 = []
+  const res3 = []
+  const s = _([1, 2, 3])
+
+  const p1 = _().map(x => x * 2).through(h.getSlowWritable(res, 0, 0), { writable: true })
+  const p2 = _.pipeline().map(x => x * 2).through(h.getSlowWritable(res3, 0, 0), { writable: true })
+
+  await _([
+    s.fork().through(p1, { writable: true }),
+    s.fork().through(p2, { writable: true }),
+    s.fork().through(h.getSlowWritable(res2, 0, 0), { writable: true }),
+  ]).merge()
+    .toPromise()
+
+  expect(res).toEqual([2, 4, 6])
+  expect(res3).toEqual([2, 4, 6])
+  expect(res2).toEqual([1, 2, 3])
+})
