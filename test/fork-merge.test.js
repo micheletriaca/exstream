@@ -89,7 +89,7 @@ test('consuming fork in different "transactions" throw exception', done => {
   const source = _([1, 2, 3])
   source.fork().toArray(res => {})
   setTimeout(() => {
-    let ex
+    let ex = null
     try {
       source.fork().map(x => x * 2).toArray(res => {})
     } catch (e) {
@@ -192,7 +192,7 @@ test('merge a stream of streams piped in a writable node stream, controlling the
 })
 
 test('writable streams cannot be wrapped in an exstream instance', async () => {
-  let ex
+  let ex = null
   await _(h.getSlowWritable([], 0, 0))
     .toPromise()
     .catch(e => (ex = e))

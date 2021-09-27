@@ -104,7 +104,7 @@ test('error switching generator source', async () => {
     next(generatorFn)
   }
 
-  let ex
+  let ex = null
   await _(generatorFn)
     .toPromise()
     .catch(e => {
@@ -133,7 +133,7 @@ test('error in wrapped writable', async () => {
 })
 
 test('invalid source', () => {
-  let ex
+  let ex = null
   try {
     _(1)
   } catch (e) {
@@ -158,7 +158,7 @@ test('error in map', () => {
 })
 
 test('error in resolve', async () => {
-  let error
+  let error = null
   const res = await _([1, 2, 3]).map(async x => {
     await h.sleep(10)
     if (x === 2) throw Error('can\'t be 2')
@@ -254,7 +254,7 @@ test('synchronous tasks errors - .value() with multiple values', () => {
 })
 
 test('synchronous tasks error - runtime error', () => {
-  let exc = false
+  let exc = null
   try {
     _([1, 2, 3, 4, 5, 6])
       .map(x => {
@@ -391,7 +391,7 @@ test('each errors', () => {
 })
 
 test('filter errors', () => {
-  let ex
+  let ex = null
   const res = _([1, 2, 3])
     .filter(x => {
       if (x === 3) throw Error('NOO')
@@ -405,7 +405,7 @@ test('filter errors', () => {
 })
 
 test('reject errors', () => {
-  let ex
+  let ex = null
   const res = _([1, 2, 3])
     .reject(x => {
       if (x === 3) throw Error('NOO')
@@ -419,7 +419,7 @@ test('reject errors', () => {
 })
 
 test('async filter errors', async () => {
-  let e
+  let e = null
   const res = await _([1, 2, 3])
     .asyncFilter(async x => {
       await h.sleep(100)
@@ -443,7 +443,7 @@ test('stream in error without consumers emits an error event', done => {
 })
 
 test('stopOnError', () => {
-  let ex
+  let ex = null
   const res = _([1, 2, 3])
     .map(x => {
       if (x === 2) throw Error('an error')
@@ -470,7 +470,7 @@ test('stopOnError repush', () => {
 })
 
 test('stopOnError repush error', () => {
-  let ex
+  let ex = null
   try {
     _([1, 2, 3])
       .map(x => {

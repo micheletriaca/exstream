@@ -9,7 +9,7 @@ test('encode', () => {
 })
 
 test('invalid encode', () => {
-  let ex
+  let ex = null
   try {
     _([1, ', come va?'])
       .encode('base64')
@@ -52,7 +52,7 @@ test('encode buffer', () => {
 })
 
 test('encode error', () => {
-  let ex
+  let ex = null
   try {
     _([Buffer.from('ciao'), Buffer.from(', come va?')])
       .encode('md5')
@@ -66,7 +66,7 @@ test('encode error', () => {
 })
 
 test('invalid decode', () => {
-  let ex
+  let ex = null
   try {
     _(['Y2l', 'hbywgY29tZSB2YT8='])
       .decode('aes256')

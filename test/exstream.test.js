@@ -170,7 +170,7 @@ test('batch strange params', () => {
   _([1, 2, 3, 4, 5]).batch('3').toArray(res => {
     expect(res).toEqual([[1, 2, 3], [4, 5]])
   })
-  let e
+  let e = null
   try {
     _([1, 2, 3, 4, 5]).batch('nan')
   } catch (ex) {

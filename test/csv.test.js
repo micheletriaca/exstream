@@ -150,7 +150,7 @@ test('csv stringify - autodetect header + objects', () => {
 })
 
 test('csv stringify - autodetect header + arrays throw an error', () => {
-  let ex
+  let ex = null
   try {
     _([['1', '2', '3'], ['4', '5', '6']])
       .csvStringify({ header: true })

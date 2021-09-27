@@ -38,7 +38,7 @@ test('fork and back pressure', async () => new Promise(resolve => {
 }))
 
 test('slice validation', () => {
-  let e
+  let e = null
   try {
     _([1, 2, 3, 4, 5])
       .slice(3, 2)
@@ -58,7 +58,7 @@ test('infinite slice', () => {
 })
 
 test('slice parameter validation', () => {
-  let ex
+  let ex = null
   const s = _([1, 2, 3, 4, 5])
   const s1 = s.slice('0', 'Infinity')
   expect(s).toBe(s1)
