@@ -228,20 +228,6 @@ test('error in wrapped promise contains exstreamInput', async () => {
   expect(catched).toHaveBeenCalledTimes(1)
 })
 
-test('synchronous tasks errors - chain is not synchronous', () => {
-  let exception = false
-  try {
-    _([1, 2, 3, 4, 5, 6])
-      .map(async x => x * 2)
-      .resolve()
-      .batch(3)
-      .value() // Throw error because the chain is not synchronous
-  } catch (e) {
-    exception = true
-  }
-  expect(exception).toBe(true)
-})
-
 test('synchronous tasks errors - .value() with multiple values', () => {
   let exception = false
   try {
@@ -251,6 +237,21 @@ test('synchronous tasks errors - .value() with multiple values', () => {
     exception = true
   }
   expect(exception).toBe(true)
+})
+
+test('async task errors - .value() with multiple values', async () => {
+  let exception = null
+  try {
+    await _([1, 2, 3, 4, 5, 6])
+      .map(async x => x * 2)
+      .resolve()
+      .batch(3)
+      .value()
+  } catch (e) {
+    exception = e
+  }
+  expect(exception).not.toBe(null)
+  expect(exception.message).toBe('this stream has emitted more than 1 value. use .values() instad of .value()')
 })
 
 test('synchronous tasks error - runtime error', () => {

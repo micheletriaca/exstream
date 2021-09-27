@@ -301,6 +301,24 @@ test('synchronous reduce', () => {
   expect(res).toEqual(21)
 })
 
+test('async values', async () => {
+  const res = await _([1, 2, 3, 4, 5, 6])
+    .map(async x => x * 2)
+    .resolve()
+    .batch(3)
+    .values()
+  expect(res).toEqual([[2, 4, 6], [8, 10, 12]])
+})
+
+test('async value', async () => {
+  const res = await _([1, 2, 3, 4, 5, 6])
+    .map(async x => x * 2)
+    .resolve()
+    .reduce1((a, b) => a + b)
+    .value()
+  expect(res).toBe(42)
+})
+
 test('piping', () => new Promise(resolve => {
   const res = []
   _([1, 2, 3])

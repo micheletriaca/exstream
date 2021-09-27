@@ -416,10 +416,16 @@ class Exstream extends EventEmitter {
 
   value () {
     const res = this.values()
-    if (res.length > 1) {
+    if (_.isPromise(res)) {
+      return res.then(result => {
+        if (result.length > 1) throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+        return result[0]
+      })
+    } else if (res.length > 1) {
       throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+    } else {
+      return res[0]
     }
-    return res[0]
   }
 
   values () {
@@ -430,15 +436,16 @@ class Exstream extends EventEmitter {
       isSync = isSync && curr.#synchronous
     }
     if (!isSync) {
-      throw Error('.value() and .values() methods can be called only if all operations are synchronous')
+      return this.toPromise()
+    } else {
+      const res = []
+      this.consumeSync((err, x, push) => {
+        if (err) throw err
+        else if (x === _.nil) push(null, _.nil)
+        else res.push(x)
+      }).resume()
+      return res
     }
-    const res = []
-    this.consumeSync((err, x, push) => {
-      if (err) throw err
-      else if (x === _.nil) push(null, _.nil)
-      else res.push(x)
-    }).resume()
-    return res
   }
 }
 
