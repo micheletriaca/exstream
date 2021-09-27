@@ -409,8 +409,8 @@ test('unordered promises', async () => {
 
   const res = await _([2, 3, 4])
     .map(x => sleep(x))
-    .then(x => x * 2)
-    .then(x => x * 2)
+    .massThen(x => x * 2)
+    .massThen(x => x * 2)
     .resolve(2, false)
     .toPromise()
 
@@ -435,8 +435,8 @@ test('ordered promises', async () => {
 
   const res = await _([2, 3, 4])
     .map(x => decrementalSlowMap(x))
-    .then(x => x * 2)
-    .then(x => x * 2)
+    .massThen(x => x * 2)
+    .massThen(x => x * 2)
     .resolve(3)
     .toPromise()
 

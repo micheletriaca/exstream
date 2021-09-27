@@ -75,7 +75,7 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   } else {
     try {
       let res = fn(x)
-      const probablyPromise = res && res.then && res.catch && !_.isExstream(res)
+      const probablyPromise = res && res.then && res.catch
       if (probablyPromise) res = res.catch(e => { throw new ExstreamError(e, x) })
       if (!options || !options.wrap) {
         return push(null, res)
@@ -318,9 +318,9 @@ _m.uniqBy = _.curry((cfg, s) => {
   })
 })
 
-_m.then = _.curry((fn, s) => s.map(x => x.then(fn)))
+_m.massThen = _.curry((fn, s) => s.map(x => x.then(fn)))
 
-_m.catch = _.curry((fn, s) => s.map(x => x.catch(fn)))
+_m.massCatch = _.curry((fn, s) => s.map(x => x.catch(fn)))
 
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []

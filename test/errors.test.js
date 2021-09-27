@@ -180,14 +180,14 @@ test('error in promise chain', async () => {
       await h.sleep(10)
       return x
     })
-    .then(x => {
+    .massThen(x => {
       if (x === 2) throw Error('err2')
       return x
     })
-    .catch(e => {
+    .massCatch(e => {
       return 2
     })
-    .then(x => {
+    .massThen(x => {
       if (x === 5) throw Error('err5')
       return x
     })
@@ -484,4 +484,14 @@ test('stopOnError repush error', () => {
   }
   expect(ex).not.toBe(null)
   expect(ex.message).toBe('another error')
+})
+
+// This test fails when exposing then and catch methods. I've to rename them
+test('return an exstream instance from async method', async () => {
+  const s = _()
+  const createExstream = async () => {
+    return _(s)
+  }
+  const s2 = await createExstream()
+  expect(s2).toBe(s)
 })
