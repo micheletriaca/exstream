@@ -1,17 +1,17 @@
-const _ = require('../src/index.js')
+const xs = require('../src/index.js')
 const __ = require('highland')
 
 const input = [1, 2, 3]
 
 test('merge static pipelines', async () => {
-  const source = _(input)
-  const pipelines = [_.pipeline(), _.pipeline()]
+  const source = xs(input)
+  const pipelines = [xs.pipeline(), xs.pipeline()]
 
   const forks = pipelines
     .map(pipeline => source.fork().through(pipeline))
 
   source.start()
-  const results = await _(forks)
+  const results = await xs(forks)
     .merge()
     .toPromise()
   expect(results).toEqual([1, 1, 2, 2, 3, 3])
@@ -19,20 +19,20 @@ test('merge static pipelines', async () => {
 
 test('merge dynamic pipelines', async () => {
   const singleInput = [1]
-  const source1 = _(singleInput)
-  const fork1 = source1.fork().map(() => _.pipeline().map(x => x + 1))
-  const fork2 = source1.fork().map(() => _.pipeline().map(x => x + 2))
+  const source1 = xs(singleInput)
+  const fork1 = source1.fork().map(() => xs.pipeline().map(x => x + 1))
+  const fork2 = source1.fork().map(() => xs.pipeline().map(x => x + 2))
   source1.start()
-  const pipelines = _([fork1, fork2]).merge().values()
+  const pipelines = xs([fork1, fork2]).merge().values()
 
   expect(pipelines).toHaveLength(2)
 
-  const source2 = _(singleInput)
+  const source2 = xs(singleInput)
   const forks = pipelines
     .map(pipeline => source2.fork().through(pipeline))
 
   source2.start()
-  const results = await _(forks)
+  const results = await xs(forks)
     .merge()
     .toPromise()
   expect(results).toEqual([2, 3])
