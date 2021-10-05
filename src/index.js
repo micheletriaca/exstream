@@ -1,4 +1,4 @@
-const Exstream = require('./exstream')
+const { Exstream } = require('./exstream')
 const methods = require('./methods')
 const csv = require('./csv')
 const utils = require('./utils')

@@ -176,7 +176,7 @@ test('merging3', async () => {
 
 test('final through in a node writer is equivalent to calling pipe', done => {
   const res = []
-  _([1, 2, 3]).through(h.getSlowWritable(res, 0, 0)).on('finish', () => {
+  _([1, 2, 3]).through(h.getSlowWritable(res, 0, 0), { writable: true }).on('finish', () => {
     done()
     expect(res).toEqual([1, 2, 3])
   })
@@ -185,7 +185,7 @@ test('final through in a node writer is equivalent to calling pipe', done => {
 test('merge a stream of streams piped in a writable node stream, controlling the speed with merge', async () => {
   const res = []
   await _([[1, 2, 3], [4, 5, 6]])
-    .map(x => _(x).through(h.getSlowWritable(res, 0, 0)))
+    .map(x => _(x).through(h.getSlowWritable(res, 0, 0), { writable: true }))
     .merge(1)
     .toPromise()
   expect(res).toEqual([1, 2, 3, 4, 5, 6])
@@ -193,10 +193,9 @@ test('merge a stream of streams piped in a writable node stream, controlling the
 
 test('writable streams cannot be wrapped in an exstream instance', async () => {
   let ex
-  try {
-    _(h.getSlowWritable([], 0, 0))
-  } catch (e) { ex = e }
+  await _(h.getSlowWritable([], 0, 0))
+    .toPromise()
+    .catch(e => (ex = e))
+  console.log(ex)
   expect(ex).not.toBe(null)
-  expect(ex.message).toEqual('error creating exstream: invalid source. source can be one of: iterable, ' +
-  'async iterable, exstream function, a promise, a node readable stream')
 })
