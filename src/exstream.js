@@ -198,11 +198,12 @@ class Exstream extends EventEmitter {
       }
 
       if (otherStream) {
+        this.#flushBuffer(true)
         otherStream.#consumers = this.#consumers
         otherStream.#consumers.forEach(x => (x.source = otherStream))
         this.#consumers = []
+        process.nextTick(() => otherStream.resume())
         this.destroy()
-        otherStream.resume()
       } else if (this.paused && !syncNext) process.nextTick(() => this.resume())
     }
 
