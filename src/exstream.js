@@ -187,24 +187,26 @@ class Exstream extends EventEmitter {
 
   #consumeGenerator = () => {
     let syncNext = true
-    const w = x => this.write(x)
     const next = otherStream => {
       this.#nextCalled = true
-      if (otherStream && !_.isExstream(otherStream)) {
-        throw Error(
-          'error in generator calling next(otherStream). ' +
-          'otherStream must be an exstream instance, got ' + (typeof otherStream),
-        )
-      }
-
+      let me = this
       if (otherStream) {
-        this.#flushBuffer(true)
+        otherStream = new Exstream(otherStream)
         otherStream.#consumers = this.#consumers
         otherStream.#consumers.forEach(x => (x.source = otherStream))
+        otherStream.#resumedAtLestOnce = true
+        otherStream.#buffer = this.#buffer
+        otherStream.#synchronous = false
         this.#consumers = []
-        process.nextTick(() => otherStream.resume())
         this.destroy()
-      } else if (this.paused && !syncNext) process.nextTick(() => this.resume())
+        me = otherStream
+      }
+      if (me.paused && (!syncNext || otherStream)) process.nextTick(() => me.resume())
+    }
+
+    const w = x => {
+      this.write(x)
+      if (x === _.nil) next()
     }
 
     do {

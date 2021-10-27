@@ -97,24 +97,6 @@ test('error in source stream - node stream', done => {
     })
 })
 
-test('error switching generator source', async () => {
-  // this should be a stream, not a function
-  const generatorFn = (write, next) => {
-    write(1)
-    next(generatorFn)
-  }
-
-  let ex = null
-  await _(generatorFn)
-    .toPromise()
-    .catch(e => {
-      ex = e
-    })
-  expect(ex).not.toBe(null)
-  expect(ex.message).toBe('error in generator calling next(otherStream). ' +
-  'otherStream must be an exstream instance, got function')
-})
-
 test('error in wrapped writable', async () => {
   const errs = []
   const res = await _([1, 2])
