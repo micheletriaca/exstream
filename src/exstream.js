@@ -391,6 +391,7 @@ class Exstream extends EventEmitter {
       : new Exstream().errors(err => merged.write(err)).resolve(parallelism, preserveOrder)
 
     const merged = new Exstream()
+    merged.#synchronous = false
     const ss = this.map(subS => {
       if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
       if (preserveOrder) return subS.toPromise()

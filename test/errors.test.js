@@ -478,3 +478,13 @@ test('return an exstream instance from async method', async () => {
   const s2 = await createExstream()
   expect(s2).toBe(s)
 })
+
+test('async errors in stream of streams', async () => {
+  const res = await _([
+    _([1, 2, 3]).map(async x => { throw Error('an error') }).resolve(),
+    _([4, 5, 6]),
+  ]).merge()
+    .errors(console.error)
+    .values()
+  expect(res).toEqual([4, 5, 6])
+})
