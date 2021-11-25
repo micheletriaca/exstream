@@ -25,3 +25,16 @@ test('wrong / missing key', () => {
     .value()
   expect(error).toHaveBeenCalledTimes(3)
 })
+
+test('multiple values per key', () => {
+  const error = jest.fn()
+  const res = _([...dataset, { 3: '4' }])
+    .keyby('id')
+    .errors(error)
+    .value()
+  expect(res).toEqual({
+    1: { id: 1, value: '1' },
+    2: { id: 2, value: '2' },
+  })
+  expect(error).toHaveBeenCalledTimes(1)
+})
