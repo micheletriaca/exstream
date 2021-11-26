@@ -521,7 +521,19 @@ _m.groupBy = _.curry((fnOrString, s) => {
   }, {})
 })
 
-_m.sortBy = _.curry((fn, s) => s.collect().flatMap(x => x.sort(fn)))
+_m.keyBy = _.curry((fnOrString, s) => {
+  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, 'null') : fnOrString
+  return s.reduce((accumulator, x) => {
+    const key = getter(x)
+    const keyAlreadyExists = _.has(accumulator, key)
+    if (key === 'null') return accumulator
+    if (keyAlreadyExists) throw new ExstreamError(`Multiple values per key: ${key}`, x)
+    return { ...accumulator, [key]: x }
+  }, {})
+})
+
+_m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
+
 _m.sort = s => _m.sortBy(undefined, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
