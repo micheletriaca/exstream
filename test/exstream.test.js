@@ -170,7 +170,7 @@ test('batch strange params', () => {
   _([1, 2, 3, 4, 5]).batch('3').toArray(res => {
     expect(res).toEqual([[1, 2, 3], [4, 5]])
   })
-  let e
+  let e = null
   try {
     _([1, 2, 3, 4, 5]).batch('nan')
   } catch (ex) {
@@ -301,6 +301,24 @@ test('synchronous reduce', () => {
   expect(res).toEqual(21)
 })
 
+test('async values', async () => {
+  const res = await _([1, 2, 3, 4, 5, 6])
+    .map(async x => x * 2)
+    .resolve()
+    .batch(3)
+    .values()
+  expect(res).toEqual([[2, 4, 6], [8, 10, 12]])
+})
+
+test('async value', async () => {
+  const res = await _([1, 2, 3, 4, 5, 6])
+    .map(async x => x * 2)
+    .resolve()
+    .reduce1((a, b) => a + b)
+    .value()
+  expect(res).toBe(42)
+})
+
 test('piping', () => new Promise(resolve => {
   const res = []
   _([1, 2, 3])
@@ -409,8 +427,8 @@ test('unordered promises', async () => {
 
   const res = await _([2, 3, 4])
     .map(x => sleep(x))
-    .then(x => x * 2)
-    .then(x => x * 2)
+    .massThen(x => x * 2)
+    .massThen(x => x * 2)
     .resolve(2, false)
     .toPromise()
 
@@ -435,8 +453,8 @@ test('ordered promises', async () => {
 
   const res = await _([2, 3, 4])
     .map(x => decrementalSlowMap(x))
-    .then(x => x * 2)
-    .then(x => x * 2)
+    .massThen(x => x * 2)
+    .massThen(x => x * 2)
     .resolve(3)
     .toPromise()
 
@@ -562,6 +580,48 @@ test('switch source + backpressure', done => {
   _(gen()).pipe(h.getSlowWritable(res, 1, 0)).on('finish', () => {
     done()
     expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  })
+})
+
+test('throttle', async () => {
+  const gen = async function * () {
+    for (let i = 0; i < 10; i++) {
+      await h.sleep(8)
+      yield i
+    }
+  }
+
+  const res = await _(gen())
+    .throttle(50)
+    .toPromise()
+
+  expect(res.length).toBeLessThan(4)
+  expect(res.length).toBeGreaterThan(1)
+})
+
+test('split', () => {
+  const b = [Buffer.from('line1\nli'), Buffer.from('ne2\r\n'), Buffer.from('line3')]
+  const res = _(b).split().values()
+  expect(res).toEqual(['line1', 'line2', 'line3'])
+})
+
+test('splitBy', () => {
+  const b = [Buffer.from('||line1||li'), Buffer.from('ne2||'), Buffer.from('line3||line4||')]
+  const res = _(b).splitBy('||').values()
+  expect(res).toEqual(['', 'line1', 'line2', 'line3', 'line4', ''])
+})
+
+test('splitBy with different encodings', () => {
+  const b = [Buffer.from('line1||li', 'utf16le'), Buffer.from('ne2||', 'utf16le'), Buffer.from('line3||line4', 'utf16le')]
+  const res = _(b).splitBy('||', 'utf16le').values()
+  expect(res).toEqual(['line1', 'line2', 'line3', 'line4'])
+})
+
+test('split with multibyte chars', done => {
+  const b = ['line1', Buffer.from('\n'), 'line2', Buffer.from([0x0a /* \n */, 0xf0, 0x9f]), Buffer.from([0x98, 0x8f])]
+  _(b).split().toArray(res => {
+    done()
+    expect(res).toEqual(['line1', 'line2', '😏'])
   })
 })
 
@@ -703,6 +763,13 @@ test('where', () => {
     .where({ a: 'a', b: 'b' })
     .values()
   expect(res).toEqual([{ a: 'a', b: 'b' }])
+})
+
+test('findWhere', () => {
+  const res = _([{ a: 'a', b: 'b' }, { a: 'b', b: 'c' }, { a: 'a', b: 'b' }])
+    .findWhere({ a: 'a' })
+    .value()
+  expect(res).toEqual({ a: 'a', b: 'b' })
 })
 
 test('multipipe', () => new Promise(resolve => {

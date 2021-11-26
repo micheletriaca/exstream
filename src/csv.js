@@ -155,7 +155,8 @@ _m.csv = (opts, s) => {
       }
     }
 
-    currentBuffer = Buffer.concat([currentBuffer, x], currentBuffer.length + x.length)
+    const bufx = Buffer.from(x)
+    currentBuffer = Buffer.concat([currentBuffer, bufx], currentBuffer.length + bufx.length)
     let inQuote = false
     let prevIdx = 0
     let col = 0

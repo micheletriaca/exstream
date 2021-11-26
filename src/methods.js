@@ -1,8 +1,71 @@
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
 const { Transform } = require('stream')
+const { StringDecoder } = require('string_decoder')
 
 const _m = module.exports = {}
+
+_m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
+
+_m.splitBy = _.curry((regexp, encoding, s) => {
+  const decoder = new StringDecoder(encoding)
+  let buffer = ''
+
+  return s.consumeSync((err, x, push) => {
+    if (err) return push(err)
+    const isNil = x === _.nil
+    const str = buffer + (isNil ? decoder.end() : decoder.write(x))
+    const tokens = str.split(regexp)
+    buffer = tokens.pop()
+    for (let i = 0, len = tokens.length; i < len; i++) {
+      push(null, tokens[i])
+    }
+    if (isNil) {
+      push(null, buffer)
+      push(null, _.nil)
+    }
+  })
+})
+
+_m.encode = _.curry((encoding, s) => {
+  if (encoding !== 'base64') throw Error('.encode() supports only base64 at the moment')
+  const decoder = new StringDecoder(encoding)
+  return s.consumeSync((err, x, push) => {
+    if (err) return push(err)
+    try {
+      const isNil = x === _.nil
+      const str = (isNil ? decoder.end() : decoder.write(Buffer.from(x)))
+      push(null, str)
+      if (isNil) push(null, _.nil)
+    } catch (e) {
+      push(new ExstreamError({
+        message:
+          'error in .encode(). expected string, Buffer, ' +
+          'ArrayBuffer, Array, or Array-like Object. Got ' + (typeof x),
+      }, x))
+    }
+  })
+})
+
+_m.decode = _.curry((encoding, s) => {
+  if (encoding !== 'base64') throw Error('.decode() supports only base64 at the moment')
+  let buffer = ''
+  return s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      if (buffer) push(null, Buffer.from(buffer, 'base64'))
+      push(null, _.nil)
+    } else {
+      const toProcess = buffer + x
+      const remaining = toProcess.length % 4
+      const len = toProcess.length - remaining
+      buffer = toProcess.slice(len)
+      const validBase64 = toProcess.slice(0, len)
+      if (validBase64) push(null, Buffer.from(validBase64, 'base64'))
+    }
+  })
+})
 
 _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
   if (err) {
@@ -11,18 +74,18 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
     push(err, x)
   } else {
     try {
-      if (!options || !options.wrap) push(null, fn(x))
-      else {
-        const res = fn(x)
-        if (res.then) {
-          push(null, res
-            .then(y => ({ input: x, output: y }))
-            .catch(e => { throw new ExstreamError(e, x) }),
-          )
-        } else push(null, { input: x, output: res })
+      let res = fn(x)
+      const probablyPromise = res && res.then && res.catch
+      if (probablyPromise) res = res.catch(e => { throw new ExstreamError(e, x) })
+      if (!options || !options.wrap) {
+        return push(null, res)
+      } else if (probablyPromise) {
+        push(null, res.then(y => ({ input: x, output: y })))
+      } else {
+        push(null, { input: x, output: res })
       }
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
     }
   }
 }))
@@ -33,6 +96,8 @@ _m.where = _.curry((props, s) => s.filter(x => {
   }
   return true
 }))
+
+_m.findWhere = _.curry((props, s) => s.where(props).take(1))
 
 _m.ratelimit = _.curry((num, ms, s) => {
   let sent = 0
@@ -64,6 +129,25 @@ _m.ratelimit = _.curry((num, ms, s) => {
         push(null, x)
         next()
       }, ms - Math.round(Number((process.hrtime.bigint() - startWindow) / 1000000n)))
+    }
+  })
+})
+
+_m.throttle = _.curry((ms, s) => {
+  let last = 0 - ms
+  return s.consume((err, x, push, next) => {
+    const now = new Date().getTime()
+    if (err) {
+      push(err)
+      next()
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else if (now - ms >= last) {
+      last = now
+      push(null, x)
+      next()
+    } else {
+      next()
     }
   })
 })
@@ -114,7 +198,7 @@ _m.filter = _.curry((fn, s) => s.consumeSync((err, x, push) => {
       const res = fn(x)
       if (res) push(null, x)
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
     }
   }
 }))
@@ -129,7 +213,7 @@ _m.reject = _.curry((fn, s) => s.consumeSync((err, x, push) => {
       const res = fn(x)
       if (!res) push(null, x)
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
     }
   }
 }))
@@ -146,7 +230,7 @@ _m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
       if (res) push(null, x)
       next()
     } catch (e) {
-      push(e)
+      push(new ExstreamError(e, x))
       next()
     }
   }
@@ -201,7 +285,7 @@ _m.pick = _.curry((fields, s) => s.map(x => {
     try {
       hasKey = fields[i] in x
     } catch (e) {
-      throw Error('error in .pick(). expected object, got ' + (typeof x))
+      throw new ExstreamError(Error('error in .pick(). expected object, got ' + (typeof x)), x)
     }
     if (hasKey) res[fields[i]] = x[fields[i]]
   }
@@ -228,15 +312,15 @@ _m.uniqBy = _.curry((cfg, s) => {
           push(null, x)
         }
       } catch (e) {
-        push(e)
+        push(new ExstreamError(e, x))
       }
     }
   })
 })
 
-_m.then = _.curry((fn, s) => s.map(x => x.then(fn)))
+_m.massThen = _.curry((fn, s) => s.map(x => x.then(fn)))
 
-_m.catch = _.curry((fn, s) => s.map(x => x.catch(fn)))
+_m.massCatch = _.curry((fn, s) => s.map(x => x.catch(fn)))
 
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
@@ -271,7 +355,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
       if (promises.length === 0) push(null, _.nil)
       else ended = true
     } else if (!_.isPromise(el)) {
-      push(Error('error in .resolve(). item must be a promise'))
+      push(new ExstreamError(Error('error in .resolve(). item must be a promise'), el))
       next()
     } else {
       const resPointer = {}
@@ -288,6 +372,17 @@ _m.errors = _.curry((fn, s) => s.consumeSync((err, x, push) => {
     push(null, _.nil)
   } else if (err) {
     fn(err, push)
+  } else {
+    push(null, x)
+  }
+}))
+
+_m.stopOnError = _.curry((fn, s) => s.consumeSync((err, x, push) => {
+  if (x === _.nil) {
+    push(null, _.nil)
+  } else if (err) {
+    fn(err, push)
+    s.end()
   } else {
     push(null, x)
   }
@@ -352,7 +447,7 @@ _m.reduce = _.curry((fn, accumulator, s) => {
         accumulator = fn(accumulator, x)
       } catch (e) {
         try {
-          push(e)
+          push(new ExstreamError(e, x))
         } finally {
           accumulator = undefined
           s1.destroy()
@@ -380,7 +475,7 @@ _m.reduce1 = _.curry((fn, s) => {
         accumulator = fn(accumulator, x)
       } catch (e) {
         try {
-          push(e)
+          push(new ExstreamError(e, x))
         } finally {
           accumulator = undefined
           s1.destroy()
@@ -405,7 +500,7 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
         next()
       } catch (e) {
         try {
-          push(e)
+          push(new ExstreamError(e, x))
         } finally {
           accumulator = undefined
           s1.destroy()
@@ -438,6 +533,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
 })
 
 _m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
+
 _m.sort = s => _m.sortBy(undefined, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
@@ -473,6 +569,23 @@ _m.tap = _.curry((fn, s) => s.map(x => { fn(x); return x }))
 _m.compact = s => s.filter(x => x)
 
 _m.find = _.curry((fn, s) => s.filter(fn).take(1))
+
+_m.head = s => s.take(1)
+
+_m.last = s => {
+  const nothing = {}
+  let last = nothing
+  return s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      if (last !== nothing) push(null, last)
+      push(null, _.nil)
+    } else {
+      last = x
+    }
+  })
+}
 
 _m.pipeline = () => new Proxy({
   __exstream_pipeline__: true,
