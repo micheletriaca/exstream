@@ -430,9 +430,9 @@ _m.keyBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, 'null') : fnOrString
   return s.reduce((accumulator, x) => {
     const key = getter(x)
-    const hasKey = _.has(accumulator, key)
+    const keyAlreadyExists = _.has(accumulator, key)
     if (key === 'null') return accumulator
-    if (hasKey) throw new ExstreamError(`multiple values per key: ${key}`, x)
+    if (keyAlreadyExists) throw new ExstreamError(`Multiple values per key: ${key}`, x)
     return { ...accumulator, [key]: x }
   }, {})
 })
