@@ -432,7 +432,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
     const key = getter(x)
     const hasKey = _.has(accumulator, key)
     if (key === 'null') return accumulator
-    if (hasKey) throw new ExstreamError(`multiple vaue per key: ${key}`, x)
+    if (hasKey) throw new ExstreamError(`multiple values per key: ${key}`, x)
     return { ...accumulator, [key]: x }
   }, {})
 })
