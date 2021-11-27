@@ -3,12 +3,20 @@ const { Readable } = require('stream')
 const _ = require('./utils')
 
 class ExstreamError extends Error {
-  __exstreamError__ = true
-  constructor (originalError, originalData) {
-    super(originalError.message)
-    if (originalError.__exstreamError__) return originalError
-    this.originalError = originalError
-    this.originalData = originalData
+  constructor (e, exstreamInput) {
+    super(e.message)
+    if (e.exstreamError) {
+      return e
+    } else if (e instanceof Error) {
+      e.exstreamError = true
+      e.exstreamInput = exstreamInput
+      return e
+    } else {
+      Object.assign(this, e)
+      if (e.stack) this.stack = e.stack
+      this.exstreamError = true
+      this.exstreamInput = exstreamInput
+    }
   }
 }
 
@@ -28,7 +36,6 @@ class Exstream extends EventEmitter {
 
   #consumeFn = null
   #consumeSyncFn = null
-  #currentRec = null
   #nextCalled = true
   #consumers = []
   #observers = []
@@ -90,16 +97,13 @@ class Exstream extends EventEmitter {
     if (this.paused && !skipBackPressure) {
       this.#buffer.push(x)
     } else if (this.#consumeSyncFn) {
-      this.#currentRec = x
       this.#consumeSyncFn(err, xx, this.#send)
     } else if (this.#consumeFn) {
       this.#nextCalled = false
       let syncNext = true
-      this.#currentRec = x
       this.#consumeFn(err, xx, this.#send, () => {
         this.#nextCalled = true
-        this.#currentRec = null
-        if (this.paused && !syncNext) this.resume()
+        if (this.paused && !syncNext) process.nextTick(() => this.resume())
       })
       syncNext = false
       if (!this.#nextCalled) this.pause()
@@ -111,17 +115,16 @@ class Exstream extends EventEmitter {
   }
 
   #send = (err, x) => {
-    const wrappedError = err ? new ExstreamError(err, this.#currentRec) : null
     if (x === _.nil) process.nextTick(() => this.end())
     // i store it locally because this array could be filtered
     // during the loop if one consumer ends (for ex. it can happen withtake or slice)
     const consumers = this.#consumers
-    if (err && !this.#consumers.length) this.emit('error', wrappedError)
+    if (err && !this.#consumers.length) this.emit('error', err)
     for (let i = 0, len = consumers.length; i < len; i++) {
-      consumers[i].write(wrappedError || x)
+      consumers[i].write(err || x)
     }
     for (let i = 0, len = this.#observers.length; i < len; i++) {
-      this.#observers[i]._write(wrappedError || x, true)
+      this.#observers[i]._write(err || x, true)
     }
   }
 
@@ -184,23 +187,26 @@ class Exstream extends EventEmitter {
 
   #consumeGenerator = () => {
     let syncNext = true
-    const w = x => this.write(x)
     const next = otherStream => {
       this.#nextCalled = true
-      if (otherStream && !_.isExstream(otherStream)) {
-        throw Error(
-          'error in generator calling next(otherStream). ' +
-          'otherStream must be an exstream instance, got ' + (typeof otherStream),
-        )
-      }
-
+      let me = this
       if (otherStream) {
+        otherStream = new Exstream(otherStream)
         otherStream.#consumers = this.#consumers
         otherStream.#consumers.forEach(x => (x.source = otherStream))
+        otherStream.#resumedAtLestOnce = true
+        otherStream.#buffer = this.#buffer
+        otherStream.#synchronous = false
         this.#consumers = []
         this.destroy()
-        otherStream.resume()
-      } else if (this.paused && !syncNext) this.resume()
+        me = otherStream
+      }
+      if (me.paused && (!syncNext || otherStream)) process.nextTick(() => me.resume())
+    }
+
+    const w = x => {
+      this.write(x)
+      if (x === _.nil) next()
     }
 
     do {
@@ -361,6 +367,7 @@ class Exstream extends EventEmitter {
       this.pipe(target)
       const s = new Exstream()
       s.readable = false
+      s.source = this
       s.resume()
       s.#addOnceListener('error', target, e => { s.write(e); setImmediate(() => s.end()) })
       s.#addOnceListener('finish', target, () => { s.emit('finish'); setImmediate(() => s.destroy()) })
@@ -384,6 +391,7 @@ class Exstream extends EventEmitter {
       : new Exstream().errors(err => merged.write(err)).resolve(parallelism, preserveOrder)
 
     const merged = new Exstream()
+    merged.#synchronous = false
     const ss = this.map(subS => {
       if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
       if (preserveOrder) return subS.toPromise()
@@ -412,10 +420,16 @@ class Exstream extends EventEmitter {
 
   value () {
     const res = this.values()
-    if (res.length > 1) {
+    if (_.isPromise(res)) {
+      return res.then(result => {
+        if (result.length > 1) throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+        return result[0]
+      })
+    } else if (res.length > 1) {
       throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+    } else {
+      return res[0]
     }
-    return res[0]
   }
 
   values () {
@@ -426,15 +440,16 @@ class Exstream extends EventEmitter {
       isSync = isSync && curr.#synchronous
     }
     if (!isSync) {
-      throw Error('.value() and .values() methods can be called only if all operations are synchronous')
+      return this.toPromise()
+    } else {
+      const res = []
+      this.consumeSync((err, x, push) => {
+        if (err) throw err
+        else if (x === _.nil) push(null, _.nil)
+        else res.push(x)
+      }).resume()
+      return res
     }
-    const res = []
-    this.consumeSync((err, x, push) => {
-      if (err) throw err
-      else if (x === _.nil) push(null, _.nil)
-      else res.push(x)
-    }).resume()
-    return res
   }
 }
 
