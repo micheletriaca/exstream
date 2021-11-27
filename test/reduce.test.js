@@ -77,7 +77,7 @@ test('async reduce', async () => {
 })
 
 test('reduce errors', async () => {
-  let e
+  let e = null
   try {
     _([1, 2, 3])
       .reduce((memo, x) => {
@@ -94,7 +94,7 @@ test('reduce errors', async () => {
 })
 
 test('reduce errors - 2', async () => {
-  let e
+  let e = null
   const res = _([1, 2, 3])
     .reduce((memo, x) => {
       if (x === 3) throw Error('NOOO')
@@ -108,7 +108,7 @@ test('reduce errors - 2', async () => {
 })
 
 test('reduce1 errors', async () => {
-  let e
+  let e = null
   const res = _([1, 2, 3])
     .reduce1((memo, x) => {
       if (x === 3) throw Error('NOOO')
@@ -122,7 +122,7 @@ test('reduce1 errors', async () => {
 })
 
 test('reduce1 errors - 2', async () => {
-  let e
+  let e = null
   try {
     _([1, 2, 3])
       .reduce1((memo, x) => {
@@ -206,11 +206,12 @@ test('groupBy nested', async () => {
     { a: { c: 3 }, b: 1 },
     { a: { c: 3 }, b: 2 },
     { a: null },
+    { a: { c: null } },
   ]).groupBy('a.c')
     .value()
 
   // eslint-disable-next-line quote-props
-  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], 'null': [{ a: null }] })
+  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], [_.nil]: [{ a: null }, { a: { c: null } }] })
 })
 
 test('groupBy function', async () => {
