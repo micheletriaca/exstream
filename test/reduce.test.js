@@ -206,11 +206,12 @@ test('groupBy nested', async () => {
     { a: { c: 3 }, b: 1 },
     { a: { c: 3 }, b: 2 },
     { a: null },
+    { a: { c: null } },
   ]).groupBy('a.c')
     .value()
 
   // eslint-disable-next-line quote-props
-  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], 'null': [{ a: null }] })
+  expect(res).toEqual({ 3: [{ a: { c: 3 }, b: 1 }, { a: { c: 3 }, b: 2 }], [_.nil]: [{ a: null }, { a: { c: null } }] })
 })
 
 test('groupBy function', async () => {

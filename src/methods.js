@@ -512,9 +512,10 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
 })
 
 _m.groupBy = _.curry((fnOrString, s) => {
-  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, 'null') : fnOrString
+  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
   return s.reduce((accumulator, x) => {
-    const key = getter(x)
+    let key = getter(x)
+    if (key === null || key === undefined) key = _.nil
     if (!_.has(accumulator, key)) accumulator[key] = []
     accumulator[key].push(x)
     return accumulator
@@ -522,13 +523,14 @@ _m.groupBy = _.curry((fnOrString, s) => {
 })
 
 _m.keyBy = _.curry((fnOrString, s) => {
-  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, 'null') : fnOrString
+  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
   return s.reduce((accumulator, x) => {
-    const key = getter(x)
+    let key = getter(x)
+    if (key === null || key === undefined) key = _.nil
     const keyAlreadyExists = _.has(accumulator, key)
-    if (key === 'null') return accumulator
     if (keyAlreadyExists) throw new ExstreamError(`Multiple values per key: ${key}`, x)
-    return { ...accumulator, [key]: x }
+    accumulator[key] = x
+    return accumulator
   }, {})
 })
 
