@@ -1,17 +1,18 @@
 const { isDefined } = require('../src/utils')
 
-const nullProperty = { property: null }
-const undefinedProperty = { property: undefined }
-const missingProperty = { }
-
 test('null', () => {
-  expect(isDefined(nullProperty, 'property')).toEqual(false)
+  expect(isDefined({ property: null }, 'property')).toBe(false)
 })
 
 test('undefined', () => {
-  expect(isDefined(undefinedProperty, 'property')).toEqual(false)
+  expect(isDefined({ property: undefined }, 'property')).toBe(false)
 })
 
 test('missing', () => {
-  expect(isDefined(missingProperty, 'property')).toEqual(false)
+  expect(isDefined({}, 'property')).toBe(false)
+})
+
+test('success', () => {
+  expect(isDefined({ property: 'ok' }, 'property')).toBe(true)
+  expect(isDefined({ property: 1 }, 'property')).toBe(true)
 })
