@@ -141,6 +141,7 @@ class Exstream extends EventEmitter {
     }))
   }
 
+  // eslint-disable-next-line max-statements
   end () {
     if (this.ended) return
     if (!this.#nilPushed) this._write(_.nil)
@@ -317,7 +318,7 @@ class Exstream extends EventEmitter {
     this.#synchronous = false
     if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
     const canClose = dest !== process.stdout && dest !== process.stderr && options.end !== false
-    const end = canClose ? dest.end : () => {}
+    const end = canClose ? dest.end : () => ({})
     const s = this.consume((err, x, push, next) => {
       if (x === _.nil) {
         dest.off('drain', next)
@@ -356,6 +357,7 @@ class Exstream extends EventEmitter {
     return res
   }
 
+  // eslint-disable-next-line max-statements, max-lines-per-function
   through (target, { writable = false } = {}) {
     if (!target) return this
     else if (_.isExstream(target)) {

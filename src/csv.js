@@ -149,6 +149,7 @@ _m.csv = (opts, s) => {
   let firstRow = Array.isArray(opts.header) ? opts.header : []
   let row = firstRow.length ? {} : []
   let isEnding = false
+  // eslint-disable-next-line max-statements
   return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)

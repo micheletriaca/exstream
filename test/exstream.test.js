@@ -335,7 +335,9 @@ test('piping', () => new Promise(resolve => {
 }))
 
 test('extend', () => {
-  _.extend('duplicate', function () { return this.map(x => x * 2) })
+  _.extend('duplicate', function () {
+    return this.map(x => x * 2)
+  })
   _([1, 2, 3])
     .duplicate()
     .toArray(res => {

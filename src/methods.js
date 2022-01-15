@@ -80,7 +80,9 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
     try {
       let res = fn(x)
       const probablyPromise = res && res.then && res.catch
-      if (probablyPromise) res = res.catch(e => { throw new ExstreamError(e, x) })
+      if (probablyPromise) res = res.catch(e => {
+        throw new ExstreamError(e, x)
+      })
       if (!options || !options.wrap) {
         return push(null, res)
       } else if (probablyPromise) {
@@ -106,6 +108,7 @@ _m.findWhere = _.curry((props, s) => s.where(props).take(1))
 _m.ratelimit = _.curry((num, ms, s) => {
   let sent = 0
   let startWindow
+  // eslint-disable-next-line max-statements
   return s.consume((err, x, push, next) => {
     if (err) {
       push(err)
@@ -325,6 +328,7 @@ _m.massThen = _.curry((fn, s) => s.map(x => x.then(fn)))
 
 _m.massCatch = _.curry((fn, s) => s.map(x => x.catch(fn)))
 
+// eslint-disable-next-line max-lines-per-function
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
@@ -569,7 +573,10 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   })
 })
 
-_m.tap = _.curry((fn, s) => s.map(x => { fn(x); return x }))
+_m.tap = _.curry((fn, s) => s.map(x => {
+  fn(x)
+  return x
+}))
 
 _m.compact = s => s.filter(x => x)
 
@@ -593,6 +600,7 @@ _m.last = s => {
 }
 
 _m.pipeline = () => new Proxy({
+  // eslint-disable-next-line camelcase
   __exstream_pipeline__: true,
   definitions: [],
   generateStream: function () {

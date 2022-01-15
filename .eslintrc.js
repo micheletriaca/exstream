@@ -33,6 +33,7 @@ module.exports = {
       rules: {
         // 'max-lines': ['warn', 100],
         'no-multi-assign': 'off',
+        'no-undefined': 'off',
         'max-nested-callbacks': ['warn', 3],
         'object-curly-spacing': 'off',
         'security/detect-object-injection': 'off',
@@ -44,6 +45,7 @@ module.exports = {
         'max-nested-callbacks': ['warn', 3],
         'no-console': 'off',
         'no-undefined': 'off',
+        'no-sync': 'off',
         'object-curly-spacing': 'off',
         'require-await': 'off',
         'jest/no-done-callback': 'off',
