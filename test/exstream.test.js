@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 jest.setTimeout(2000)
 
 const _ = require('../src/index.js')
@@ -48,7 +49,7 @@ test('consume stream', () => {
 test('backpressure', () => {
   const x = _([1, 2, 3])
   const y = []
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const z = x.consume((err, x, push, next) => {
       if (err) {
         y.push(err)
@@ -70,7 +71,7 @@ test('backpressure', () => {
 test('write', () => {
   const x = _()
   const y = []
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const z = x.consume((err, x, push, next) => {
       if (err) {
         y.push(err)
@@ -513,15 +514,13 @@ const asyncIterator = async function * (iterations = 10) {
   }
 }
 
-test('async generator', () => {
-  return new Promise(resolve => {
-    _(asyncIterator(10))
-      .toArray(res => {
-        resolve()
-        expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-      })
-  })
-})
+test('async generator', () => new Promise(resolve => {
+  _(asyncIterator(10))
+    .toArray(res => {
+      resolve()
+      expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    })
+}))
 
 test('async generator no exstream', async () => {
   const res = []
@@ -612,13 +611,22 @@ test('splitBy', () => {
 })
 
 test('splitBy with different encodings', () => {
-  const b = [Buffer.from('line1||li', 'utf16le'), Buffer.from('ne2||', 'utf16le'), Buffer.from('line3||line4', 'utf16le')]
+  const b = [
+    Buffer.from('line1||li', 'utf16le'),
+    Buffer.from('ne2||', 'utf16le'),
+    Buffer.from('line3||line4', 'utf16le'),
+  ]
   const res = _(b).splitBy('||', 'utf16le').values()
   expect(res).toEqual(['line1', 'line2', 'line3', 'line4'])
 })
 
 test('split with multibyte chars', done => {
-  const b = ['line1', Buffer.from('\n'), 'line2', Buffer.from([0x0a /* \n */, 0xf0, 0x9f]), Buffer.from([0x98, 0x8f])]
+  const b = [
+    'line1',
+    Buffer.from('\n'),
+    'line2',
+    Buffer.from([0x0a /* \n */, 0xf0, 0x9f]),
+    Buffer.from([0x98, 0x8f])]
   _(b).split().toArray(res => {
     done()
     expect(res).toEqual(['line1', 'line2', '😏'])
@@ -639,24 +647,22 @@ test('toNodeStream', () => {
   })
 })
 
-test('through node stream', () => {
-  return new Promise(resolve => {
-    _(fs.createReadStream('out'))
-      .through(zlib.createGzip())
-      .pipe(fs.createWriteStream('out.gz'))
-      .on('finish', () => {
-        _(fs.createReadStream('out.gz'))
-          .through(zlib.createGunzip())
-          .pipe(fs.createWriteStream('out2'))
-          .on('finish', () => {
-            const f1 = fs.readFileSync('out')
-            const f2 = fs.readFileSync('out2')
-            expect(f1).toEqual(f2)
-            resolve()
-          })
-      })
-  })
-})
+test('through node stream', () => new Promise(resolve => {
+  _(fs.createReadStream('out'))
+    .through(zlib.createGzip())
+    .pipe(fs.createWriteStream('out.gz'))
+    .on('finish', () => {
+      _(fs.createReadStream('out.gz'))
+        .through(zlib.createGunzip())
+        .pipe(fs.createWriteStream('out2'))
+        .on('finish', () => {
+          const f1 = fs.readFileSync('out')
+          const f2 = fs.readFileSync('out2')
+          expect(f1).toEqual(f2)
+          resolve()
+        })
+    })
+}))
 
 test('forking', async () => {
   const s = _([1, 2, 3])
@@ -669,7 +675,7 @@ test('forking', async () => {
   expect(r3).toEqual([5, 7, 9])
 })
 
-test('merging with fs', async () => new Promise((resolve) => {
+test('merging with fs', async () => new Promise(resolve => {
   _([
     _(fs.createReadStream('out')),
     _(fs.createReadStream('out')),
@@ -692,23 +698,24 @@ test('pipe pipeline', done => {
     .map(x => 'buahaha' + x + '\n')
 
   const res = []
-  fs.createReadStream('out').pipe(p.generateStream()).pipe(h.getSlowWritable(res, 0)).on('finish', () => {
-    done()
-    expect(res.length).toBe(11)
-  })
+  fs.createReadStream('out')
+    .pipe(p.generateStream())
+    .pipe(h.getSlowWritable(res, 0))
+    .on('finish', () => {
+      done()
+      expect(res.length).toBe(11)
+    })
 })
 
-test('pipeToFile', () => {
-  return new Promise(resolve => {
-    _(h.fibonacci(5))
-      .map(x => x.toString() + '\n')
-      .pipe(fs.createWriteStream('fibo'))
-      .on('finish', () => {
-        resolve()
-        expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
-      })
-  })
-})
+test('pipeToFile', () => new Promise(resolve => {
+  _(h.fibonacci(5))
+    .map(x => x.toString() + '\n')
+    .pipe(fs.createWriteStream('fibo'))
+    .on('finish', () => {
+      resolve()
+      expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
+    })
+}))
 
 test('not more than 1 consumer if not fork', () => {
   const s = _()
@@ -772,30 +779,6 @@ test('findWhere', () => {
   expect(res).toEqual({ a: 'a', b: 'b' })
 })
 
-test('multipipe', () => new Promise(resolve => {
-  // This demonstrates how to pipe multiple input streams into an exstream writer. You can even control parallelism
-  // and order. The whole chain has back-pressure
-  const s = _()
-  const res = []
-  s.merge(2, false).pipe(h.getSlowWritable(res, 0, 1))
-  const s1 = _(Array(10).fill('0'))
-  const s2 = _(Array(10).fill('1'))
-  s.write(s1)
-  s.write(s2)
-  s.write(_(['a', 'b']))
-  s.write(_.nil)
-  setImmediate(() => {
-    resolve()
-    expect(res).toEqual([
-      '0', '1', '0', '1', '0',
-      '1', '0', '1', '0', '1',
-      '0', '1', '0', '1', '0',
-      '1', '0', '1', '0', '1',
-      'a', 'b',
-    ])
-  })
-}))
-
 test('sort numbers', () => {
   const res = _([3, 8, 1, 4, 2]).sort().values()
   expect(res).toEqual([1, 2, 3, 4, 8])
@@ -812,3 +795,31 @@ test('sort by', () => {
     .values()
   expect(res).toEqual(['1', '2', '10', '20'])
 })
+
+test('multipipe', () => new Promise(resolve => {
+  /*
+    This demonstrates how to pipe multiple input streams into an exstream writer.
+    You can even control parallelism and order.
+    The whole chain has back-pressure.
+  */
+  const s = _()
+  const res = []
+  s.merge(2, false).pipe(h.getSlowWritable(res, 0, 1))
+  const s1 = _(Array(10).fill('0'))
+  const s2 = _(Array(10).fill('1'))
+  s.write(s1)
+  s.write(s2)
+  s.write(_(['a', 'b']))
+  s.write(_.nil)
+  setImmediate(() => {
+    resolve()
+    /* eslint-disable array-element-newline */
+    expect(res).toEqual([
+      '0', '1', '0', '1', '0',
+      '1', '0', '1', '0', '1',
+      '0', '1', '0', '1', '0',
+      '1', '0', '1', '0', '1',
+      'a', 'b',
+    ])
+  })
+}))

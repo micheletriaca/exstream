@@ -1,3 +1,7 @@
+/*
+  eslint-disable max-lines, sonarjs/cognitive-complexity, complexity, no-sync
+*/
+
 const EventEmitter = require('events').EventEmitter
 const { Readable } = require('stream')
 const _ = require('./utils')
@@ -11,12 +15,12 @@ class ExstreamError extends Error {
       e.exstreamError = true
       e.exstreamInput = exstreamInput
       return e
-    } else {
-      Object.assign(this, e)
-      if (e.stack) this.stack = e.stack
-      this.exstreamError = true
-      this.exstreamInput = exstreamInput
     }
+    Object.assign(this, e)
+    if (e.stack) this.stack = e.stack
+    this.exstreamError = true
+    this.exstreamInput = exstreamInput
+
   }
 }
 
@@ -131,7 +135,10 @@ class Exstream extends EventEmitter {
   start () {
     this.#autostart = true
     // setImmediate is needed to guarantee that .pipe() has resumed the source stream
-    return new Promise(resolve => setImmediate(() => { this.resume(); resolve() }))
+    return new Promise(resolve => setImmediate(() => {
+      this.resume()
+      resolve()
+    }))
   }
 
   end () {
@@ -193,7 +200,7 @@ class Exstream extends EventEmitter {
       if (otherStream) {
         otherStream = new Exstream(otherStream)
         otherStream.#consumers = this.#consumers
-        otherStream.#consumers.forEach(x => (x.source = otherStream))
+        otherStream.#consumers.forEach(x => x.source = otherStream)
         otherStream.#resumedAtLestOnce = true
         otherStream.#buffer = this.#buffer
         otherStream.#synchronous = false
@@ -276,7 +283,7 @@ class Exstream extends EventEmitter {
   each (fn) {
     const s2 = this.consumeSync((err, x, push) => {
       if (err) {
-        ;(this.endOfChain || this).emit('error', err)
+        (this.endOfChain || this).emit('error', err)
       } else if (x === _.nil) {
         push(null, _.nil)
       } else {
@@ -333,7 +340,8 @@ class Exstream extends EventEmitter {
   }
 
   fork (disableAutostart = false) {
-    if (this.#resumedAtLestOnce) throw Error('this stream is already started. you can\'t fork it anymore')
+    if (this.#resumedAtLestOnce)
+      throw Error('this stream is already started. you can\'t fork it anymore')
     this.#synchronous = false
     this.#autostart = false
     if (!disableAutostart) process.nextTick(() => this.start())
@@ -369,18 +377,27 @@ class Exstream extends EventEmitter {
       s.readable = false
       s.source = this
       s.resume()
-      s.#addOnceListener('error', target, e => { s.write(e); setImmediate(() => s.end()) })
-      s.#addOnceListener('finish', target, () => { s.emit('finish'); setImmediate(() => s.destroy()) })
-      s.#addOnceListener('close', target, () => { s.emit('close'); setImmediate(() => s.destroy()) })
+      s.#addOnceListener('error', target, e => {
+        s.write(e)
+        setImmediate(() => s.end())
+      })
+      s.#addOnceListener('finish', target, () => {
+        s.emit('finish')
+        setImmediate(() => s.destroy())
+      })
+      s.#addOnceListener('close', target, () => {
+        s.emit('close')
+        setImmediate(() => s.destroy())
+      })
       return s
     } else if (_.isFunction(target)) {
       return target(this)
-    } else {
-      throw Error(
-        'error in .through(). you must pass a non consumed' +
-        'exstream instance, a pipeline or a node stream',
-      )
     }
+    throw Error(
+      'error in .through(). you must pass a non consumed' +
+        'exstream instance, a pipeline or a node stream',
+    )
+
   }
 
   merge (parallelism = Infinity, preserveOrder = false) {
@@ -422,7 +439,8 @@ class Exstream extends EventEmitter {
     const res = this.values()
     if (_.isPromise(res)) {
       return res.then(result => {
-        if (result.length > 1) throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+        if (result.length > 1)
+          throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
         return result[0]
       })
     } else if (res.length > 1) {
@@ -441,15 +459,15 @@ class Exstream extends EventEmitter {
     }
     if (!isSync) {
       return this.toPromise()
-    } else {
-      const res = []
-      this.consumeSync((err, x, push) => {
-        if (err) throw err
-        else if (x === _.nil) push(null, _.nil)
-        else res.push(x)
-      }).resume()
-      return res
     }
+    const res = []
+    this.consumeSync((err, x, push) => {
+      if (err) throw err
+      else if (x === _.nil) push(null, _.nil)
+      else res.push(x)
+    }).resume()
+    return res
+
   }
 }
 

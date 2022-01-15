@@ -1,3 +1,11 @@
+/*
+  eslint-disable max-lines,
+  sonarjs/cognitive-complexity,
+  complexity,
+  no-sync,
+  max-lines-per-function,
+*/
+
 const _ = require('./utils.js')
 const _m = module.exports = {}
 
@@ -6,7 +14,7 @@ function replace (str, c, replacement) {
   const len = c.length
   let start = -len
   let end = 0
-  while ((end = str.indexOf(c, (start += len))) > -1) {
+  while ((end = str.indexOf(c, start += len)) > -1) {
     outstr += str.slice(start, end) + replacement
     start = end
   }
@@ -38,7 +46,7 @@ _m.csvStringify = (opts, s) => {
         x.indexOf(opts.separator) > -1 ||
         x.indexOf(opts.quote) > -1 ||
         x.indexOf(opts.lineEnding) > -1 ||
-        (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1)
+        escapeDifferentFromQuote && x.indexOf(opts.escape) > -1
       )
     )
   }
@@ -118,7 +126,7 @@ _m.csv = (opts, s) => {
 
   function getFirstRow (row) {
     if (_.isFunction(opts.header)) return opts.header(row)
-    else return row
+    return row
   }
 
   function convertObj (row) {
@@ -149,10 +157,10 @@ _m.csv = (opts, s) => {
       if (currentBuffer.length === 0) {
         push(null, _.nil)
         return
-      } else {
-        isEnding = true
-        x = Buffer.from('\n')
       }
+      isEnding = true
+      x = Buffer.from('\n')
+
     }
 
     const bufx = Buffer.from(x)
@@ -177,40 +185,41 @@ _m.csv = (opts, s) => {
       for (let i = 0; i < currentBuffer.length; i++) {
         if (!inQuote) {
           switch (currentBuffer[i]) {
-            case quote:
-              inQuote = true
-              colStart = i + 1
-              continue
-            case separator:
-              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-              ++col
-              endOffset = 0
-              colStart = i + 1
-              continue
-            case newLine:
-            case carriage:
-              while (currentBuffer[i + 1] === newLine || currentBuffer[i + 1] === carriage) { i++; endOffset++ }
-              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-              if (opts.header) {
-                if (!firstRow.length) firstRow = getFirstRow(row)
-                else push(null, row)
-                row = {}
-              } else {
-                push(null, row)
-                row = []
-              }
-              col = endOffset = 0
-              colStart = prevIdx = i + 1
-              continue
+          case quote:
+            inQuote = true
+            colStart = i + 1
+            continue
+          case separator:
+            handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
+            ++col
+            endOffset = 0
+            colStart = i + 1
+            continue
+          case newLine:
+          case carriage:
+            while (currentBuffer[i + 1] === newLine || currentBuffer[i + 1] === carriage) {
+              i++
+              endOffset++
+            }
+            handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
+            if (opts.header) {
+              if (!firstRow.length) firstRow = getFirstRow(row)
+              else push(null, row)
+              row = {}
+            } else {
+              push(null, row)
+              row = []
+            }
+            col = endOffset = 0
+            colStart = prevIdx = i + 1
+            continue
           }
-        } else {
-          if (currentBuffer[i] === escape && currentBuffer[i + 1] === quote) {
-            handleQuote = true
-            ++i
-          } else if (currentBuffer[i] === quote) {
-            inQuote = false
-            endOffset = 1
-          }
+        } else if (currentBuffer[i] === escape && currentBuffer[i + 1] === quote) {
+          handleQuote = true
+          ++i
+        } else if (currentBuffer[i] === quote) {
+          inQuote = false
+          endOffset = 1
         }
       }
     }

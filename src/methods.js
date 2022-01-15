@@ -1,3 +1,7 @@
+/*
+  eslint-disable max-lines, sonarjs/cognitive-complexity, complexity, no-sync
+*/
+
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
 const { Transform } = require('stream')
@@ -34,14 +38,14 @@ _m.encode = _.curry((encoding, s) => {
     if (err) return push(err)
     try {
       const isNil = x === _.nil
-      const str = (isNil ? decoder.end() : decoder.write(Buffer.from(x)))
+      const str = isNil ? decoder.end() : decoder.write(Buffer.from(x))
       push(null, str)
       if (isNil) push(null, _.nil)
     } catch (e) {
       push(new ExstreamError({
         message:
           'error in .encode(). expected string, Buffer, ' +
-          'ArrayBuffer, Array, or Array-like Object. Got ' + (typeof x),
+          'ArrayBuffer, Array, or Array-like Object. Got ' + typeof x,
       }, x))
     }
   })
@@ -166,6 +170,7 @@ _m.collect = s => {
   })
 }
 
+// eslint-disable-next-line no-unused-vars
 _m.flatten = s => s.consumeSync((err, x, push, next) => {
   if (err) {
     push(err)
@@ -182,7 +187,7 @@ _m.flatMap = _.curry((fn, s) => s.map(fn).flatten())
 
 _m.toArray = _.curry((fn, s) => s.collect().pull((err, x) => {
   if (err) {
-    ;(s.endOfChain || s).emit('error', err)
+    (s.endOfChain || s).emit('error', err)
   } else {
     fn(x)
   }
@@ -264,11 +269,9 @@ _m.uniq = s => {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
-    } else {
-      if (!seen.has(x)) {
-        seen.add(x)
-        push(null, x)
-      }
+    } else if (!seen.has(x)) {
+      seen.add(x)
+      push(null, x)
     }
   })
 }
@@ -285,7 +288,7 @@ _m.pick = _.curry((fields, s) => s.map(x => {
     try {
       hasKey = fields[i] in x
     } catch (e) {
-      throw new ExstreamError(Error('error in .pick(). expected object, got ' + (typeof x)), x)
+      throw new ExstreamError(Error('error in .pick(). expected object, got ' + typeof x), x)
     }
     if (hasKey) res[fields[i]] = x[fields[i]]
   }

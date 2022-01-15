@@ -10,6 +10,7 @@ const _ = module.exports = Object.assign(
   methods,
 )
 
+/* eslint-disable max-statements-per-line */
 _.extend = (name, fn) => { Exstream.prototype[name] = fn }
 _.extend('errors', function (fn) { return _.errors(fn, this) })
 _.extend('stopOnError', function (fn) { return _.stopOnError(fn, this) })
@@ -30,7 +31,9 @@ _.extend('collect', function () { return _.collect(this) })
 _.extend('batch', function (size) { return _.batch(size, this) })
 _.extend('massThen', function (fn) { return _.massThen(fn, this) })
 _.extend('massCatch', function (fn) { return _.massCatch(fn, this) })
-_.extend('resolve', function (parallelism = 1, preserveOrder = true) { return _.resolve(parallelism, preserveOrder, this) })
+_.extend('resolve', function (parallelism = 1, preserveOrder = true) {
+  return _.resolve(parallelism, preserveOrder, this)
+})
 _.extend('csv', function (opts) { return _.csv(opts, this) })
 _.extend('csvStringify', function (opts) { return _.csvStringify(opts, this) })
 _.extend('slice', function (start, end = Infinity) { return _.slice(start, end, this) })
@@ -47,7 +50,9 @@ _.extend('sortBy', function (fn) { return _.sortBy(fn, this) })
 _.extend('split', function (encoding = 'utf8') { return _.split(encoding, this) })
 _.extend('encode', function (encoding) { return _.encode(encoding, this) })
 _.extend('decode', function (encoding) { return _.decode(encoding, this) })
-_.extend('splitBy', function (regexp, encoding = 'utf8') { return _.splitBy(regexp, encoding, this) })
+_.extend('splitBy', function (regexp, encoding = 'utf8') {
+  return _.splitBy(regexp, encoding, this)
+})
 _.extend('reduce1', function (fn) { return _.reduce1(fn, this) })
 _.extend('asyncReduce', function (memo, fn) { return _.asyncReduce(memo, fn, this) })
 _.extend('makeAsync', function (ms) { return _.makeAsync(ms, this) })
