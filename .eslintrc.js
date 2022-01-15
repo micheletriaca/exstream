@@ -21,7 +21,6 @@ module.exports = {
     'sonarjs',
   ],
   extends: [
-    'standard',
     'plugin:security/recommended',
     // 'plugin:sonarjs/recommended',
     'plugin:jest/recommended',
