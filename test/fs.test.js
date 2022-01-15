@@ -60,3 +60,13 @@ test('pipe pipeline', done => {
       expect(res.length).toBe(11)
     })
 })
+
+test('pipeToFile', () => new Promise(resolve => {
+  _(h.fibonacci(5))
+    .map(x => x.toString() + '\n')
+    .pipe(fs.createWriteStream('fibo'))
+    .on('finish', () => {
+      resolve()
+      expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
+    })
+}))

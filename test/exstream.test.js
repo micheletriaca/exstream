@@ -2,8 +2,6 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
-jest.mock('fs')
-const fs = require('fs')
 
 test('stream initialization', () => {
   const x = _([1, 2, 3])
@@ -548,16 +546,6 @@ test('forking', async () => {
   expect(r2).toEqual([4, 6, 8])
   expect(r3).toEqual([5, 7, 9])
 })
-
-test('pipeToFile', () => new Promise(resolve => {
-  _(h.fibonacci(5))
-    .map(x => x.toString() + '\n')
-    .pipe(fs.createWriteStream('fibo'))
-    .on('finish', () => {
-      resolve()
-      expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
-    })
-}))
 
 test('not more than 1 consumer if not fork', () => {
   const s = _()
