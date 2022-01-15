@@ -20,7 +20,7 @@ test('invalid encode', () => {
   }
   expect(ex).not.toBe(null)
   expect(ex.message).toBe(
-    'error in .encode(). Expected: String, Buffer, ArrayBuffer, Array, or Array-like Object. Got number',
+    'error in .encode(). expected string, Buffer, ArrayBuffer, Array, or Array-like Object. Got number',
   )
 })
 
