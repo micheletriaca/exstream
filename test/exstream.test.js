@@ -161,15 +161,19 @@ test('pluck', () => {
 })
 
 test('pluck nested', () => {
-  _([{ a: { b: { c: [1, 2, 3] } } }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a.b.c[1]').toArray(res => {
-    expect(res).toEqual([2, undefined, undefined, undefined])
-  })
+  _([{ a: { b: { c: [1, 2, 3] } } }, { a: 2 }, { a: 3 }, { b: 1 }])
+    .pluck('a.b.c[1]')
+    .toArray(res => {
+      expect(res).toEqual([2, undefined, undefined, undefined])
+    })
 })
 
 test('pluck default values', () => {
-  _([{ a: { b: { c: [1, 2, 3] } } }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a.b.c[1]', -1).toArray(res => {
-    expect(res).toEqual([2, -1, -1, -1])
-  })
+  _([{ a: { b: { c: [1, 2, 3] } } }, { a: 2 }, { a: 3 }, { b: 1 }])
+    .pluck('a.b.c[1]', -1)
+    .toArray(res => {
+      expect(res).toEqual([2, -1, -1, -1])
+    })
 })
 
 test('pick', () => {
