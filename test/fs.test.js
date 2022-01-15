@@ -1,5 +1,3 @@
-jest.setTimeout(2000)
-
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const zlib = require('zlib')
