@@ -59,6 +59,18 @@ _m.csvStringify = (opts, s) => {
     return opts.quote + replace(x, opts.quote, escapedQuote) + opts.quote
   }
 
+  function processRow (x, push) {
+    const row = Array(firstRow.length)
+    for (let i = 0, len = firstRow.length; i < len; i++) {
+      const cell = x[firstRow[i]] + ''
+      if (!cell) row[i] = opts.quotedEmpty ? doubleQuote : ''
+      else row[i] = processCell(cell)
+    }
+    const res = row.join(opts.separator) + opts.lineEnding
+    if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
+    else push(null, res)
+  }
+
   function processFirstRow (x, push) {
     const arrayMode = Array.isArray(x)
     const injectedHeader = Array.isArray(opts.header)
@@ -79,18 +91,6 @@ _m.csvStringify = (opts, s) => {
       else push(null, rowToPush)
       processRow(x, push)
     }
-  }
-
-  function processRow (x, push) {
-    const row = Array(firstRow.length)
-    for (let i = 0, len = firstRow.length; i < len; i++) {
-      const cell = x[firstRow[i]] + ''
-      if (!cell) row[i] = opts.quotedEmpty ? doubleQuote : ''
-      else row[i] = processCell(cell)
-    }
-    const res = row.join(opts.separator) + opts.lineEnding
-    if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
-    else push(null, res)
   }
 
   return s.consumeSync((err, x, push) => {
