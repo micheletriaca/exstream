@@ -123,6 +123,8 @@ _m.csv = (opts, s) => {
   const escape = Buffer.from(opts.escape, opts.encoding)[0]
   const separator = Buffer.from(opts.separator, opts.encoding)[0]
   const escapedQuote = opts.escape + opts.quote
+  let firstRow = Array.isArray(opts.header) ? opts.header : []
+  let currentBuffer = Buffer.alloc(0)
 
   function getFirstRow (row) {
     if (_.isFunction(opts.header)) return opts.header(row)
@@ -145,8 +147,6 @@ _m.csv = (opts, s) => {
       return false
     }
   }
-  let currentBuffer = Buffer.alloc(0)
-  let firstRow = Array.isArray(opts.header) ? opts.header : []
   let row = firstRow.length ? {} : []
   let isEnding = false
   // eslint-disable-next-line max-statements
