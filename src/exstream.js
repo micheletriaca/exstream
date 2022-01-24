@@ -418,6 +418,7 @@ class Exstream extends EventEmitter {
       return new Promise(resolve => {
         const subS2 = subS.consume((err, x, push, next) => {
           if (x === _.nil) {
+            // eslint-disable-next-line no-use-before-define
             merged.off('end', endListener)
             merged.off('drain', next)
             resolve()
