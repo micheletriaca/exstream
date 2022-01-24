@@ -102,6 +102,7 @@ test('standard end propagation', async () => {
   expect(res).toEqual([2, 4, 6])
 })
 
+// eslint-disable-next-line max-lines-per-function
 test('explicit end', async () => new Promise(resolve => {
   let s1Ended = false
   let s2Ended = false

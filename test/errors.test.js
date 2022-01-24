@@ -171,7 +171,7 @@ test('error in promise chain', async () => {
       if (x === 2) throw Error('err2')
       return x
     })
-    .massCatch(e => 2)
+    .massCatch(() => 2)
     .massThen(x => {
       if (x === 5) throw Error('err5')
       return x
@@ -260,7 +260,7 @@ test('synchronous tasks error - runtime error', () => {
 test('error propagation', async () => {
   const errs = []
   const res = await _([1, 2, 3])
-    .map(x => { throw Error('NOO') })
+    .map(() => { throw Error('NOO') })
     .ratelimit(1, 10000)
     .batch(3)
     .flatten()
@@ -300,7 +300,7 @@ test('resolve non promises', async () => {
 test('resolve promises errors', async () => {
   const errs = []
   await _([1, 2, 3])
-    .map(async x => Promise.reject(Error('NOO')))
+    .map(async () => Promise.reject(Error('NOO')))
     .resolve(1, false)
     .errors(e => errs.push(e))
     .toPromise()
@@ -387,7 +387,7 @@ test('async filter errors', async () => {
 })
 
 test('stream in error without consumers emits an error event', done => {
-  _([1]).map(x => {
+  _([1]).map(() => {
     throw Error('an error')
   }).on('error', e => {
     done()
@@ -450,7 +450,7 @@ test('return an exstream instance from async method', async () => {
 
 test('async errors in stream of streams', async () => {
   const res = await _([
-    _([1, 2, 3]).map(async x => { throw Error('an error') }).resolve(),
+    _([1, 2, 3]).map(async () => { throw Error('an error') }).resolve(),
     _([4, 5, 6]),
   ]).merge()
     .errors(console.error)

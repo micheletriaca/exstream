@@ -43,6 +43,7 @@ module.exports = {
       rules: {
         'max-lines': ['warn', 250],
         'max-nested-callbacks': ['warn', 3],
+        'no-await-in-loop': 'off',
         'no-console': 'off',
         'no-undefined': 'off',
         'no-sync': 'off',
