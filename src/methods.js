@@ -80,12 +80,14 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
     try {
       let res = fn(x)
       const probablyPromise = res && res.then && res.catch
+      // eslint-disable-next-line promise/no-promise-in-callback
       if (probablyPromise) res = res.catch(e => {
         throw new ExstreamError(e, x)
       })
       if (!options || !options.wrap) {
         return push(null, res)
       } else if (probablyPromise) {
+      // eslint-disable-next-line promise/no-promise-in-callback
         push(null, res.then(y => ({ input: x, output: y })))
       } else {
         push(null, { input: x, output: res })
@@ -298,9 +300,9 @@ _m.pick = _.curry((fields, s) => s.map(x => {
   return res
 }))
 
-_m.omit = _.curry((fields, s) => s.map(x => {
-  // TO BE IMPLEMENTED
-}))
+// TO BE IMPLEMENTED
+// _m.omit = _.curry((fields, s) => s.map(x => {
+// }))
 
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
@@ -371,6 +373,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
     } else {
       const resPointer = {}
       promises.push(resPointer)
+      // eslint-disable-next-line promise/no-promise-in-callback
       el.then(res => handlePromiseResult(false, res, resPointer, push, next))
         .catch(res => handlePromiseResult(true, res, resPointer, push, next))
       if (promises.length < parallelism) next()

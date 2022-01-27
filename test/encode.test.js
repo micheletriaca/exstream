@@ -20,6 +20,7 @@ test('invalid encode', () => {
   }
   expect(ex).not.toBe(null)
   expect(ex.message).toBe(
+    // eslint-disable-next-line max-len
     'error in .encode(). expected string, Buffer, ArrayBuffer, Array, or Array-like Object. Got number',
   )
 })
