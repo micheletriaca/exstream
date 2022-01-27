@@ -619,7 +619,9 @@ _m.pipeline = () => new Proxy({
   },
 }, {
   get (target, propKey, receiver) {
-    if (target[propKey] || !Exstream.prototype[propKey]) return Reflect.get(...arguments)
+    if (target[propKey] || !Exstream.prototype[propKey]) {
+      return Reflect.get(target, propKey, receiver)
+    }
     return function (...args) {
       target.definitions.push({ method: propKey, args })
       return this
