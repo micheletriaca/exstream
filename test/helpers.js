@@ -7,10 +7,13 @@ const getSlowWritable = (res = [], writeDelay = 50, highWaterMark = 0) => new Wr
   emitClose: true,
   autoDestroy: true,
   highWaterMark,
-  write (rec, encoding, callback) {
+  async write (rec, encoding, callback) {
     res.push(rec)
     if (writeDelay === 0) callback()
-    else sleep(writeDelay).then(callback)
+    else {
+      await sleep(writeDelay)
+      callback()
+    }
   },
 })
 
