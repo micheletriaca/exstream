@@ -12,9 +12,17 @@ _.isString = x => typeof x === 'string'
 _.isError = x => x instanceof Error
 _.isNodeStream = x => x && _.isFunction(x.on) && _.isFunction(x.pipe)
 _.escapeRegExp = text => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
-_.partial = function (f, ...args) { return function (...args2) { return f.call(this, ...args, ...args2) } }
-_.ncurry = function (n, fn, ...o) { return o.length >= n ? fn.apply(this, o.slice(0, n)) : _.partial.call(this, _.ncurry, n, fn, ...o) }
-_.curry = function (fn, ...args) { return _.ncurry.call(this, fn.length, fn, ...args) }
+_.partial = function (f, ...args) {
+  return function (...args2) {
+    return f.call(this, ...args, ...args2)
+  }
+}
+_.ncurry = function (n, fn, ...o) {
+  return o.length >= n ? fn.apply(this, o.slice(0, n)) : _.partial.call(this, _.ncurry, n, fn, ...o)
+}
+_.curry = function (fn, ...args) {
+  return _.ncurry.call(this, fn.length, fn, ...args)
+}
 _.splitFieldPath = x => x
   .replace(/\[([^\]]+)\]/g, '.$1')
   .replace(/['"]/g, '')
@@ -23,7 +31,7 @@ _.splitFieldPath = x => x
 _.traverse = (v, path, defaultValue, idx = 0) => {
   if (idx === path.length) return v
   else if (!_.isDefined(v) || !Object.hasOwnProperty.call(v, path[idx])) return defaultValue
-  else return _.traverse(v[path[idx]], path, defaultValue, idx + 1)
+  return _.traverse(v[path[idx]], path, defaultValue, idx + 1)
 }
 _.makeGetter = (fieldPath, defaultValue) => {
   const fieldTokens = _.splitFieldPath(fieldPath)

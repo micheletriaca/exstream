@@ -1,6 +1,6 @@
 {
   "name": "exstream.js",
-  "version": "0.19.0-next.7",
+  "version": "0.20.0-next",
   "description": "",
   "main": "src/index.js",
   "scripts": {
@@ -15,18 +15,20 @@
     "type": "git",
     "url": "https://github.com/micheletriaca/exstream"
   },
+  "engines": {
+    "node": ">=12.3.0"
+  },
   "devDependencies": {
-    "@babel/core": "7.15.0",
-    "@babel/eslint-parser": "7.15.0",
-    "eslint": "^7.32.0",
-    "eslint-config-standard": "^16.0.3",
-    "eslint-plugin-import": "^2.23.4",
-    "eslint-plugin-jest": "^24.4.0",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^5.1.0",
+    "@babel/core": "7.16.12",
+    "@babel/eslint-parser": "7.16.5",
+    "eslint": "8.7.0",
+    "eslint-config-node-opinionated": "0.5.0",
+    "eslint-plugin-jest": "26.0.0",
+    "eslint-plugin-node": "11.1.0",
+    "eslint-plugin-promise": "6.0.0",
     "eslint-plugin-security": "1.4.0",
-    "eslint-plugin-sonarjs": "0.10.0",
+    "eslint-plugin-sonarjs": "0.11.0",
     "highland": "2.13.5",
-    "jest": "^27.1.0"
+    "jest": "27.4.7"
   }
 }

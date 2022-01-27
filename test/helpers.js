@@ -7,21 +7,27 @@ const getSlowWritable = (res = [], writeDelay = 50, highWaterMark = 0) => new Wr
   emitClose: true,
   autoDestroy: true,
   highWaterMark,
-  write (rec, encoding, callback) {
+  async write (rec, encoding, callback) {
     res.push(rec)
     if (writeDelay === 0) callback()
-    else sleep(writeDelay).then(callback)
+    else {
+      await sleep(writeDelay)
+      callback()
+    }
   },
 })
 
 const randomStringGenerator = (iterations = 3, simulateErrorAtIndex = -1) => {
   const alphabet = 'abcdefghijklmnopqrstuvz'.split('')
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   return (function * () {
     for (let i = 0; i < iterations; i++) {
       if (simulateErrorAtIndex === i) throw Error('an error')
       else {
         let s = ''
-        for (let j = 0; j < 18; j++) s += alphabet[Math.round(Math.random() * (alphabet.length - 1))]
+        for (let j = 0; j < 18; j++) s += alphabet[
+          Math.round(Math.random() * (alphabet.length - 1))
+        ]
         yield s
       }
     }
@@ -29,7 +35,8 @@ const randomStringGenerator = (iterations = 3, simulateErrorAtIndex = -1) => {
 }
 
 const fibonacci = function * (iterations) {
-  let curr = 0; let next = 1
+  let curr = 0
+  let next = 1
   for (let i = 0; i < iterations; i++) {
     yield curr
     ;[curr, next] = [next, curr + next]

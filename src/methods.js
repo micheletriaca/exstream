@@ -1,3 +1,7 @@
+/*
+  eslint-disable max-lines, sonarjs/cognitive-complexity, complexity, no-sync
+*/
+
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
 const { Transform } = require('stream')
@@ -34,14 +38,14 @@ _m.encode = _.curry((encoding, s) => {
     if (err) return push(err)
     try {
       const isNil = x === _.nil
-      const str = (isNil ? decoder.end() : decoder.write(Buffer.from(x)))
+      const str = isNil ? decoder.end() : decoder.write(Buffer.from(x))
       push(null, str)
       if (isNil) push(null, _.nil)
     } catch (e) {
       push(new ExstreamError({
         message:
           'error in .encode(). expected string, Buffer, ' +
-          'ArrayBuffer, Array, or Array-like Object. Got ' + (typeof x),
+          'ArrayBuffer, Array, or Array-like Object. Got ' + typeof x,
       }, x))
     }
   })
@@ -76,10 +80,14 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
     try {
       let res = fn(x)
       const probablyPromise = res && res.then && res.catch
-      if (probablyPromise) res = res.catch(e => { throw new ExstreamError(e, x) })
+      // eslint-disable-next-line promise/no-promise-in-callback
+      if (probablyPromise) res = res.catch(e => {
+        throw new ExstreamError(e, x)
+      })
       if (!options || !options.wrap) {
         return push(null, res)
       } else if (probablyPromise) {
+      // eslint-disable-next-line promise/no-promise-in-callback
         push(null, res.then(y => ({ input: x, output: y })))
       } else {
         push(null, { input: x, output: res })
@@ -102,6 +110,7 @@ _m.findWhere = _.curry((props, s) => s.where(props).take(1))
 _m.ratelimit = _.curry((num, ms, s) => {
   let sent = 0
   let startWindow
+  // eslint-disable-next-line max-statements
   return s.consume((err, x, push, next) => {
     if (err) {
       push(err)
@@ -166,6 +175,7 @@ _m.collect = s => {
   })
 }
 
+// eslint-disable-next-line no-unused-vars
 _m.flatten = s => s.consumeSync((err, x, push, next) => {
   if (err) {
     push(err)
@@ -182,7 +192,7 @@ _m.flatMap = _.curry((fn, s) => s.map(fn).flatten())
 
 _m.toArray = _.curry((fn, s) => s.collect().pull((err, x) => {
   if (err) {
-    ;(s.endOfChain || s).emit('error', err)
+    (s.endOfChain || s).emit('error', err)
   } else {
     fn(x)
   }
@@ -264,11 +274,9 @@ _m.uniq = s => {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
-    } else {
-      if (!seen.has(x)) {
-        seen.add(x)
-        push(null, x)
-      }
+    } else if (!seen.has(x)) {
+      seen.add(x)
+      push(null, x)
     }
   })
 }
@@ -285,12 +293,16 @@ _m.pick = _.curry((fields, s) => s.map(x => {
     try {
       hasKey = fields[i] in x
     } catch (e) {
-      throw new ExstreamError(Error('error in .pick(). expected object, got ' + (typeof x)), x)
+      throw new ExstreamError(Error('error in .pick(). expected object, got ' + typeof x), x)
     }
     if (hasKey) res[fields[i]] = x[fields[i]]
   }
   return res
 }))
+
+// TO BE IMPLEMENTED
+// _m.omit = _.curry((fields, s) => s.map(x => {
+// }))
 
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
@@ -322,6 +334,7 @@ _m.massThen = _.curry((fn, s) => s.map(x => x.then(fn)))
 
 _m.massCatch = _.curry((fn, s) => s.map(x => x.catch(fn)))
 
+// eslint-disable-next-line max-lines-per-function
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
@@ -360,6 +373,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
     } else {
       const resPointer = {}
       promises.push(resPointer)
+      // eslint-disable-next-line promise/no-promise-in-callback
       el.then(res => handlePromiseResult(false, res, resPointer, push, next))
         .catch(res => handlePromiseResult(true, res, resPointer, push, next))
       if (promises.length < parallelism) next()
@@ -566,7 +580,10 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   })
 })
 
-_m.tap = _.curry((fn, s) => s.map(x => { fn(x); return x }))
+_m.tap = _.curry((fn, s) => s.map(x => {
+  fn(x)
+  return x
+}))
 
 _m.compact = s => s.filter(x => x)
 
@@ -590,6 +607,7 @@ _m.last = s => {
 }
 
 _m.pipeline = () => new Proxy({
+  // eslint-disable-next-line camelcase
   __exstream_pipeline__: true,
   definitions: [],
   generateStream: function () {
@@ -601,7 +619,9 @@ _m.pipeline = () => new Proxy({
   },
 }, {
   get (target, propKey, receiver) {
-    if (target[propKey] || !Exstream.prototype[propKey]) return Reflect.get(...arguments)
+    if (target[propKey] || !Exstream.prototype[propKey]) {
+      return Reflect.get(target, propKey, receiver)
+    }
     return function (...args) {
       target.definitions.push({ method: propKey, args })
       return this

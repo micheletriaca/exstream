@@ -1,3 +1,7 @@
+/*
+  eslint-disable max-lines
+*/
+
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const { Readable, Writable } = require('stream')
@@ -27,7 +31,7 @@ test('error in source stream - exstream generator', () => {
 test('fatal error in source stream - generator', () => {
   const errSkipped = []
   _(h.randomStringGenerator(5, 2))
-    .errors((err, push) => {
+    .errors(err => {
       errSkipped.push(err)
     })
     .toArray(res => {
@@ -77,7 +81,7 @@ test('error in source stream - node stream', done => {
   let i = 0
   _(new Readable({
     objectMode: true,
-    read (size) {
+    read () {
       if (i === 4) {
         this.push(null)
       } else if (i > 2 && i < 4) {
@@ -88,7 +92,7 @@ test('error in source stream - node stream', done => {
       i++
     },
   }))
-    .errors(e => (errs.push(e)))
+    .errors(e => errs.push(e))
     .toArray(res => {
       done()
       expect(res).toEqual([0, 1, 2])
@@ -107,7 +111,7 @@ test('error in wrapped writable', async () => {
       },
     }), { writable: true }))
     .merge()
-    .errors(e => (errs.push(e)))
+    .errors(e => errs.push(e))
     .toPromise()
   expect(res).toEqual([])
   expect(errs.length).toBe(2)
@@ -122,7 +126,8 @@ test('invalid source', () => {
     ex = e
   }
   expect(ex).not.toBe(null)
-  expect(ex.message).toEqual('error creating exstream: invalid source. source can be one of: iterable, ' +
+  expect(ex.message)
+    .toEqual('error creating exstream: invalid source. source can be one of: iterable, ' +
   'async iterable, exstream function, a promise, a node readable stream')
 })
 
@@ -146,7 +151,7 @@ test('error in resolve', async () => {
     if (x === 2) throw Error('can\'t be 2')
     return x
   }).resolve()
-    .errors((err) => {
+    .errors(err => {
       error = err
     })
     .toPromise()
@@ -166,9 +171,7 @@ test('error in promise chain', async () => {
       if (x === 2) throw Error('err2')
       return x
     })
-    .massCatch(e => {
-      return 2
-    })
+    .massCatch(() => 2)
     .massThen(x => {
       if (x === 5) throw Error('err5')
       return x
@@ -233,7 +236,8 @@ test('async task errors - .value() with multiple values', async () => {
     exception = e
   }
   expect(exception).not.toBe(null)
-  expect(exception.message).toBe('this stream has emitted more than 1 value. use .values() instad of .value()')
+  expect(exception.message)
+    .toBe('this stream has emitted more than 1 value. use .values() instad of .value()')
 })
 
 test('synchronous tasks error - runtime error', () => {
@@ -253,49 +257,10 @@ test('synchronous tasks error - runtime error', () => {
   expect(exc.exstreamInput).toBe(3)
 })
 
-test('piping an error', async () => {
-  const res = []
-  const errs = []
-  return new Promise(resolve => {
-    _([1, 2, 3])
-      .map(x => { throw Error('NOO') })
-      .on('error', e => errs.push(e))
-      .pipe(h.getSlowWritable(res, 0, 10))
-      .on('finish', () => {
-        resolve()
-        expect(res).toEqual([])
-        expect(errs.length).toBe(3)
-        expect(errs[2].message).toBe('NOO')
-      })
-  })
-})
-
-test('piping an error with pipeline', async () => {
-  const res = []
-  const errs = []
-
-  const p = _.pipeline()
-    .map(x => x)
-    .map(x => { throw Error('NOO') })
-
-  return new Promise(resolve => {
-    _([1, 2, 3])
-      .through(p.generateStream())
-      .on('error', e => errs.push(e))
-      .pipe(h.getSlowWritable(res, 0, 10))
-      .on('finish', () => {
-        resolve()
-        expect(res).toEqual([])
-        expect(errs.length).toBe(3)
-        expect(errs[2].message).toBe('NOO')
-      })
-  })
-})
-
 test('error propagation', async () => {
   const errs = []
   const res = await _([1, 2, 3])
-    .map(x => { throw Error('NOO') })
+    .map(() => { throw Error('NOO') })
     .ratelimit(1, 10000)
     .batch(3)
     .flatten()
@@ -335,7 +300,7 @@ test('resolve non promises', async () => {
 test('resolve promises errors', async () => {
   const errs = []
   await _([1, 2, 3])
-    .map(async x => Promise.reject(Error('NOO')))
+    .map(async () => Promise.reject(Error('NOO')))
     .resolve(1, false)
     .errors(e => errs.push(e))
     .toPromise()
@@ -361,7 +326,11 @@ test('each errors', () => {
   const res = []
   let exc = false
   _([1, 2, 3, 'NOO', 'NOO', 4])
-    .map(x => { if (_.isString(x)) throw Error(x); else return x })
+    .map(x => {
+      if (_.isString(x))
+        throw Error(x)
+      else return x
+    })
     .on('error', e => {
       exc = true
       expect(e.message).toBe('NOO')
@@ -380,7 +349,7 @@ test('filter errors', () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => (ex = e))
+    .errors(e => ex = e)
     .values()
   expect(res).toEqual([1, 2])
   expect(ex).not.toBe(null)
@@ -394,7 +363,7 @@ test('reject errors', () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => (ex = e))
+    .errors(e => ex = e)
     .values()
   expect(res).toEqual([])
   expect(ex).not.toBe(null)
@@ -409,7 +378,7 @@ test('async filter errors', async () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(ex => (e = ex))
+    .errors(ex => e = ex)
     .toPromise()
 
   expect(res).toEqual([1, 2])
@@ -418,7 +387,9 @@ test('async filter errors', async () => {
 })
 
 test('stream in error without consumers emits an error event', done => {
-  _([1]).map(x => { throw Error('an error') }).on('error', e => {
+  _([1]).map(() => {
+    throw Error('an error')
+  }).on('error', e => {
     done()
     expect(e).not.toBe(null)
     expect(e.message).toBe('an error')
@@ -432,7 +403,7 @@ test('stopOnError', () => {
       if (x === 2) throw Error('an error')
       return x
     })
-    .stopOnError(e => (ex = e))
+    .stopOnError(e => ex = e)
     .values()
 
   expect(ex).not.toBe(null)
@@ -472,16 +443,14 @@ test('stopOnError repush error', () => {
 // This test fails when exposing then and catch methods. I've to rename them
 test('return an exstream instance from async method', async () => {
   const s = _()
-  const createExstream = async () => {
-    return _(s)
-  }
+  const createExstream = async () => _(s)
   const s2 = await createExstream()
   expect(s2).toBe(s)
 })
 
 test('async errors in stream of streams', async () => {
   const res = await _([
-    _([1, 2, 3]).map(async x => { throw Error('an error') }).resolve(),
+    _([1, 2, 3]).map(async () => { throw Error('an error') }).resolve(),
     _([4, 5, 6]),
   ]).merge()
     .errors(console.error)
