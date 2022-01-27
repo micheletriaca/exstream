@@ -43,7 +43,7 @@ test('pick on non object', () => {
   expect(exc).toBe(true)
 })
 
-test('omit', () => {
-  const res = _([{ a: 1, b: 2, c: 3 }, { a: 1, c: 3 }, { b: 2, c: 3 }]).omit(['a', 'c']).values()
-  expect(res).toEqual([{ b: 2 }, { }, { b: 2 }])
-})
+// t('omit', () => {
+//   const res = _([{ a: 1, b: 2, c: 3 }, { a: 1, c: 3 }, { b: 2, c: 3 }]).omit(['a', 'c']).values()
+//   expect(res).toEqual([{ b: 2 }, { }, { b: 2 }])
+// })

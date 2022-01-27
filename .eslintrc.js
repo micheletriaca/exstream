@@ -47,6 +47,7 @@ module.exports = {
         'no-console': 'off',
         'no-undefined': 'off',
         'no-sync': 'off',
+        'no-return-assign': 'off',
         'object-curly-spacing': 'off',
         'require-await': 'off',
         'jest/no-done-callback': 'off',

@@ -299,19 +299,7 @@ _m.pick = _.curry((fields, s) => s.map(x => {
 }))
 
 _m.omit = _.curry((fields, s) => s.map(x => {
-  const res = {}
-  console.log({fields, x})
-  let hasKey
-  for (let i = 0, len = fields.length; i < len; i++) {
-    try {
-      hasKey = fields[i] in x
-    } catch (e) {
-      throw new ExstreamError(Error('error in .pick(). expected object, got ' + typeof x), x)
-    }
-    console.log({hasKey, field: fields[i]})
-    if (hasKey) res[fields[i]] = x[fields[i]]
-  }
-  return res
+  // TO BE IMPLEMENTED
 }))
 
 _m.uniqBy = _.curry((cfg, s) => {

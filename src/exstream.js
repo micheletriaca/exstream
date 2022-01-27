@@ -201,7 +201,9 @@ class Exstream extends EventEmitter {
       if (otherStream) {
         otherStream = new Exstream(otherStream)
         otherStream.#consumers = this.#consumers
-        otherStream.#consumers.forEach(x => x.source = otherStream)
+        otherStream.#consumers.forEach(x => {
+          x.source = otherStream
+        })
         otherStream.#resumedAtLestOnce = true
         otherStream.#buffer = this.#buffer
         otherStream.#synchronous = false
