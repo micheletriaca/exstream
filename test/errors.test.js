@@ -275,6 +275,7 @@ test('error propagation', async () => {
     .uniqBy(x => x)
     .throttle(10)
     .csv()
+    .stopWhen(x => x)
     .csvStringify()
     .head()
     .last()

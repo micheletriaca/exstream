@@ -402,6 +402,17 @@ _m.stopOnError = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
+_m.stopWhen = _.curry((fn, s) => s.consumeSync((err, x, push) => {
+  if (x === _.nil) {
+    push(null, _.nil)
+  } else if (err) {
+    push(err)
+  } else {
+    push(null, x)
+    if(fn(x)) s.end()
+  }
+}))
+
 _m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toArray(res => {
   s.off('error', reject)
   resolve(res)
