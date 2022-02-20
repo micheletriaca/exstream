@@ -628,7 +628,7 @@ _m.pipeline = () => new Proxy({
     const s = new Exstream()
     let curr = s
     for (const { method, args } of this.definitions) curr = curr[method](...args)
-    s.endOfChain = curr
+    s.endOfChain = curr.endOfChain || curr
     return s
   },
 }, {
