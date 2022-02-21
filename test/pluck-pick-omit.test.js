@@ -43,7 +43,22 @@ test('pick on non object', () => {
   expect(exc).toBe(true)
 })
 
-// t('omit', () => {
-//   const res = _([{ a: 1, b: 2, c: 3 }, { a: 1, c: 3 }, { b: 2, c: 3 }]).omit(['a', 'c']).values()
-//   expect(res).toEqual([{ b: 2 }, { }, { b: 2 }])
-// })
+test('omit', () => {
+  const res = _([{ a: 1, b: 2, c: 3 }, { a: 1, c: 3 }, { b: 2, c: 3 }]).omit(['a', 'c']).values()
+  expect(res).toEqual([{ b: 2 }, { }, { b: 2 }])
+})
+
+test('omit single property', () => {
+  const res = _([{ a: 1, b: 2, c: 3 }, { a: 1, c: 3 }, { b: 2, c: 3 }]).omit('a').values()
+  expect(res).toEqual([{ b: 2, c: 3 }, {c: 3 }, { b: 2,c: 3 }])
+})
+
+test('omit on non object', () => {
+  let exc = false
+  try {
+    _([1, 2, 3]).omit(['a']).values()
+  } catch (e) {
+    exc = true
+  }
+  expect(exc).toBe(true)
+})

@@ -300,9 +300,20 @@ _m.pick = _.curry((fields, s) => s.map(x => {
   return res
 }))
 
-// TO BE IMPLEMENTED
-// _m.omit = _.curry((fields, s) => s.map(x => {
-// }))
+_m.omit = _.curry((fields, s) => s.map(x => {
+  const res = {...x}
+  fields = Array.isArray(fields) ? fields : [fields]
+  let hasKey
+  for (let i = 0, len = fields.length; i < len; i++) {
+    try {
+      hasKey = fields[i] in x
+    } catch (e) {
+      throw new ExstreamError(Error('error in .omit(). expected object, got ' + typeof x), x)
+    }
+    if(hasKey) delete res[fields[i]]
+  }
+  return res
+}))
 
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
