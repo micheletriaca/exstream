@@ -597,6 +597,23 @@ test('overpushing a paused stopWhen', () => new Promise(resolve => {
     })
 }))
 
+test('overpushing a paused stopOnError', () => new Promise(resolve => {
+  const res = []
+  _([1, 2, 3, 4, 5, 6])
+    .collect()
+    .flatten()
+    .map(x => {
+      if(x === 2) throw Error('an error')
+      return x
+    })
+    .stopOnError((err, push) => push(null, 'errHandled'))
+    .pipe(h.getSlowWritable(res, 0, 0))
+    .on('finish', () => {
+      resolve()
+      expect(res).toEqual([1, 'errHandled'])
+    })
+}))
+
 test('findWhere', () => {
   const res = _([{ a: 'a', b: 'b' }, { a: 'b', b: 'c' }, { a: 'a', b: 'b' }])
     .findWhere({ a: 'a' })

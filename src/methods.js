@@ -391,16 +391,19 @@ _m.errors = _.curry((fn, s) => s.consumeSync((err, x, push) => {
   }
 }))
 
-_m.stopOnError = _.curry((fn, s) => s.consumeSync((err, x, push) => {
-  if (x === _.nil) {
-    push(null, _.nil)
-  } else if (err) {
-    fn(err, push)
-    s.end()
-  } else {
-    push(null, x)
-  }
-}))
+_m.stopOnError = _.curry((fn, s) => {
+  const s1 = s.consumeSync((err, x, push) => {
+    if (x === _.nil) {
+      push(null, _.nil)
+    } else if (err) {
+      fn(err, push)
+      s1.destroy()
+    } else {
+      push(null, x)
+    }
+  })
+  return s1
+})
 
 _m.stopWhen = _.curry((fn, s) => {
   const s1 = s.consumeSync((err, x, push) => {
