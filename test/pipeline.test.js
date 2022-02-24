@@ -103,3 +103,16 @@ test('error propagation in async chain', async () => {
   expect(res).toEqual([{ a: 0 }, { a: 2 }])
   expect(errs.length).toBe(1)
 })
+
+test('nested pipeline as last operation', () => {
+  const innerPipeline = _.pipeline()
+    .map(x => x + 1)
+  const mainPipeline = _.pipeline()
+    .map(x => x + 1)
+    .through(innerPipeline)
+    // .map(x => x) // with this it will work
+  const results = _([1, 2, 3])
+    .through(mainPipeline)
+    .values()
+  expect(results).toEqual([3, 4, 5])
+})

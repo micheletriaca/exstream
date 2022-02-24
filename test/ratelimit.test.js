@@ -9,21 +9,19 @@ test('ratelimit', async () => {
   expect(res.length).toBeLessThanOrEqual(12)
 })
 
-test('generator slower than ratelimit', async () => {
-  return new Promise(resolve => {
-    const res = []
-    const s = _(async function * () {
-      while (true) {
-        await h.sleep(10)
-        yield '1'
-      }
-    }()).ratelimit(2, 10)
-    s.pipe(h.getSlowWritable(res, 0, 20))
-    setTimeout(() => {
-      s.destroy()
-      resolve()
-      expect(res.length).toBeGreaterThanOrEqual(3)
-      expect(res.length).toBeLessThanOrEqual(5)
-    }, 50)
-  })
-})
+test('generator slower than ratelimit', () => new Promise(resolve => {
+  const res = []
+  const s = _(async function * () {
+    while (true) {
+      await h.sleep(10)
+      yield '1'
+    }
+  }()).ratelimit(2, 10)
+  s.pipe(h.getSlowWritable(res, 0, 20))
+  setTimeout(() => {
+    s.destroy()
+    resolve()
+    expect(res.length).toBeGreaterThanOrEqual(3)
+    expect(res.length).toBeLessThanOrEqual(5)
+  }, 50)
+}))

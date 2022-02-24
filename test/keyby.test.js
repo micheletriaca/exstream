@@ -46,7 +46,7 @@ test('wrong / missing key', () => {
     .errors(error)
     .value()
   // it fails because more than 1 item is keyed by _.nil
-  expect(res).toEqual(undefined)
+  expect(res).toBeUndefined()
   expect(error).toHaveBeenCalledTimes(1)
 })
 
