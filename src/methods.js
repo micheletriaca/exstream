@@ -181,7 +181,7 @@ _m.flatten = s => s.consumeSync((err, x, push, next) => {
     push(err)
   } else if (x === _.nil) {
     push(err, x)
-  } else if (_.isIterable(x)) {
+  } else if (_.isIterable(x) && typeof x !== 'string') {
     for (const y of x) push(null, y)
   } else {
     push(null, x)
