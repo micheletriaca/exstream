@@ -436,6 +436,7 @@ _m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toA
 }))
 
 _m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
+  objectMode: true,
   transform: function (chunk, enc, cb) {
     this.push(chunk)
     cb()
