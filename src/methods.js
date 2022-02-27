@@ -181,7 +181,7 @@ _m.flatten = s => s.consumeSync((err, x, push, next) => {
     push(err)
   } else if (x === _.nil) {
     push(err, x)
-  } else if (_.isIterable(x)) {
+  } else if (_.isIterable(x) && typeof x !== 'string') {
     for (const y of x) push(null, y)
   } else {
     push(null, x)
@@ -436,6 +436,7 @@ _m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toA
 }))
 
 _m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
+  objectMode: true,
   transform: function (chunk, enc, cb) {
     this.push(chunk)
     cb()

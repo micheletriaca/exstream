@@ -3,6 +3,7 @@ const h = require('./helpers.js')
 const zlib = require('zlib')
 jest.mock('fs')
 const fs = require('fs')
+jest.setTimeout(2000)
 
 const out = [...h.randomStringGenerator(10000)].map(x => x.toString() + '\n')
 
