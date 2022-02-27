@@ -37,3 +37,7 @@ _.makeGetter = (fieldPath, defaultValue) => {
   const fieldTokens = _.splitFieldPath(fieldPath)
   return x => _.traverse(x, fieldTokens, defaultValue)
 }
+_.get = (obj, fieldPath, defaultValue) => {
+  const getter = _.makeGetter(fieldPath, defaultValue)
+  return getter(obj)
+}

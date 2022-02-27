@@ -34,3 +34,10 @@ test('escapeRegexp + isString', () => {
   expect(match).not.toBe(null)
   expect(match[0]).toBe(stringWithStrangeChars)
 })
+
+test('get', () => {
+  const obj = {a: {b: {c: 3}}}
+  expect(_.get(obj, 'a.b.c')).toBe(3)
+  expect(_.get(obj, 'a.b.c.d')).toBe(undefined)
+  expect(_.get(obj, 'a.b.c.d', false)).toBe(false)
+})
