@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 /* eslint-disable no-sync */
 /* eslint-disable max-statements */
 /* eslint-disable no-use-before-define */
@@ -14,7 +15,8 @@ const _ = require('./utils.js')
 const _a = require('./methods')
 const _m = module.exports = {}
 
-_m.sortedGroupBy = _.curry((fn, s) => {
+_m.sortedGroupBy = _.curry((fnOrString, s) => {
+  const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString) : fnOrString
   let currentBatch = []
   let currentKey = _.nil
 
@@ -26,7 +28,7 @@ _m.sortedGroupBy = _.curry((fn, s) => {
       push(null, _.nil)
     } else {
       try {
-        const k = fn(x)
+        const k = getter(x)
         if (currentKey !== k) {
           if(currentKey !== _.nil) push(null, { key: currentKey, values: currentBatch })
           currentBatch = [x]

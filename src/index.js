@@ -67,7 +67,5 @@ _.extend('toAsyncIterator', function (options) { return _.toNodeStream(options, 
 _.extend('where', function (props) { return _.where(props, this) })
 _.extend('findWhere', function (props) { return _.findWhere(props, this) })
 _.extend('ratelimit', function (num, ms) { return _.ratelimit(num, ms, this) })
-_.extend('sortedGroupBy', function (fn) { return _.sortedGroupBy(fn, this) })
-_.extend('sortedJoin', function (joinFn, type = 'inner', buffer = 1) {
-  return _.sortedJoin(joinFn, type, buffer, this)
+_.extend('sortedGroupBy', function (fnOrString) { return _.sortedGroupBy(fnOrString, this) })
 })
