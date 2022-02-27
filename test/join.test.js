@@ -29,6 +29,31 @@ test('sortedLeftJoin', async () => {
   ])
 })
 
+test('multiple hits on second parent', async () => {
+  const s1 = _([{id: 1, name: 'parent1'}, {id: 2, name: 'parent2'}, {id: 3, name: 'parent3'}])
+  const s2 = _([
+    {id: 'child1', parent: 2},
+    {id: 'child2', parent: 2},
+    {id: 'child3',parent: 3},
+    {id: 'child4',parent: 4},
+  ])
+  const res = await _([s1,s2]).sortedJoin((a,b) => a.id === b.parent, 'inner').values()
+  expect(res).toEqual([
+    {
+      a: {id: 2, name: 'parent2'},
+      b: {id: 'child1', parent: 2},
+    },
+    {
+      a: {id: 2, name: 'parent2'},
+      b: {id: 'child2', parent: 2},
+    },
+    {
+      a: {id: 3, name: 'parent3'},
+      b: {id: 'child3', parent: 3},
+    },
+  ])
+})
+
 test('sortedRightJoin', async () => {
   const s1 = _([
     {id: 'child1', parent: 1},

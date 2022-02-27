@@ -47,17 +47,16 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
           endBranch(0)
         } else {
           cb1 = cb
+          // TODO -> ADD TEXT TO AVOID REGRESSIONS
+          a = x
           try {
             if(b && realJonFn(x, b)) {
               w({a: x, b})
-              b = null
               pullData = b2Ended ? cb1 : cb2
             } else if(b) {
               if(type !== 'inner') w({a: x, b: null})
-              a = x
               pullData = cb1
             } else {
-              a = x
               pullData = b2Ended ? cb1 : cb2
             }
 
@@ -86,12 +85,12 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
         } else {
           try {
             cb2 = cb
+            b = x
             const shouldMerge = realJonFn(a, x)
             if(shouldMerge) {
               w({a, b: x})
               pullData = cb2
             } else {
-              b = x
               pullData = b1Ended ? cb2 : cb1
             }
 
