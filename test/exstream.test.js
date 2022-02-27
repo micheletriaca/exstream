@@ -497,6 +497,25 @@ test('toNodeStream', () => {
   })
 })
 
+test('consume xs stream as an async iterator', async () => {
+  const s = _([1,2,3]).map(async x => x).resolve().toAsyncIterator()
+  const res = []
+  for await (const x of s) {
+    res.push(x)
+  }
+  expect(res).toEqual([1,2,3])
+})
+
+test('handling errors in source promise', async () => {
+  const oops = Promise.reject(new Error('muahaha'))
+  const err = []
+  await _(oops)
+    .errors(e => err.push(e))
+    .values()
+  expect(err.length).toBe(1)
+  expect(err[0].message).toBe('muahaha')
+})
+
 test('forking', async () => {
   const s = _([1, 2, 3])
   const p1 = s.fork().map(x => x * 2 + 1).toPromise()
