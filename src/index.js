@@ -1,12 +1,14 @@
 const { Exstream } = require('./exstream')
 const methods = require('./methods')
 const csv = require('./csv')
+const joins = require('./joins')
 const utils = require('./utils')
 
 const _ = module.exports = Object.assign(
   xs => new Exstream(xs),
   utils,
   csv,
+  joins,
   methods,
 )
 
@@ -64,3 +66,6 @@ _.extend('toNodeStream', function (options) { return _.toNodeStream(options, thi
 _.extend('where', function (props) { return _.where(props, this) })
 _.extend('findWhere', function (props) { return _.findWhere(props, this) })
 _.extend('ratelimit', function (num, ms) { return _.ratelimit(num, ms, this) })
+_.extend('sortedJoin', function (joinFn, type = 'inner', buffer = 1) {
+  return _.sortedJoin(joinFn, type, buffer, this)
+})
