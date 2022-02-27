@@ -1,4 +1,5 @@
 const _ = require('../src/index')
+const {sleep} = require('./helpers')
 
 test('sortedLeftJoin', async () => {
   const s1 = _([{id: 1, name: 'parent1'}, {id: 2, name: 'parent2'}, {id: 3, name: 'parent3'}])
@@ -38,6 +39,74 @@ test('multiple hits on second parent', async () => {
     {id: 'child4',parent: 4},
   ])
   const res = await _([s1,s2]).sortedJoin((a,b) => a.id === b.parent, 'inner').values()
+  expect(res).toEqual([
+    {
+      a: {id: 2, name: 'parent2'},
+      b: {id: 'child1', parent: 2},
+    },
+    {
+      a: {id: 2, name: 'parent2'},
+      b: {id: 'child2', parent: 2},
+    },
+    {
+      a: {id: 3, name: 'parent3'},
+      b: {id: 'child3', parent: 3},
+    },
+  ])
+})
+
+test('join with async source', async () => {
+  const s1 = _([
+    {id: 1, name: 'parent1'},
+    {id: 2, name: 'parent2'},
+    {id: 3, name: 'parent3'},
+  ]).map(async x => {
+    await sleep(0)
+    return x
+  })
+    .resolve()
+  const s2 = _([
+    {id: 'child1', parent: 2},
+    {id: 'child2', parent: 2},
+    {id: 'child3',parent: 3},
+    {id: 'child4',parent: 4},
+  ])
+  const res = await _([s1,s2]).sortedJoin((a,b) => a.id === b.parent, 'inner').values()
+  expect(res).toEqual([
+    {
+      a: {id: 2, name: 'parent2'},
+      b: {id: 'child1', parent: 2},
+    },
+    {
+      a: {id: 2, name: 'parent2'},
+      b: {id: 'child2', parent: 2},
+    },
+    {
+      a: {id: 3, name: 'parent3'},
+      b: {id: 'child3', parent: 3},
+    },
+  ])
+})
+
+test('join that starts later', async () => {
+  const s1 = _([
+    {id: 1, name: 'parent1'},
+    {id: 2, name: 'parent2'},
+    {id: 3, name: 'parent3'},
+  ]).map(async x => {
+    await sleep(0)
+    return x
+  })
+    .resolve()
+  const s2 = _([
+    {id: 'child1', parent: 2},
+    {id: 'child2', parent: 2},
+    {id: 'child3',parent: 3},
+    {id: 'child4',parent: 4},
+  ])
+  const s3 = _([s1,s2]).sortedJoin((a,b) => a.id === b.parent, 'inner')
+  await sleep(0)
+  const res = await s3.values()
   expect(res).toEqual([
     {
       a: {id: 2, name: 'parent2'},

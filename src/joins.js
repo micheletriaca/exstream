@@ -103,7 +103,7 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
       })
 
     pullData = () => s1Transform.resume()
-    n()
+    n && n()
   }).catch(e => { throw e })
 
   return new Exstream((write, next) => {
