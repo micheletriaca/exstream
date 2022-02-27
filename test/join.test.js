@@ -1,3 +1,6 @@
+/* eslint-disable max-lines */
+/* eslint-disable max-statements-per-line */
+/* eslint-disable max-len */
 const _ = require('../src/index')
 const {sleep} = require('./helpers')
 
@@ -203,6 +206,55 @@ test('sortedLeftJoinWithErrors', async () => {
     {
       a: {id: 1, name: 'parent1'},
       b: {id: 'child2', parent: 1},
+    },
+  ])
+})
+
+test('sorted group by', () => {
+  const res = _([{id: 1, name: 'name1'}, {id: 1, name: 'name2'}, {id: 2, name: 'name3'}, {name: 'name4'}])
+    .sortedGroupBy(x => x.id)
+    .values()
+
+  expect(res).toEqual([
+    {
+      key: 1,
+      values: [{id: 1, name: 'name1'}, {id: 1, name: 'name2'}],
+    },
+    {
+      key: 2,
+      values: [{id: 2, name: 'name3'}],
+    },
+    {
+      key: undefined,
+      values: [{name: 'name4'}],
+    },
+  ])
+})
+
+test('sorted group by. empty stream does not emit anything', () => {
+  const res = _([])
+    .sortedGroupBy(x => x.id)
+    .values()
+
+  expect(res).toEqual([])
+})
+
+test('sorted group by. error in key fn', () => {
+  let exc
+  const res = _([{id: 1, name: 'name1'}, {id: 1, name: 'name2'}, {id: 2, name: 'name3'}, {name: 'name4'}])
+    .sortedGroupBy(x => { if(x.id === 2) throw Error('an error'); return x.id })
+    .errors(e => {exc = e})
+    .values()
+
+  expect(exc).not.toBe(null)
+  expect(res).toEqual([
+    {
+      key: 1,
+      values: [{id: 1, name: 'name1'}, {id: 1, name: 'name2'}],
+    },
+    {
+      key: undefined,
+      values: [{name: 'name4'}],
     },
   ])
 })

@@ -278,6 +278,7 @@ test('error propagation', async () => {
     .stopWhen(x => x)
     .csvStringify()
     .head()
+    .sortedGroupBy(x => x)
     .last()
     .findWhere()
     .resolve()

@@ -1,9 +1,9 @@
+/* eslint-disable no-sync */
 /* eslint-disable max-statements */
 /* eslint-disable no-use-before-define */
 /* eslint-disable complexity */
 /* eslint-disable max-len */
 /* eslint-disable sonarjs/cognitive-complexity */
-/* eslint-disable no-empty-function */
 /* eslint-disable max-statements-per-line */
 /* eslint-disable promise/always-return */
 /* eslint-disable max-lines-per-function */
@@ -14,7 +14,35 @@ const _ = require('./utils.js')
 const _a = require('./methods')
 const _m = module.exports = {}
 
+_m.sortedGroupBy = _.curry((fn, s) => {
+  let currentBatch = []
+  let currentKey = _.nil
+
+  return s.consumeSync((err, x, push) => {
+    if (err) push(err)
+    else if (x === _.nil) {
+      if (currentBatch.length) push(null, { key: currentKey, values: currentBatch })
+      currentBatch = null
+      push(null, _.nil)
+    } else {
+      try {
+        const k = fn(x)
+        if (currentKey !== k) {
+          if(currentKey !== _.nil) push(null, { key: currentKey, values: currentBatch })
+          currentBatch = [x]
+          currentKey = k
+        } else {
+          currentBatch.push(x)
+        }
+      }catch(e) {
+        push(new ExstreamError(e, x))
+      }
+    }
+  })
+})
+
 _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
+  // TODO -> Handle joins that multiply N x N (to date, only parent/childs relationships with child = b are supported)
   let b1Ended = false, b2Ended = false
   let w, n, pullData, a, b
   let s2Started = false, cb1, cb2
@@ -47,7 +75,6 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
           endBranch(0)
         } else {
           cb1 = cb
-          // TODO -> ADD TEXT TO AVOID REGRESSIONS
           a = x
           try {
             if(b && realJonFn(x, b)) {
@@ -104,7 +131,10 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
 
     pullData = () => s1Transform.resume()
     n && n()
-  }).catch(e => { throw e })
+  }).catch(e => {
+    pullData = () => { w(e); w(_.nil) }
+    if(w) pullData()
+  })
 
   return new Exstream((write, next) => {
     w = write
