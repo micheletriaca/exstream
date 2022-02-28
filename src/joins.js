@@ -1,3 +1,4 @@
+/* eslint-disable no-nested-ternary */
 /* eslint-disable max-lines */
 /* eslint-disable no-sync */
 /* eslint-disable max-statements */
@@ -43,8 +44,11 @@ _m.sortedGroupBy = _.curry((fnOrString, s) => {
   })
 })
 
-_m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
-  // TODO -> Handle joins that multiply N x N (to date, only parent/childs relationships with child = b are supported)
+_m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, s) => {
+  const slaveFn = type === 'right' ? joinKeyOrFnA : joinKeyOrFnB
+  const masterFn = type === 'right' ? joinKeyOrFnB : joinKeyOrFnA
+  const getterSlave = _.isString(slaveFn) ? _.makeGetter(slaveFn) : slaveFn
+
   let b1Ended = false, b2Ended = false
   let w, n, pullData, a, b
   let s2Started = false, cb1, cb2
@@ -58,16 +62,28 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
     w = n = pullData = a = b = cb1 = cb2 = null
   }
 
+  const multiplyAndWrite = (a, b, w, key) => {
+    if(type === 'right') {
+      for(const x of a.values) {
+        w({key, a: b, b: x})
+      }
+    } else {
+      for(const x of a.values) {
+        w({key, a: x, b})
+      }
+    }
+  }
+
   s.collect().toPromise().then(subStreams => {
     if (subStreams[0].length !== 2) { throw Error('.sortedLeftJoin() can merge EXACTLY 2 exstream instances') }
     const bufferPipeline = buffer !== 1 ? _a.pipeline().batch(buffer).flatten() : null
 
     const s1 = type === 'right' ? subStreams[0][1] : subStreams[0][0]
     const s2 = type === 'right' ? subStreams[0][0] : subStreams[0][1]
-    const realJonFn = type === 'right' ? (a,b) => joinFn(b,a) : joinFn
 
     const s1Transform = s1
       .through(bufferPipeline)
+      .sortedGroupBy(masterFn)
       .consume((err, x, push, cb) => {
         if(err) {
           w(err)
@@ -79,12 +95,17 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
           cb1 = cb
           a = x
           try {
-            if(b && realJonFn(x, b)) {
-              w({a: x, b})
+            const bKey = b && getterSlave(b)
+            if(a.key === bKey) {
+              multiplyAndWrite(a, b, w, bKey)
               pullData = b2Ended ? cb1 : cb2
             } else if(b) {
-              if(type !== 'inner') w({a: x, b: null})
-              pullData = cb1
+              if(type !== 'inner') multiplyAndWrite(a, null, w, a.key)
+              const goOnFetchingFromA =
+                bKey > a.key && sortDirection === 'asc'
+                || bKey < a.key && sortDirection === 'desc'
+
+              pullData = goOnFetchingFromA ? cb1 : cb2
             } else {
               pullData = b2Ended ? cb1 : cb2
             }
@@ -115,12 +136,16 @@ _m.sortedJoin = _.curry((joinFn, type, buffer, s) => {
           try {
             cb2 = cb
             b = x
-            const shouldMerge = realJonFn(a, x)
-            if(shouldMerge) {
-              w({a, b: x})
+            const bKey = b && getterSlave(b)
+            if(a.key === bKey) {
+              multiplyAndWrite(a, b, w, bKey)
               pullData = cb2
             } else {
-              pullData = b1Ended ? cb2 : cb1
+              const goOnFetchingFromB =
+                bKey < a.key && sortDirection === 'asc'
+                || bKey > a.key && sortDirection === 'desc'
+
+              pullData = goOnFetchingFromB ? cb2 : b1Ended ? cb2 : cb1
             }
 
             n()

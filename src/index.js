@@ -1,3 +1,4 @@
+/* eslint-disable max-len */
 const { Exstream } = require('./exstream')
 const methods = require('./methods')
 const csv = require('./csv')
@@ -68,4 +69,6 @@ _.extend('where', function (props) { return _.where(props, this) })
 _.extend('findWhere', function (props) { return _.findWhere(props, this) })
 _.extend('ratelimit', function (num, ms) { return _.ratelimit(num, ms, this) })
 _.extend('sortedGroupBy', function (fnOrString) { return _.sortedGroupBy(fnOrString, this) })
+_.extend('sortedJoin', function (joinKeyOrFnA, joinKeyOrFnB, type = 'inner', sortDirection = 'asc', buffer = 1) {
+  return _.sortedJoin(joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, this)
 })
