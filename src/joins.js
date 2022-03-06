@@ -98,8 +98,8 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
           try {
             const bKey = b && getterSlave(b)
             if(a.key === bKey) {
-              multiplyAndWrite(a, b, w, bKey)
-              pullData = b2Ended ? cb1 : cb2
+              multiplyAndWrite(a, b, w, a.key)
+              pullData = cb2
             } else if(b) {
               const goOnFetchingFromA =
                 b2Ended
@@ -110,6 +110,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
 
               pullData = goOnFetchingFromA ? cb1 : cb2
             } else {
+              if(b2Ended && type !== 'inner') multiplyAndWrite(a, null, w, a.key)
               pullData = b2Ended ? cb1 : cb2
             }
 
@@ -139,8 +140,11 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
           pullData = cb1
           const bKey = b && getterSlave(b)
           const shouldEmit =
-            bKey < a.key && sortDirection === 'asc'
-            || bKey > a.key && sortDirection === 'desc'
+            a && (
+              b === void 0
+              || bKey < a.key && sortDirection === 'asc'
+              || bKey > a.key && sortDirection === 'desc'
+            )
           if(shouldEmit && type !== 'inner') multiplyAndWrite(a, null, w, a.key)
           endBranch(1)
         } else {
@@ -155,7 +159,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
                 bKey < a.key && sortDirection === 'asc'
                 || bKey > a.key && sortDirection === 'desc'
 
-              pullData = goOnFetchingFromB ? cb2 : b1Ended ? cb2 : cb1
+              pullData = goOnFetchingFromB ? cb2 : cb1
             }
 
             n()

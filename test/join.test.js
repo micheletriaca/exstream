@@ -2,8 +2,71 @@
 /* eslint-disable max-lines */
 /* eslint-disable max-statements-per-line */
 /* eslint-disable max-len */
+
 const _ = require('../src/index')
 const { sleep } = require('./helpers')
+
+test('sortedJoin - left - left stream empty', async () => {
+  const s1 = _([])
+  const s2 = _([
+    { id: 1 },
+    { id: 2 },
+  ])
+  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.id, 'left').values()
+  expect(res).toEqual([])
+})
+
+test('sortedJoin - right - left stream empty', async () => {
+  const s1 = _([])
+  const s2 = _([
+    { id: 1 },
+    { id: 2 },
+  ])
+  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.id, 'right').values()
+  expect(res).toEqual([
+    {
+      key: 1,
+      a: null,
+      b: { id: 1 },
+    },
+    {
+      key: 2,
+      a: null,
+      b: { id: 2 },
+    },
+  ])
+})
+
+test('sortedJoin - left - right stream empty', async () => {
+  const s1 = _([
+    { id: 1, name: 'parent1' },
+    { id: 2, name: 'parent2' },
+  ])
+  const s2 = _([])
+  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'left').values()
+  expect(res).toEqual([
+    {
+      key: 1,
+      a: { id: 1, name: 'parent1' },
+      b: null,
+    },
+    {
+      key: 2,
+      a: { id: 2, name: 'parent2' },
+      b: null,
+    },
+  ])
+})
+
+test('sortedJoin - right - right stream empty', async () => {
+  const s1 = _([
+    { id: 1, name: 'parent1' },
+    { id: 2, name: 'parent2' },
+  ])
+  const s2 = _([])
+  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'right').values()
+  expect(res).toEqual([])
+})
 
 test('sortedJoin - left', async () => {
   const s1 = _([
