@@ -1,10 +1,7 @@
 /* eslint-disable no-nested-ternary */
-/* eslint-disable max-lines */
-/* eslint-disable no-sync */
 /* eslint-disable max-statements */
 /* eslint-disable no-use-before-define */
 /* eslint-disable complexity */
-/* eslint-disable max-len */
 /* eslint-disable sonarjs/cognitive-complexity */
 /* eslint-disable max-statements-per-line */
 /* eslint-disable promise/always-return */
@@ -75,7 +72,9 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
   }
 
   s.collect().toPromise().then(subStreams => {
-    if (subStreams[0].length !== 2) { throw Error('.sortedLeftJoin() can merge EXACTLY 2 exstream instances') }
+    if (subStreams[0].length !== 2) {
+      throw Error('.sortedJoin() can merge only 2 exstream instances')
+    }
     const bufferPipeline = buffer !== 1 ? _a.pipeline().batch(buffer).flatten() : null
 
     const s1 = type === 'right' ? subStreams[0][1] : subStreams[0][0]
@@ -85,14 +84,16 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
       .through(bufferPipeline)
       .sortedGroupBy(masterFn)
       .consume((err, x, push, cb) => {
+        cb1 = cb
         if(err) {
+          pullData = cb1
+          a = null
           w(err)
           n()
         } else if(x === _.nil) {
           pullData = cb2
           endBranch(0)
         } else {
-          cb1 = cb
           a = x
           try {
             const bKey = b && getterSlave(b)
@@ -100,10 +101,11 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
               multiplyAndWrite(a, b, w, bKey)
               pullData = b2Ended ? cb1 : cb2
             } else if(b) {
-              if(type !== 'inner') multiplyAndWrite(a, null, w, a.key)
               const goOnFetchingFromA =
                 bKey > a.key && sortDirection === 'asc'
                 || bKey < a.key && sortDirection === 'desc'
+
+              if(goOnFetchingFromA && type !== 'inner') multiplyAndWrite(a, null, w, a.key)
 
               pullData = goOnFetchingFromA ? cb1 : cb2
             } else {
@@ -118,7 +120,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
             n()
           } catch(e) {
             w(new ExstreamError(e, x))
-            w(_.nil)
+            n()
           }
         }
       })
@@ -126,7 +128,10 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     const s2Transform = s2
       .through(bufferPipeline)
       .consume((err, x, push, cb) => {
+        cb2 = cb
         if(err) {
+          pullData = cb2
+          b = null
           w(err)
           n()
         } else if(x === _.nil) {
@@ -134,7 +139,6 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
           endBranch(1)
         } else {
           try {
-            cb2 = cb
             b = x
             const bKey = b && getterSlave(b)
             if(a.key === bKey) {
@@ -151,7 +155,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
             n()
           } catch(e) {
             w(new ExstreamError(e, x))
-            w(_.nil)
+            n()
           }
         }
       })
