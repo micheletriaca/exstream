@@ -50,7 +50,7 @@ test('omit', () => {
 
 test('omit single property', () => {
   const res = _([{ a: 1, b: 2, c: 3 }, { a: 1, c: 3 }, { b: 2, c: 3 }]).omit('a').values()
-  expect(res).toEqual([{ b: 2, c: 3 }, {c: 3 }, { b: 2,c: 3 }])
+  expect(res).toEqual([{ b: 2, c: 3 }, { c: 3 }, { b: 2,c: 3 }])
 })
 
 test('omit on non object', () => {

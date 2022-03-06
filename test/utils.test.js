@@ -36,7 +36,7 @@ test('escapeRegexp + isString', () => {
 })
 
 test('get', () => {
-  const obj = {a: {b: {c: 3}}}
+  const obj = { a: { b: { c: 3 } } }
   expect(_.get(obj, 'a.b.c')).toBe(3)
   expect(_.get(obj, 'a.b.c.d')).toBe(undefined)
   expect(_.get(obj, 'a.b.c.d', false)).toBe(false)

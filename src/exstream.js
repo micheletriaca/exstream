@@ -96,7 +96,7 @@ class Exstream extends EventEmitter {
     if (x === _.nil) this.#nilPushed = true
     const isError = _.isError(x)
     const xx = isError ? null : x
-    const err = isError ? x : undefined
+    const err = isError ? x : void 0
 
     if (this.paused && !skipBackPressure) {
       this.#buffer.push(x)

@@ -65,11 +65,11 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
   const multiplyAndWrite = (a, b, w, key) => {
     if(type === 'right') {
       for(const x of a.values) {
-        w({key, a: b, b: x})
+        w({ key, a: b, b: x })
       }
     } else {
       for(const x of a.values) {
-        w({key, a: x, b})
+        w({ key, a: x, b })
       }
     }
   }

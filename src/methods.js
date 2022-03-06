@@ -1,5 +1,5 @@
 /*
-  eslint-disable max-lines, sonarjs/cognitive-complexity, complexity, no-sync
+  eslint-disable sonarjs/cognitive-complexity, complexity
 */
 
 const _ = require('./utils.js')
@@ -80,14 +80,12 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
     try {
       let res = fn(x)
       const probablyPromise = res && res.then && res.catch
-      // eslint-disable-next-line promise/no-promise-in-callback
       if (probablyPromise) res = res.catch(e => {
         throw new ExstreamError(e, x)
       })
       if (!options || !options.wrap) {
         return push(null, res)
       } else if (probablyPromise) {
-      // eslint-disable-next-line promise/no-promise-in-callback
         push(null, res.then(y => ({ input: x, output: y })))
       } else {
         push(null, { input: x, output: res })
@@ -110,7 +108,6 @@ _m.findWhere = _.curry((props, s) => s.where(props).take(1))
 _m.ratelimit = _.curry((num, ms, s) => {
   let sent = 0
   let startWindow
-  // eslint-disable-next-line max-statements
   return s.consume((err, x, push, next) => {
     if (err) {
       push(err)
@@ -175,8 +172,7 @@ _m.collect = s => {
   })
 }
 
-// eslint-disable-next-line no-unused-vars
-_m.flatten = s => s.consumeSync((err, x, push, next) => {
+_m.flatten = s => s.consumeSync((err, x, push) => {
   if (err) {
     push(err)
   } else if (x === _.nil) {
@@ -301,7 +297,7 @@ _m.pick = _.curry((fields, s) => s.map(x => {
 }))
 
 _m.omit = _.curry((fields, s) => s.map(x => {
-  const res = {...x}
+  const res = { ...x }
   fields = Array.isArray(fields) ? fields : [fields]
   let hasKey
   for (let i = 0, len = fields.length; i < len; i++) {
@@ -345,7 +341,6 @@ _m.massThen = _.curry((fn, s) => s.map(x => x.then(fn)))
 
 _m.massCatch = _.curry((fn, s) => s.map(x => x.catch(fn)))
 
-// eslint-disable-next-line max-lines-per-function
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
@@ -384,7 +379,6 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
     } else {
       const resPointer = {}
       promises.push(resPointer)
-      // eslint-disable-next-line promise/no-promise-in-callback
       el.then(res => handlePromiseResult(false, res, resPointer, push, next))
         .catch(res => handlePromiseResult(true, res, resPointer, push, next))
       if (promises.length < parallelism) next()
@@ -492,7 +486,7 @@ _m.reduce = _.curry((fn, accumulator, s) => {
         try {
           push(new ExstreamError(e, x))
         } finally {
-          accumulator = undefined
+          accumulator = void 0
           s1.destroy()
         }
       }
@@ -520,7 +514,7 @@ _m.reduce1 = _.curry((fn, s) => {
         try {
           push(new ExstreamError(e, x))
         } finally {
-          accumulator = undefined
+          accumulator = void 0
           s1.destroy()
         }
       }
@@ -545,7 +539,7 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
         try {
           push(new ExstreamError(e, x))
         } finally {
-          accumulator = undefined
+          accumulator = void 0
           s1.destroy()
         }
       }
@@ -558,7 +552,7 @@ _m.groupBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
   return s.reduce((accumulator, x) => {
     let key = getter(x)
-    if (key === null || key === undefined) key = _.nil
+    if (key === null || key === void 0) key = _.nil
     if (!_.has(accumulator, key)) accumulator[key] = []
     accumulator[key].push(x)
     return accumulator
@@ -569,7 +563,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
   return s.reduce((accumulator, x) => {
     let key = getter(x)
-    if (key === null || key === undefined) key = _.nil
+    if (key === null || key === void 0) key = _.nil
     const keyAlreadyExists = _.has(accumulator, key)
     if (keyAlreadyExists) throw new ExstreamError(`Multiple values per key: ${key}`, x)
     accumulator[key] = x
@@ -579,7 +573,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
 
 _m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
 
-_m.sort = s => _m.sortBy(undefined, s)
+_m.sort = s => _m.sortBy(void 0, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null
@@ -636,8 +630,7 @@ _m.last = s => {
 }
 
 _m.pipeline = () => new Proxy({
-  // eslint-disable-next-line camelcase
-  __exstream_pipeline__: true,
+  __exstream_pipeline__: true, // eslint-disable-line camelcase
   definitions: [],
   generateStream: function () {
     const s = new Exstream()

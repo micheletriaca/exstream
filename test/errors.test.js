@@ -351,7 +351,7 @@ test('filter errors', () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => ex = e)
+    .errors(e => void (ex = e))
     .values()
   expect(res).toEqual([1, 2])
   expect(ex).not.toBe(null)
@@ -365,7 +365,7 @@ test('reject errors', () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => ex = e)
+    .errors(e => void (ex = e))
     .values()
   expect(res).toEqual([])
   expect(ex).not.toBe(null)
@@ -380,7 +380,7 @@ test('async filter errors', async () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(ex => e = ex)
+    .errors(ex => void (e = ex))
     .toPromise()
 
   expect(res).toEqual([1, 2])
@@ -405,7 +405,7 @@ test('stopOnError', () => {
       if (x === 2) throw Error('an error')
       return x
     })
-    .stopOnError(e => ex = e)
+    .stopOnError(e => void (ex = e))
     .values()
 
   expect(ex).not.toBe(null)

@@ -196,7 +196,7 @@ test('writable streams cannot be wrapped in an exstream instance', async () => {
   let ex = null
   await _(h.getSlowWritable([], 0, 0))
     .toPromise()
-    .catch(e => ex = e)
+    .catch(e => void (ex = e))
   console.log(ex)
   expect(ex).not.toBe(null)
 })
