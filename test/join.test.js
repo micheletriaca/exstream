@@ -1,3 +1,4 @@
+/* eslint-disable max-lines-per-function */
 /* eslint-disable max-lines */
 /* eslint-disable max-statements-per-line */
 /* eslint-disable max-len */
@@ -5,13 +6,21 @@ const _ = require('../src/index')
 const { sleep } = require('./helpers')
 
 test('sortedJoin - left', async () => {
-  const s1 = _([{ id: 1, name: 'parent1' }, { id: 2, name: 'parent2' }, { id: 3, name: 'parent3' }])
+  const s1 = _([
+    { id: 1, name: 'parent1' },
+    { id: 2, name: 'parent2' },
+    { id: 3, name: 'parent3' },
+    { id: 10, name: 'parent10' },
+    { id: 11, name: 'parent11' },
+  ])
+
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
     { id: 'child3',parent: 3 },
     { id: 'child4',parent: 4 },
   ])
+
   const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'left').values()
   expect(res).toEqual([
     {
@@ -33,6 +42,16 @@ test('sortedJoin - left', async () => {
       key: 3,
       a: { id: 3, name: 'parent3' },
       b: { id: 'child3', parent: 3 },
+    },
+    {
+      key: 10,
+      a: { id: 10, name: 'parent10' },
+      b: null,
+    },
+    {
+      key: 11,
+      a: { id: 11, name: 'parent11' },
+      b: null,
     },
   ])
 })
@@ -81,6 +100,24 @@ test('sortedJoin - no more than 2 substreams', async () => {
   expect(exc.message).toBe('.sortedJoin() can merge only 2 exstream instances')
 })
 
+test('sortedJoin - sync error in source stream generation', async () => {
+  let exc
+
+  const s3 = _([1, 2])
+    .map(x => {
+      if(x === 2) throw Error('an error')
+      return _([x])
+    })
+    .sortedJoin('id', 'id', 'left', 'asc')
+
+  await sleep(0)
+  await s3.values()
+    .catch(e => void (exc = e))
+
+  expect(exc).not.toBe(null)
+  expect(exc.message).toBe('an error')
+})
+
 test('sortedJoin - inner - complex', async () => {
   const s1 = _([{ id: 1, name: 'parent1' }, { id: 1, name: 'parent2' }, { id: 4, name: 'parent4' }])
   const s2 = _([
@@ -88,6 +125,7 @@ test('sortedJoin - inner - complex', async () => {
     { id: 'child3',parent: 2 },
     { id: 'child3',parent: 3 },
     { id: 'child4',parent: 4 },
+    { id: 'child5',parent: 5 },
   ])
   const res = await _([s1,s2]).sortedJoin(
     a => a.id,

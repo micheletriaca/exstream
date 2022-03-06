@@ -47,6 +47,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
   const getterSlave = _.isString(slaveFn) ? _.makeGetter(slaveFn) : slaveFn
 
   let b1Ended = false, b2Ended = false
+  let s1Transform, s2Transform
   let w, n, pullData, a, b
   let s2Started = false, cb1, cb2
 
@@ -54,9 +55,8 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     if(idx === 0) b1Ended = true
     if(idx === 1) b2Ended = true
     const overallEnded = type === 'inner' && (b1Ended || b2Ended) || b1Ended
-    if(!overallEnded) return n()
-    w(_.nil)
-    w = n = pullData = a = b = cb1 = cb2 = null
+    if(!overallEnded) n()
+    else w(_.nil)
   }
 
   const multiplyAndWrite = (a, b, w, key) => {
@@ -71,16 +71,16 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     }
   }
 
-  s.collect().toPromise().then(subStreams => {
-    if (subStreams[0].length !== 2) {
+  s.toPromise().then(subStreams => {
+    if (subStreams.length !== 2) {
       throw Error('.sortedJoin() can merge only 2 exstream instances')
     }
     const bufferPipeline = buffer !== 1 ? _a.pipeline().batch(buffer).flatten() : null
 
-    const s1 = type === 'right' ? subStreams[0][1] : subStreams[0][0]
-    const s2 = type === 'right' ? subStreams[0][0] : subStreams[0][1]
+    const s1 = type === 'right' ? subStreams[1] : subStreams[0]
+    const s2 = type === 'right' ? subStreams[0] : subStreams[1]
 
-    const s1Transform = s1
+    s1Transform = s1
       .through(bufferPipeline)
       .sortedGroupBy(masterFn)
       .consume((err, x, push, cb) => {
@@ -102,7 +102,8 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
               pullData = b2Ended ? cb1 : cb2
             } else if(b) {
               const goOnFetchingFromA =
-                bKey > a.key && sortDirection === 'asc'
+                b2Ended
+                || bKey > a.key && sortDirection === 'asc'
                 || bKey < a.key && sortDirection === 'desc'
 
               if(goOnFetchingFromA && type !== 'inner') multiplyAndWrite(a, null, w, a.key)
@@ -125,7 +126,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
         }
       })
 
-    const s2Transform = s2
+    s2Transform = s2
       .through(bufferPipeline)
       .consume((err, x, push, cb) => {
         cb2 = cb
@@ -136,6 +137,11 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
           n()
         } else if(x === _.nil) {
           pullData = cb1
+          const bKey = b && getterSlave(b)
+          const shouldEmit =
+            bKey < a.key && sortDirection === 'asc'
+            || bKey > a.key && sortDirection === 'desc'
+          if(shouldEmit && type !== 'inner') multiplyAndWrite(a, null, w, a.key)
           endBranch(1)
         } else {
           try {
@@ -171,5 +177,10 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     w = write
     n = next
     if(pullData) pullData()
+  }).on('end', () => {
+    w = n = () => {} // eslint-disable-line no-empty-function
+    s1Transform.destroy()
+    s2Transform.destroy()
+    w = n = pullData = a = b = cb1 = cb2 = null
   })
 })
