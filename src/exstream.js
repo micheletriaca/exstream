@@ -29,7 +29,7 @@ class Exstream extends EventEmitter {
   writable = true
   readable = true
 
-  #resumedAtLestOnce = false
+  #resumedAtLeastOnce = false
   paused = true
   ended = false
   #nilPushed = false
@@ -204,7 +204,7 @@ class Exstream extends EventEmitter {
         otherStream.#consumers.forEach(x => {
           x.source = otherStream
         })
-        otherStream.#resumedAtLestOnce = true
+        otherStream.#resumedAtLeastOnce = true
         otherStream.#buffer = this.#buffer
         otherStream.#synchronous = false
         this.#consumers = []
@@ -236,7 +236,7 @@ class Exstream extends EventEmitter {
   resume () {
     if (!this.#autostart || !this.#nextCalled || !this.paused) return
 
-    this.#resumedAtLestOnce = true
+    this.#resumedAtLeastOnce = true
     this.paused = false
     this.#flushBuffer() // This can pause the stream again if the consumers are slow
     if (this.paused) return
@@ -343,7 +343,7 @@ class Exstream extends EventEmitter {
   }
 
   fork (disableAutostart = false) {
-    if (this.#resumedAtLestOnce)
+    if (this.#resumedAtLeastOnce)
       throw Error('this stream is already started. you can\'t fork it anymore')
     this.#synchronous = false
     this.#autostart = false
