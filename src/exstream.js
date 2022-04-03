@@ -326,8 +326,11 @@ class Exstream extends EventEmitter {
         dest.off('drain', next)
         process.nextTick(() => end.call(dest))
       } else if (err) {
-        this.emit('error', err)
-        next()
+        // setImmediate is needed to exit from a promise context
+        setImmediate(() => {
+          dest.emit('error', err)
+          next()
+        })
       } else if (!dest.write(x)) {
         dest.once('drain', next)
       } else {
