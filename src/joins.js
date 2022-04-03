@@ -103,6 +103,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
             } else if(b) {
               const goOnFetchingFromA =
                 b2Ended
+                || _.isFunction(sortDirection) && !sortDirection(a.key, bKey)
                 || bKey > a.key && sortDirection === 'asc'
                 || bKey < a.key && sortDirection === 'desc'
 
@@ -142,6 +143,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
           const shouldEmit =
             a && (
               b === void 0
+              || _.isFunction(sortDirection) && sortDirection(a.key, bKey)
               || bKey < a.key && sortDirection === 'asc'
               || bKey > a.key && sortDirection === 'desc'
             )
@@ -156,7 +158,8 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
               pullData = cb2
             } else {
               const goOnFetchingFromB =
-                bKey < a.key && sortDirection === 'asc'
+                _.isFunction(sortDirection) && sortDirection(a.key, bKey)
+                || bKey < a.key && sortDirection === 'asc'
                 || bKey > a.key && sortDirection === 'desc'
 
               pullData = goOnFetchingFromB ? cb2 : cb1
