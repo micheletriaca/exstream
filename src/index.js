@@ -3,6 +3,7 @@ const { Exstream } = require('./exstream')
 const methods = require('./methods')
 const csv = require('./csv')
 const joins = require('./joins')
+const highLevel = require('./high-level')
 const utils = require('./utils')
 
 const _ = module.exports = Object.assign(
@@ -10,6 +11,7 @@ const _ = module.exports = Object.assign(
   utils,
   csv,
   joins,
+  highLevel,
   methods,
 )
 
@@ -69,6 +71,7 @@ _.extend('where', function (props) { return _.where(props, this) })
 _.extend('findWhere', function (props) { return _.findWhere(props, this) })
 _.extend('ratelimit', function (num, ms) { return _.ratelimit(num, ms, this) })
 _.extend('sortedGroupBy', function (fnOrString) { return _.sortedGroupBy(fnOrString, this) })
+_.extend('externalSortBy', function (fnOrString, batchSize = 10000) { return _.externalSortBy(fnOrString, batchSize, this) })
 _.extend('sortedJoin', function (joinKeyOrFnA, joinKeyOrFnB, type = 'inner', sortDirection = 'asc', buffer = 1) {
   return _.sortedJoin(joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, this)
 })

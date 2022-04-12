@@ -1,3 +1,4 @@
+const crypto = require('crypto')
 const _ = module.exports = {}
 _.nil = Symbol('exstream nil')
 _.isExstream = x => x && !!x.__exstream__
@@ -41,3 +42,4 @@ _.get = (obj, fieldPath, defaultValue) => {
   const getter = _.makeGetter(fieldPath, defaultValue)
   return getter(obj)
 }
+_.uuidv4 = () => crypto.randomUUID()

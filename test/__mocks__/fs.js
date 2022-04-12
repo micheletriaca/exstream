@@ -2,8 +2,7 @@
 'use strict'
 
 const h = require('../helpers.js')
-const _ = require('../../src/index')
-
+const { Readable } = require('stream')
 const fs = jest.createMockFromModule('fs')
 
 let mockFiles = {}
@@ -11,16 +10,15 @@ function __setMockFiles (newMockFiles) {
   mockFiles = newMockFiles
 }
 
+async function * read (file) {
+  for(let i = 0; i < mockFiles[file].length; i++) {
+    if(i % 10000 === 0) await h.sleep(10)
+    yield mockFiles[file][i]
+  }
+}
+
 function createReadStream (file) {
-  return _(mockFiles[file])
-    .batch(1000)
-    .map(async x => {
-      await h.sleep(10)
-      return x
-    })
-    .resolve()
-    .flatten()
-    .toNodeStream()
+  return Readable.from(read(file))
 }
 
 function createWriteStream (file) {

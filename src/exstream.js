@@ -32,7 +32,7 @@ class Exstream extends EventEmitter {
   #resumedAtLeastOnce = false
   paused = true
   ended = false
-  #nilPushed = false
+  nilPushed = false
 
   #buffer = []
   #sourceData = null
@@ -89,12 +89,12 @@ class Exstream extends EventEmitter {
   }
 
   write (x) {
-    if (this.#nilPushed) throw Error('Cannot write to stream after nil')
+    if (this.nilPushed) throw Error('Cannot write to stream after nil')
     return this._write(x)
   }
 
   _write (x, skipBackPressure = false) {
-    if (x === _.nil) this.#nilPushed = true
+    if (x === _.nil) this.nilPushed = true
     const isError = _.isError(x)
     const xx = isError ? null : x
     const err = isError ? x : void 0
@@ -145,7 +145,7 @@ class Exstream extends EventEmitter {
   // eslint-disable-next-line max-statements
   end () {
     if (this.ended) return
-    if (!this.#nilPushed) this._write(_.nil)
+    if (!this.nilPushed) this._write(_.nil)
     if (this.paused) this.#flushBuffer(true)
     this.ended = true
     if (this.readable) this.emit('end')
@@ -191,7 +191,7 @@ class Exstream extends EventEmitter {
       }
       if (!nextVal.done) this.write(nextVal.value)
       else this.end()
-    } while (!this.#nilPushed && !this.paused)
+    } while (!this.nilPushed && !this.paused)
   }
 
   #consumeGenerator = () => {
@@ -226,7 +226,7 @@ class Exstream extends EventEmitter {
       this.#generator(w, next)
       syncNext = false
       if (!this.#nextGenCalled) this.pause()
-    } while (!this.paused && !this.#nilPushed)
+    } while (!this.paused && !this.nilPushed)
   }
 
   pause () {

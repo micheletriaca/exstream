@@ -12,7 +12,7 @@ test('sortedJoin - left - left stream empty', async () => {
     { id: 1 },
     { id: 2 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.id, 'left').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.id, 'left').values()
   expect(res).toEqual([])
 })
 
@@ -22,7 +22,7 @@ test('sortedJoin - right - left stream empty', async () => {
     { id: 1 },
     { id: 2 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.id, 'right').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.id, 'right').values()
   expect(res).toEqual([
     {
       key: 1,
@@ -43,7 +43,7 @@ test('sortedJoin - left - right stream empty', async () => {
     { id: 2, name: 'parent2' },
   ])
   const s2 = _([])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'left').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'left').values()
   expect(res).toEqual([
     {
       key: 1,
@@ -64,11 +64,11 @@ test('sortedJoin - right - right stream empty', async () => {
     { id: 2, name: 'parent2' },
   ])
   const s2 = _([])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'right').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'right').values()
   expect(res).toEqual([])
 })
 
-test('sortedJoin - left', async () => {
+test('sortedJoin - leftdsdasdasdasdws', async () => {
   const s1 = _([
     { id: 1, name: 'parent1' },
     { id: 2, name: 'parent2' },
@@ -80,11 +80,11 @@ test('sortedJoin - left', async () => {
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
   ])
 
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'left').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'left').values()
   expect(res).toEqual([
     {
       key: 1,
@@ -124,10 +124,10 @@ test('sortedJoin - left - with join strings', async () => {
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
   ])
-  const res = await _([s1,s2]).sortedJoin('id', 'parent', 'left').values()
+  const res = await _([s1, s2]).sortedJoin('id', 'parent', 'left').values()
   expect(res).toEqual([
     {
       key: 1,
@@ -157,7 +157,7 @@ test('sortedJoin - no more than 2 substreams', async () => {
   await _([_(), _(), _()])
     .sortedJoin('id', 'id', 'left', 'asc')
     .values()
-    .catch(e => void (exc = e))
+    .catch(e => (exc = e))
 
   expect(exc).not.toBe(null)
   expect(exc.message).toBe('.sortedJoin() can merge only 2 exstream instances')
@@ -168,14 +168,14 @@ test('sortedJoin - sync error in source stream generation', async () => {
 
   const s3 = _([1, 2])
     .map(x => {
-      if(x === 2) throw Error('an error')
+      if (x === 2) throw Error('an error')
       return _([x])
     })
     .sortedJoin('id', 'id', 'left', 'asc')
 
   await sleep(0)
   await s3.values()
-    .catch(e => void (exc = e))
+    .catch(e => (exc = e))
 
   expect(exc).not.toBe(null)
   expect(exc.message).toBe('an error')
@@ -185,12 +185,12 @@ test('sortedJoin - inner - complex', async () => {
   const s1 = _([{ id: 1, name: 'parent1' }, { id: 1, name: 'parent2' }, { id: 4, name: 'parent4' }])
   const s2 = _([
     { id: 'child1', parent: 1 },
-    { id: 'child3',parent: 2 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
-    { id: 'child5',parent: 5 },
+    { id: 'child3', parent: 2 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
+    { id: 'child5', parent: 5 },
   ])
-  const res = await _([s1,s2]).sortedJoin(
+  const res = await _([s1, s2]).sortedJoin(
     a => a.id,
     b => b.parent,
     'inner',
@@ -210,7 +210,7 @@ test('sortedJoin - inner - complex', async () => {
     {
       key: 4,
       a: { id: 4, name: 'parent4' },
-      b: { id: 'child4',parent: 4 },
+      b: { id: 'child4', parent: 4 },
     },
   ])
 })
@@ -220,10 +220,10 @@ test('multiple hits on second parent', async () => {
   const s2 = _([
     { id: 'child1', parent: 2 },
     { id: 'child2', parent: 2 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'inner').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'inner').values()
   expect(res).toEqual([
     {
       key: 2,
@@ -253,7 +253,7 @@ test('multiple keys in both s1 and s2', async () => {
     { t: 'childOfAnObject2', parent: 1 },
     { t: 'anotherChildOfAnObject2', parent: 1 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.parent, b => b.parent, 'inner').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.parent, b => b.parent, 'inner').values()
   expect(res).toEqual([
     {
       key: 1,
@@ -262,13 +262,13 @@ test('multiple keys in both s1 and s2', async () => {
     },
     {
       key: 1,
-      a: { t: 'anotherChildOfAnObject', parent: 1 },
-      b: { t: 'childOfAnObject2', parent: 1 },
+      a: { t: 'childOfAnObject', parent: 1 },
+      b: { t: 'anotherChildOfAnObject2', parent: 1 },
     },
     {
       key: 1,
-      a: { t: 'childOfAnObject', parent: 1 },
-      b: { t: 'anotherChildOfAnObject2', parent: 1 },
+      a: { t: 'anotherChildOfAnObject', parent: 1 },
+      b: { t: 'childOfAnObject2', parent: 1 },
     },
     {
       key: 1,
@@ -291,10 +291,10 @@ test('join with async source', async () => {
   const s2 = _([
     { id: 'child1', parent: 2 },
     { id: 'child2', parent: 2 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'inner').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'inner').values()
   expect(res).toEqual([
     {
       key: 2,
@@ -327,10 +327,10 @@ test('join that starts later', async () => {
   const s2 = _([
     { id: 'child1', parent: 2 },
     { id: 'child2', parent: 2 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
   ])
-  const s3 = _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'inner')
+  const s3 = _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'inner')
   await sleep(0)
   const res = await s3.values()
   expect(res).toEqual([
@@ -352,15 +352,15 @@ test('join that starts later', async () => {
   ])
 })
 
-test('sortedJoin - right', async () => {
+test('sortedJoindsadq2wdqweqw - right', async () => {
   const s1 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
   ])
   const s2 = _([{ id: 1, name: 'parent1' }, { id: 2, name: 'parent2' }, { id: 3, name: 'parent3' }])
-  const res = await _([s1,s2]).sortedJoin(a => a.parent, b => b.id, 'right').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.parent, b => b.id, 'right').values()
   expect(res).toEqual([
     {
       key: 1,
@@ -390,10 +390,10 @@ test('sortedInnerJoin', async () => {
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 3 },
-    { id: 'child4',parent: 4 },
+    { id: 'child3', parent: 3 },
+    { id: 'child4', parent: 4 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent).values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'inner', 'asc', 2).values()
   expect(res).toEqual([
     {
       key: 1,
@@ -413,41 +413,25 @@ test('sortedInnerJoin', async () => {
   ])
 })
 
-test('sortedLeftJoinWithErrors', async () => {
+test('sortedLeftJoinWithErrors - a', async () => {
   let exc = null
   const s1 = _([{ id: 1, name: 'parent1' }, { id: 2, name: 'parent2' }, { id: 3, name: 'parent3' }])
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 2 },
-    { id: 'child4',parent: 3 },
+    { id: 'child3', parent: 2 },
+    { id: 'child4', parent: 3 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => {
-    if(a.id === 2) throw Error('an error')
+  const res = await _([s1, s2]).sortedJoin(a => {
+    if (a.id === 2) throw Error('an error')
     return a.id
-  }, b => b.parent, 'left', 'asc', 100)
+  }, b => b.parent, 'left', 'asc', 1)
     .errors(e => {
       exc = e
     })
     .values()
   expect(exc).not.toBe(null)
-  expect(res).toEqual([
-    {
-      key: 1,
-      a: { id: 1, name: 'parent1' },
-      b: { id: 'child1', parent: 1 },
-    },
-    {
-      key: 1,
-      a: { id: 1, name: 'parent1' },
-      b: { id: 'child2', parent: 1 },
-    },
-    {
-      key: 3,
-      a: { id: 3, name: 'parent3' },
-      b: { id: 'child4', parent: 3 },
-    },
-  ])
+  expect(res).toEqual([])
 })
 
 test('sortedLeftJoinWithErrorsInB', async () => {
@@ -456,11 +440,11 @@ test('sortedLeftJoinWithErrorsInB', async () => {
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 2 },
-    { id: 'child4',parent: 3 },
+    { id: 'child3', parent: 2 },
+    { id: 'child4', parent: 3 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => {
-    if(b.id === 'child2') throw Error('an error')
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => {
+    if (b.id === 'child2') throw Error('an error')
     return b.parent
   }, 'left', 'asc', 100)
     .errors(e => {
@@ -468,23 +452,7 @@ test('sortedLeftJoinWithErrorsInB', async () => {
     })
     .values()
   expect(exc).not.toBe(null)
-  expect(res).toEqual([
-    {
-      key: 1,
-      a: { id: 1, name: 'parent1' },
-      b: { id: 'child1', parent: 1 },
-    },
-    {
-      key: 2,
-      a: { id: 2, name: 'parent2' },
-      b: { id: 'child3', parent: 2 },
-    },
-    {
-      key: 3,
-      a: { id: 3, name: 'parent3' },
-      b: { id: 'child4', parent: 3 },
-    },
-  ])
+  expect(res).toEqual([])
 })
 
 test('sortedLeftJoin - WithErrors In substream B', async () => {
@@ -493,36 +461,20 @@ test('sortedLeftJoin - WithErrors In substream B', async () => {
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 2 },
-    { id: 'child4',parent: 3 },
+    { id: 'child3', parent: 2 },
+    { id: 'child4', parent: 3 },
   ]).map(x => {
-    if(x.id === 'child2') throw Error('an error')
+    if (x.id === 'child2') throw Error('an error')
     return x
   })
 
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => b.parent, 'left', 'asc', 100)
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'left', 'asc', 100)
     .errors(e => {
       exc = e
     })
     .values()
   expect(exc).not.toBe(null)
-  expect(res).toEqual([
-    {
-      key: 1,
-      a: { id: 1, name: 'parent1' },
-      b: { id: 'child1', parent: 1 },
-    },
-    {
-      key: 2,
-      a: { id: 2, name: 'parent2' },
-      b: { id: 'child3', parent: 2 },
-    },
-    {
-      key: 3,
-      a: { id: 3, name: 'parent3' },
-      b: { id: 'child4', parent: 3 },
-    },
-  ])
+  expect(res).toEqual([])
 })
 
 test('sortedRightJoinWithErrors', async () => {
@@ -531,11 +483,11 @@ test('sortedRightJoinWithErrors', async () => {
   const s2 = _([
     { id: 'child1', parent: 1 },
     { id: 'child2', parent: 1 },
-    { id: 'child3',parent: 2 },
-    { id: 'child4',parent: 3 },
+    { id: 'child3', parent: 2 },
+    { id: 'child4', parent: 3 },
   ])
-  const res = await _([s1,s2]).sortedJoin(a => a.id, b => {
-    if(b.parent === 1) throw Error('an error')
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => {
+    if (b.parent === 1) throw Error('an error')
     return b.parent
   }, 'right', 'asc', 100)
     .errors(e => {
@@ -543,18 +495,7 @@ test('sortedRightJoinWithErrors', async () => {
     })
     .values()
   expect(exc).not.toBe(null)
-  expect(res).toEqual([
-    {
-      key: 2,
-      a: { id: 2, name: 'parent2' },
-      b: { id: 'child3', parent: 2 },
-    },
-    {
-      key: 3,
-      a: { id: 3, name: 'parent3' },
-      b: { id: 'child4', parent: 3 },
-    },
-  ])
+  expect(res).toEqual([])
 })
 
 test('sorted group by', () => {
@@ -610,8 +551,8 @@ test('sorted group by. empty stream does not emit anything', () => {
 test('sorted group by. error in key fn', () => {
   let exc
   const res = _([{ id: 1, name: 'name1' }, { id: 1, name: 'name2' }, { id: 2, name: 'name3' }, { name: 'name4' }])
-    .sortedGroupBy(x => { if(x.id === 2) throw Error('an error'); return x.id })
-    .errors(e => {exc = e})
+    .sortedGroupBy(x => { if (x.id === 2) throw Error('an error'); return x.id })
+    .errors(e => { exc = e })
     .values()
 
   expect(exc).not.toBe(null)
