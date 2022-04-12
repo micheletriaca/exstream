@@ -41,6 +41,7 @@ class Exstream extends EventEmitter {
   #consumeFn = null
   #consumeSyncFn = null
   #nextCalled = true
+  #nextGenCalled = true
   #consumers = []
   #observers = []
   #autostart = true
@@ -196,7 +197,7 @@ class Exstream extends EventEmitter {
   #consumeGenerator = () => {
     let syncNext = true
     const next = otherStream => {
-      this.#nextCalled = true
+      this.#nextGenCalled = true
       let me = this
       if (otherStream) {
         otherStream = new Exstream(otherStream)
@@ -211,7 +212,7 @@ class Exstream extends EventEmitter {
         this.destroy()
         me = otherStream
       }
-      if (me.paused && (!syncNext || otherStream)) process.nextTick(() => me.resume())
+      if (me.paused && (!syncNext || otherStream)) setImmediate(() => me.resume())
     }
 
     const w = x => {
@@ -220,11 +221,11 @@ class Exstream extends EventEmitter {
     }
 
     do {
-      this.#nextCalled = false
+      this.#nextGenCalled = false
       syncNext = true
       this.#generator(w, next)
       syncNext = false
-      if (!this.#nextCalled) this.pause()
+      if (!this.#nextGenCalled) this.pause()
     } while (!this.paused && !this.#nilPushed)
   }
 
@@ -234,7 +235,7 @@ class Exstream extends EventEmitter {
   }
 
   resume () {
-    if (!this.#autostart || !this.#nextCalled || !this.paused) return
+    if (!this.#autostart || !this.#nextCalled || !this.#nextGenCalled || !this.paused) return
 
     this.#resumedAtLeastOnce = true
     this.paused = false
