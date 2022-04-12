@@ -277,11 +277,22 @@ class Exstream extends EventEmitter {
   }
 
   pull (fn) {
-    const s2 = this.consumeSync((err, x) => {
-      this.#removeConsumer(s2)
-      fn(err, x)
+    const _pull = fn => {
+      const s2 = this.consumeSync((err, x, push) => {
+        this.#removeConsumer(s2)
+        fn(err, x)
+      })
+      s2.resume()
+    }
+
+    if(fn) _pull(fn)
+    else return new Promise((resolve, reject) => {
+      _pull((err, x) => {
+        if (err) reject(err)
+        else if (x === _.nil) resolve(_.nil)
+        else resolve(x)
+      })
     })
-    s2.resume()
   }
 
   each (fn) {
@@ -412,6 +423,7 @@ class Exstream extends EventEmitter {
     this.#synchronous = false
 
     const merged = new Exstream()
+    merged.setMaxListeners(parallelism)
     merged.#synchronous = false
 
     const pipeline = preserveOrder
