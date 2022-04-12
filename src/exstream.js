@@ -423,7 +423,7 @@ class Exstream extends EventEmitter {
     this.#synchronous = false
 
     const merged = new Exstream()
-    merged.setMaxListeners(parallelism)
+    merged.setMaxListeners(parallelism + 10)
     merged.#synchronous = false
 
     const pipeline = preserveOrder
