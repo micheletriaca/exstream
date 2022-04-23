@@ -278,7 +278,7 @@ class Exstream extends EventEmitter {
 
   pull (fn) {
     const _pull = fn => {
-      const s2 = this.consumeSync((err, x, push) => {
+      const s2 = this.consumeSync((err, x) => {
         this.#removeConsumer(s2)
         fn(err, x)
       })
