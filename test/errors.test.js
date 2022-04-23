@@ -329,8 +329,7 @@ test('each errors', () => {
   let exc = false
   _([1, 2, 3, 'NOO', 'NOO', 4])
     .map(x => {
-      if (_.isString(x))
-        throw Error(x)
+      if (_.isString(x)) throw Error(x)
       else return x
     })
     .on('error', e => {
@@ -351,7 +350,7 @@ test('filter errors', () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => void (ex = e))
+    .errors(e => (ex = e))
     .values()
   expect(res).toEqual([1, 2])
   expect(ex).not.toBe(null)
@@ -365,7 +364,7 @@ test('reject errors', () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => void (ex = e))
+    .errors(e => (ex = e))
     .values()
   expect(res).toEqual([])
   expect(ex).not.toBe(null)
@@ -380,7 +379,7 @@ test('async filter errors', async () => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(ex => void (e = ex))
+    .errors(ex => (e = ex))
     .toPromise()
 
   expect(res).toEqual([1, 2])
@@ -405,7 +404,7 @@ test('stopOnError', () => {
       if (x === 2) throw Error('an error')
       return x
     })
-    .stopOnError(e => void (ex = e))
+    .stopOnError(e => (ex = e))
     .values()
 
   expect(ex).not.toBe(null)

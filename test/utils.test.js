@@ -28,7 +28,6 @@ test('curry', () => {
 test('escapeRegexp + isString', () => {
   const stringWithStrangeChars = '-[]{}()*+?.,\\^$|# \t\r\n'
   expect(_.isString(stringWithStrangeChars)).toBe(true)
-  // eslint-disable-next-line security/detect-non-literal-regexp
   const regex = new RegExp(_.escapeRegExp(stringWithStrangeChars), 'g')
   const match = stringWithStrangeChars.match(regex)
   expect(match).not.toBe(null)

@@ -46,7 +46,7 @@ _m.csvStringify = (opts, s) => {
         x.indexOf(opts.separator) > -1 ||
         x.indexOf(opts.quote) > -1 ||
         x.indexOf(opts.lineEnding) > -1 ||
-        escapeDifferentFromQuote && x.indexOf(opts.escape) > -1
+        (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1)
       )
     )
   }
@@ -161,7 +161,6 @@ _m.csv = (opts, s) => {
       }
       isEnding = true
       x = Buffer.from('\n')
-
     }
 
     const bufx = Buffer.from(x)
@@ -186,34 +185,34 @@ _m.csv = (opts, s) => {
       for (let i = 0; i < currentBuffer.length; i++) {
         if (!inQuote) {
           switch (currentBuffer[i]) {
-          case quote:
-            inQuote = true
-            colStart = i + 1
-            continue
-          case separator:
-            handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-            ++col
-            endOffset = 0
-            colStart = i + 1
-            continue
-          case newLine:
-          case carriage:
-            while (currentBuffer[i + 1] === newLine || currentBuffer[i + 1] === carriage) {
-              i++
-              endOffset++
-            }
-            handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-            if (opts.header) {
-              if (!firstRow.length) firstRow = getFirstRow(row)
-              else push(null, row)
-              row = {}
-            } else {
-              push(null, row)
-              row = []
-            }
-            col = endOffset = 0
-            colStart = prevIdx = i + 1
-            continue
+            case quote:
+              inQuote = true
+              colStart = i + 1
+              continue
+            case separator:
+              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
+              ++col
+              endOffset = 0
+              colStart = i + 1
+              continue
+            case newLine:
+            case carriage:
+              while (currentBuffer[i + 1] === newLine || currentBuffer[i + 1] === carriage) {
+                i++
+                endOffset++
+              }
+              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
+              if (opts.header) {
+                if (!firstRow.length) firstRow = getFirstRow(row)
+                else push(null, row)
+                row = {}
+              } else {
+                push(null, row)
+                row = []
+              }
+              col = endOffset = 0
+              colStart = prevIdx = i + 1
+              continue
           }
         } else if (currentBuffer[i] === escape && currentBuffer[i + 1] === quote) {
           handleQuote = true

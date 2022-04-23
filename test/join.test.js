@@ -360,7 +360,7 @@ test('sortedJoindsadq2wdqweqw - right', async () => {
     { id: 'child4', parent: 4 },
   ])
   const s2 = _([{ id: 1, name: 'parent1' }, { id: 2, name: 'parent2' }, { id: 3, name: 'parent3' }])
-  const res = await _([s1, s2]).sortedJoin(a => a.parent, b => b.id, 'right').values()
+  const res = await _([s1, s2]).sortedJoin(a => a.parent, b => b.id, 'right', 'asc', 2).values()
   expect(res).toEqual([
     {
       key: 1,
@@ -393,7 +393,7 @@ test('sortedInnerJoin', async () => {
     { id: 'child3', parent: 3 },
     { id: 'child4', parent: 4 },
   ])
-  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent, 'inner', 'asc', 2).values()
+  const res = await _([s1, s2]).sortedJoin(a => a.id, b => b.parent).values()
   expect(res).toEqual([
     {
       key: 1,

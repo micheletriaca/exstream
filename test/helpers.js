@@ -25,9 +25,11 @@ const randomStringGenerator = (iterations = 3, simulateErrorAtIndex = -1) => {
       if (simulateErrorAtIndex === i) throw Error('an error')
       else {
         let s = ''
-        for (let j = 0; j < 18; j++) s += alphabet[
-          Math.round(Math.random() * (alphabet.length - 1))
-        ]
+        for (let j = 0; j < 18; j++) {
+          s += alphabet[
+            Math.round(Math.random() * (alphabet.length - 1))
+          ]
+        }
         yield s
       }
     }

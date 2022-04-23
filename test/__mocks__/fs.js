@@ -11,8 +11,8 @@ function __setMockFiles (newMockFiles) {
 }
 
 async function * read (file) {
-  for(let i = 0; i < mockFiles[file].length; i++) {
-    if(i % 10000 === 0) await h.sleep(10)
+  for (let i = 0; i < mockFiles[file].length; i++) {
+    if (i % 10000 === 0) await h.sleep(10)
     yield mockFiles[file][i]
   }
 }

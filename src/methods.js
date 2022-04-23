@@ -80,9 +80,11 @@ _m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
     try {
       let res = fn(x)
       const probablyPromise = res && res.then && res.catch
-      if (probablyPromise) res = res.catch(e => {
-        throw new ExstreamError(e, x)
-      })
+      if (probablyPromise) {
+        res = res.catch(e => {
+          throw new ExstreamError(e, x)
+        })
+      }
       if (!options || !options.wrap) {
         return push(null, res)
       } else if (probablyPromise) {
@@ -306,7 +308,7 @@ _m.omit = _.curry((fields, s) => s.map(x => {
     } catch (e) {
       throw new ExstreamError(Error('error in .omit(). expected object, got ' + typeof x), x)
     }
-    if(hasKey) delete res[fields[i]]
+    if (hasKey) delete res[fields[i]]
   }
   return res
 }))
@@ -418,7 +420,7 @@ _m.stopWhen = _.curry((fn, s) => {
       push(err)
     } else {
       push(null, x)
-      if(fn(x)) s1.destroy()
+      if (fn(x)) s1.destroy()
     }
   })
   return s1
@@ -486,7 +488,7 @@ _m.reduce = _.curry((fn, accumulator, s) => {
         try {
           push(new ExstreamError(e, x))
         } finally {
-          accumulator = void 0
+          accumulator = undefined
           s1.destroy()
         }
       }
@@ -514,7 +516,7 @@ _m.reduce1 = _.curry((fn, s) => {
         try {
           push(new ExstreamError(e, x))
         } finally {
-          accumulator = void 0
+          accumulator = undefined
           s1.destroy()
         }
       }
@@ -539,7 +541,7 @@ _m.asyncReduce = _.curry((fn, accumulator, s) => {
         try {
           push(new ExstreamError(e, x))
         } finally {
-          accumulator = void 0
+          accumulator = undefined
           s1.destroy()
         }
       }
@@ -552,7 +554,7 @@ _m.groupBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
   return s.reduce((accumulator, x) => {
     let key = getter(x)
-    if (key === null || key === void 0) key = _.nil
+    if (key === null || key === undefined) key = _.nil
     if (!_.has(accumulator, key)) accumulator[key] = []
     accumulator[key].push(x)
     return accumulator
@@ -563,7 +565,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
   return s.reduce((accumulator, x) => {
     let key = getter(x)
-    if (key === null || key === void 0) key = _.nil
+    if (key === null || key === undefined) key = _.nil
     const keyAlreadyExists = _.has(accumulator, key)
     if (keyAlreadyExists) throw new ExstreamError(`Multiple values per key: ${key}`, x)
     accumulator[key] = x
@@ -573,7 +575,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
 
 _m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
 
-_m.sort = s => _m.sortBy(void 0, s)
+_m.sort = s => _m.sortBy(undefined, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null

@@ -1,7 +1,3 @@
-/*
-  eslint-disable max-lines, sonarjs/cognitive-complexity, complexity, no-sync
-*/
-
 const EventEmitter = require('events').EventEmitter
 const { Readable } = require('stream')
 const _ = require('./utils')
@@ -20,7 +16,6 @@ class ExstreamError extends Error {
     if (e.stack) this.stack = e.stack
     this.exstreamError = true
     this.exstreamInput = exstreamInput
-
   }
 }
 
@@ -97,7 +92,7 @@ class Exstream extends EventEmitter {
     if (x === _.nil) this.nilPushed = true
     const isError = _.isError(x)
     const xx = isError ? null : x
-    const err = isError ? x : void 0
+    const err = isError ? x : undefined
 
     if (this.paused && !skipBackPressure) {
       this.#buffer.push(x)
@@ -175,7 +170,7 @@ class Exstream extends EventEmitter {
       // write can synchronously pause the stream in case of back pressure
       if (!this._write(this.#buffer[i], force)) break
     }
-    this.#buffer = this.#buffer.slice(i + 1)
+    this.#buffer.splice(0, i + 1)
   }
 
   #consumeSourceData = () => {
@@ -285,14 +280,16 @@ class Exstream extends EventEmitter {
       s2.resume()
     }
 
-    if(fn) _pull(fn)
-    else return new Promise((resolve, reject) => {
-      _pull((err, x) => {
-        if (err) reject(err)
-        else if (x === _.nil) resolve(_.nil)
-        else resolve(x)
+    if (fn) _pull(fn)
+    else {
+      return new Promise((resolve, reject) => {
+        _pull((err, x) => {
+          if (err) reject(err)
+          else if (x === _.nil) resolve(_.nil)
+          else resolve(x)
+        })
       })
-    })
+    }
   }
 
   each (fn) {
@@ -358,8 +355,9 @@ class Exstream extends EventEmitter {
   }
 
   fork (disableAutostart = false) {
-    if (this.#resumedAtLeastOnce)
+    if (this.#resumedAtLeastOnce) {
       throw Error('this stream is already started. you can\'t fork it anymore')
+    }
     this.#synchronous = false
     this.#autostart = false
     if (!disableAutostart) process.nextTick(() => this.start())
@@ -416,7 +414,6 @@ class Exstream extends EventEmitter {
       'error in .through(). you must pass a non consumed' +
         'exstream instance, a pipeline or a node stream',
     )
-
   }
 
   merge (parallelism = Infinity, preserveOrder = false) {
@@ -461,8 +458,9 @@ class Exstream extends EventEmitter {
     const res = this.values()
     if (_.isPromise(res)) {
       return res.then(result => {
-        if (result.length > 1)
+        if (result.length > 1) {
           throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
+        }
         return result[0]
       })
     } else if (res.length > 1) {
@@ -489,7 +487,6 @@ class Exstream extends EventEmitter {
       else res.push(x)
     }).resume()
     return res
-
   }
 }
 

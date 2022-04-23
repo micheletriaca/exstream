@@ -99,7 +99,7 @@ test('reduce errors - 2', () => {
       if (x === 3) throw Error('NOOO')
       return memo + x
     }, 0)
-    .errors(ex => void (e = ex))
+    .errors(ex => (e = ex))
     .value()
   expect(e).not.toBe(null)
   expect(e.message).toBe('NOOO')
@@ -113,7 +113,7 @@ test('reduce1 errors', () => {
       if (x === 3) throw Error('NOOO')
       return memo + x
     })
-    .errors(ex => void (e = ex))
+    .errors(ex => (e = ex))
     .value()
   expect(e).not.toBe(null)
   expect(e.message).toBe('NOOO')
@@ -211,11 +211,13 @@ test('groupBy nested', () => {
 
   // eslint-disable-next-line quote-props
   expect(res).toEqual(
-    { 3: [
-      { a: { c: 3 }, b: 1 },
-      { a: { c: 3 }, b: 2 },
-    ],
-    [_.nil]: [{ a: null }, { a: { c: null } }] },
+    {
+      3: [
+        { a: { c: 3 }, b: 1 },
+        { a: { c: 3 }, b: 2 },
+      ],
+      [_.nil]: [{ a: null }, { a: { c: null } }],
+    },
   )
 })
 
@@ -224,7 +226,7 @@ test('groupBy function', () => {
     { a: { c: 3 }, b: 1 },
     { a: { c: 3 }, b: 2 },
     { a: null },
-  ]).groupBy(x => x.a && x.a.c || 'null')
+  ]).groupBy(x => (x.a && x.a.c) || 'null')
     .value()
 
   // eslint-disable-next-line quote-props

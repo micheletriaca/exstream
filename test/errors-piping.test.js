@@ -7,7 +7,7 @@ test('piping an error', () => {
   return new Promise(resolve => {
     _([1, 2, 3])
       .map(i => {
-        if(i > 1) throw Error('NOO')
+        if (i > 1) throw Error('NOO')
         return i
       })
       .pipe(h.getSlowWritable(res, 0, 10))

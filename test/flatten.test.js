@@ -8,10 +8,10 @@ test('flatten', () => {
 })
 
 test('flatten2', () => {
-  const result = _([[1,2,3], [4,5,6]])
+  const result = _([[1, 2, 3], [4, 5, 6]])
     .flatten()
     .values()
-  expect(result).toEqual([1,2,3,4,5,6])
+  expect(result).toEqual([1, 2, 3, 4, 5, 6])
 })
 
 test('flatten don\'t flat a string', () => {

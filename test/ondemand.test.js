@@ -1,8 +1,6 @@
+/* eslint-disable jest/no-commented-out-tests */
 const _ = require('../src')
-const __ = require('highland')
 const h = require('./helpers')
-const { Readable } = require('stream')
-const fs = require('fs')
 
 test('basic', async () => {
   const xs = _([1, 2, 3])
