@@ -31,6 +31,9 @@ class Exstream extends EventEmitter {
 
   #resumedAtLeastOnce = false
   paused = true
+  pausedFromOutside = true
+  pausedFromInside = false
+
   ended = false
   #nilPushed = false
 
@@ -108,10 +111,10 @@ class Exstream extends EventEmitter {
       let syncNext = true
       this.#consumeFn(err, xx, this.#send, () => {
         this.#nextCalled = true
-        if (this.paused && !syncNext) process.nextTick(() => this.resume())
+        if (this.paused && !syncNext) process.nextTick(() => this.resume(true))
       })
       syncNext = false
-      if (!this.#nextCalled) this.pause()
+      if (!this.#nextCalled) this.pause(true)
     } else {
       this.#send(err, xx)
     }
@@ -206,13 +209,15 @@ class Exstream extends EventEmitter {
           x.source = otherStream
         })
         otherStream.#resumedAtLeastOnce = true
+        otherStream.pausedFromInside = true
+        otherStream.pausedFromOutside = false
         otherStream.#buffer = this.#buffer
         otherStream.#synchronous = false
         this.#consumers = []
         this.destroy()
         me = otherStream
       }
-      if (me.paused && (!syncNext || otherStream)) setImmediate(() => me.resume())
+      if (me.paused && (!syncNext || otherStream)) setImmediate(() => me.resume(true))
     }
 
     const w = x => {
@@ -225,16 +230,21 @@ class Exstream extends EventEmitter {
       syncNext = true
       this.#generator(w, next)
       syncNext = false
-      if (!this.#nextGenCalled) this.pause()
+      if (!this.#nextGenCalled) this.pause(true)
     } while (!this.paused && !this.#nilPushed)
   }
 
-  pause () {
+  pause (fromInside = false) {
     this.paused = true
+    if(fromInside) this.pausedFromInside = true
+    else this.pausedFromOutside = true
     if (this.source) this.source.pause()
   }
 
-  resume () {
+  resume (fromInside = false) {
+    if(fromInside) this.pausedFromInside = false
+    else this.pausedFromOutside = false
+    if(this.pausedFromInside || this.pausedFromOutside) return
     if (!this.#autostart || !this.#nextCalled || !this.#nextGenCalled || !this.paused) return
 
     this.#resumedAtLeastOnce = true

@@ -12,7 +12,7 @@ test('merging basics', done => {
     })
 })
 
-test('fork and merging basics', done => {
+test('fork and merging - basics', done => {
   const source = _([1, 2])
   _([
     source.fork().map(i => i * 2),
@@ -24,7 +24,7 @@ test('fork and merging basics', done => {
     })
 })
 
-test('fork and merging basics - preserve order', done => {
+test('fork and merging - preserve order', done => {
   const source = _([1, 2], 'source')
   _([
     source.fork().map(i => i * 2),
@@ -39,8 +39,8 @@ test('fork and merging basics - preserve order', done => {
 test('fork and merging with promises in first fork', done => {
   const source = _([1, 2])
   _([
-    source.fork().map(async i => i * 2).resolve().tap(console.log),
-    source.fork().map(i => i * 3).tap(console.log),
+    source.fork().map(async i => i * 2).resolve(),
+    source.fork().map(i => i * 3),
   ]).merge(2, true)
     .toArray(results => {
       done()
@@ -51,8 +51,8 @@ test('fork and merging with promises in first fork', done => {
 test('fork and merging with promises in second fork', done => {
   const source = _([1, 2])
   _([
-    source.fork().map(i => i * 2).tap(console.log),
-    source.fork().map(async i => i * 3).resolve().tap(console.log),
+    source.fork().map(i => i * 2),
+    source.fork().map(async i => i * 3).resolve(),
   ]).merge(1)
     .toArray(results => {
       expect(results).toEqual([2, 4, 3, 6])
@@ -60,7 +60,7 @@ test('fork and merging with promises in second fork', done => {
     })
 })
 
-test('fork and merging basics with toPromise', async () => {
+test('fork and merging - with toPromise', async () => {
   const source = _([1, 2, 3, 4])
   const first = source.fork().map(i => i * 2)
   const second = source.fork().map(i => i * 3)
@@ -81,7 +81,6 @@ test('fork and merging - promise in the source stream as well', async () => {
     second,
   ]).merge(2, true)
     .toPromise()
-  console.log(results)
   expect(results).toEqual([4, 6, 8, 10, 6, 9, 12, 15])
 })
 
@@ -197,7 +196,6 @@ test('writable streams cannot be wrapped in an exstream instance', async () => {
   await _(h.getSlowWritable([], 0, 0))
     .toPromise()
     .catch(e => void (ex = e))
-  console.log(ex)
   expect(ex).not.toBe(null)
 })
 
