@@ -11,16 +11,14 @@ test('through pipeline', () => {
     })
 })
 
-test('through accepts null', () => {
-  const s = _([1, 2, 3])
-  const s1 = s.through(null)
-  expect(s).toBe(s1)
+test('through does not accept null', async () => {
+  const s = _([])
+  expect(s.through(null)).toThrow()
 })
 
-test('through does not accept undefined', () => {
-  const s = _([1, 2, 3])
-  const s1 = s.through(undefined)
-  expect(s).toBe(s1)
+test('through does not accept undefined', async () => {
+  const s = _([])
+  expect(s.through(undefined)).toThrow()
 })
 
 test('through _.function', async () => {
