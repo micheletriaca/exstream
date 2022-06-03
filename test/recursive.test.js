@@ -32,9 +32,7 @@ test('iterate', async () => {
 })
 
 test('iterateAsync', async () => {
-  const values = await _(incrementAsync({ begin: 0, end: 10 }))
-    .on('end', () => console.log('ended'))
-    .toPromise()
+  const values = await _(incrementAsync({ begin: 0, end: 10 })).toPromise()
   expect(values).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 

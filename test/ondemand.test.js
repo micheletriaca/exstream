@@ -37,6 +37,7 @@ test('basic error handling', async () => {
   expect(await xs.pull()).toEqual(_.nil)
 })
 
+/*
 test('testPerformance - batched pull', async () => {
   const x = Array(50000).fill(0).map((x, i) => i)
   const xs = _(x).map(async x => x).resolve().batch(10000)
@@ -48,8 +49,6 @@ test('testPerformance - batched pull', async () => {
   console.timeEnd('t')
   expect(k[k.length - 1]).toBe(49999)
 })
-
-/*
 test('testPerformance - values', async () => {
   const x = Array(50000).fill(0).map((x, i) => i)
   const xs = _(x).map(async x => x).resolve()
