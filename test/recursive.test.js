@@ -57,3 +57,20 @@ test('iteratePassingGenerator', async () => {
   const values = await _(gen(0)).values()
   expect(values).toEqual([0, 1, 2, 3, 4])
 })
+
+test('recursive passing a generator - another example', async () => {
+  const generator = questions => _((write, next) => {
+    const i = questions.pop()
+    if (i > 0) write(_.nil)
+    else {
+      write(i)
+      next(generator(questions))
+    }
+  })
+
+  const questions = [-1, 2, -3, -5]
+  const res = await _(generator(questions)).toPromise()
+
+  expect(res).toEqual([-5, -3])
+
+})
