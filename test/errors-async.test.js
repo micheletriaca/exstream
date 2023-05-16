@@ -28,7 +28,7 @@ test('throw in sync mapping', () => {
         throw new Error('big booom in the async pipeline')
       })
       .errors((error, push) => {
-        expect(error.message).toEqual('big booom in the async pipeline')
+        expect(error.message).toEqual('big booom in the sync pipeline')
         push(error)
       })
       .toArray(result => {
