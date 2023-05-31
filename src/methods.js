@@ -278,6 +278,8 @@ _m.uniq = s => {
 }
 
 _m.pluck = _.curry((field, defaultValue, s) => {
+  if (field === undefined)
+    throw new ExstreamError(Error('error in .pluck(). expected string, got "undefined"'))
   const getter = _.makeGetter(field, defaultValue)
   return s.map(getter)
 })
