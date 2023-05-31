@@ -6,6 +6,12 @@ test('pluck on non object', () => {
   })
 })
 
+test.only('pluck with empty param is invalid', () => {
+  _([1, 2, 3]).pluck().toArray(res => {
+    expect(res).toEqual([undefined, undefined, undefined])
+  })
+})
+
 test('pluck', () => {
   _([{ a: 1 }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a').toArray(res => {
     expect(res).toEqual([1, 2, 3, undefined])
