@@ -46,6 +46,7 @@ module.exports = {
         'no-sync': 'off',
         'no-undefined': 'off',
         'node/no-unpublished-require': 'off',
+        'jest/no-conditional-expect': 'off',
         'object-curly-spacing': ['warn', 'always'],
         'require-await': 'off',
         'sonarjs/no-duplicate-string': 'off',
