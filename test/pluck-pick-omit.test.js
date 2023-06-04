@@ -6,6 +6,28 @@ test('pluck on non object', () => {
   })
 })
 
+test('pluck with empty param is invalid', () => {
+  expect.assertions(1)
+  try {
+    _([1, 2, 3]).pluck().toArray(res => {
+      expect(res).toEqual([undefined, undefined, undefined])
+    })
+  } catch(e) {
+    expect(e.message).toBe('error in .pluck(). expected string, got undefined')
+  }
+})
+
+test('pluck with a param != string is invalid', () => {
+  expect.assertions(1)
+  try {
+    _([1, 2, 3]).pluck({}).toArray(res => {
+      expect(res).toEqual([undefined, undefined, undefined])
+    })
+  } catch(e) {
+    expect(e.message).toBe('error in .pluck(). expected string, got undefined')
+  }
+})
+
 test('pluck', () => {
   _([{ a: 1 }, { a: 2 }, { a: 3 }, { b: 1 }]).pluck('a').toArray(res => {
     expect(res).toEqual([1, 2, 3, undefined])
