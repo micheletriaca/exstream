@@ -10,8 +10,6 @@ test('pipeline with simple map is called', async () => {
   })
   const eachError = jest.fn()
   const print = jest.fn()
-  const field = 'message'
-  const title = 'Errors:'
   const errorsPipeline = pipeline()
     .map(x => ({ ...x, just: 'mapped' }))
     .tap(print)
