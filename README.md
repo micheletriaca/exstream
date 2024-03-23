@@ -25,5 +25,5 @@ const res = exs([1, 2, 3])
 // res is 6
 ```
 
-See more examples in the [test folder](./test).
-
+Look at the [documentation](https://exstream-js.github.io/) or
+see more examples in the [test folder](./test).
