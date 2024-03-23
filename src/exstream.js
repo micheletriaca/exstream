@@ -339,13 +339,21 @@ class Exstream extends EventEmitter {
   }
 
   pipe (dest, options = {}) {
+    let nextCallback
+    const drainCallback = () => {
+      if (nextCallback) {
+        nextCallback()
+        nextCallback = null
+      }
+    }
+    dest.on('drain', drainCallback)
     this.#synchronous = false
     if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
     const canClose = dest !== process.stdout && dest !== process.stderr && options.end !== false
     const end = canClose ? dest.end : () => ({})
     const s = this.consume((err, x, push, next) => {
       if (x === _.nil) {
-        dest.off('drain', next)
+        dest.off('drain', drainCallback)
         process.nextTick(() => end.call(dest))
       } else if (err) {
         // setImmediate is needed to exit from a promise context
@@ -354,7 +362,7 @@ class Exstream extends EventEmitter {
           next()
         })
       } else if (!dest.write(x)) {
-        dest.once('drain', next)
+        nextCallback = next
       } else {
         next()
       }
