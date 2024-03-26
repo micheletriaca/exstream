@@ -441,7 +441,7 @@ class Exstream extends EventEmitter {
     this.#synchronous = false
 
     const merged = new Exstream()
-    merged.setMaxListeners(parallelism + 10)
+    merged.setMaxListeners(parallelism * 2)
     merged.#synchronous = false
 
     const pipeline = preserveOrder
@@ -452,19 +452,28 @@ class Exstream extends EventEmitter {
       if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
       if (preserveOrder) return subS.toPromise()
       return new Promise(resolve => {
+        let nextCallback
+        // eslint-disable-next-line sonarjs/no-identical-functions
+        const drainCallback = () => {
+          if (nextCallback) {
+            nextCallback()
+            nextCallback = null
+          }
+        }
         const subS2 = subS.consume((err, x, push, next) => {
           if (x === _.nil) {
             // eslint-disable-next-line no-use-before-define
             merged.off('end', endListener)
-            merged.off('drain', next)
+            merged.off('drain', drainCallback)
             resolve()
           } else if (!merged.write(err || x)) {
-            merged.once('drain', next)
+            nextCallback = next
           } else {
             next()
           }
         })
         const endListener = () => subS2.destroy()
+        merged.on('drain', drainCallback)
         merged.once('end', endListener)
         subS2.resume()
       })
