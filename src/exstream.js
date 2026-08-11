@@ -5,6 +5,7 @@
 const EventEmitter = require('events').EventEmitter
 const { Readable } = require('stream')
 const _ = require('./utils')
+const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 
 function getErrorMessage(value) {
   if (value && value.message !== void 0) return String(value.message)
@@ -110,7 +111,7 @@ class Exstream extends EventEmitter {
     this.#addOnceListener('error', xs, (e) => {
       // sometimes e is not an instance of Error, nobody knows why
       this.write(new ExstreamError(e))
-      setImmediate(() => this.end())
+      scheduleNextTurn(() => this.end())
     })
     this.once('end', () => xs.destroy())
   }
@@ -140,7 +141,7 @@ class Exstream extends EventEmitter {
       let syncNext = true
       this.#consumeFn(err, xx, this.#send, () => {
         this.#nextCalled = true
-        if (this.paused && !syncNext) process.nextTick(() => this.resume(true))
+        if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
       })
       syncNext = false
       if (!this.#nextCalled) this.pause(true)
@@ -152,7 +153,7 @@ class Exstream extends EventEmitter {
   }
 
   #send = (err, x) => {
-    if (x === _.nil) process.nextTick(() => this.end())
+    if (x === _.nil) scheduleMicrotask(() => this.end())
     // i store it locally because this array could be filtered
     // during the loop if one consumer ends (for ex. it can happen withtake or slice)
     const consumers = this.#consumers
@@ -168,9 +169,9 @@ class Exstream extends EventEmitter {
   start() {
     if (this.ended || this.#state === 'ending') return Promise.resolve()
     if (this.#startPromise) return this.#startPromise
-    // setImmediate is needed to guarantee that .pipe() has resumed the source stream
+    // A next turn guarantees that .pipe() has resumed the source stream.
     this.#startPromise = new Promise((resolve) =>
-      setImmediate(() => {
+      scheduleNextTurn(() => {
         if (this.ended || this.#state === 'ending') {
           resolve()
           return
@@ -274,7 +275,7 @@ class Exstream extends EventEmitter {
         this.destroy()
         me = otherStream
       }
-      if (me.paused && (!syncNext || otherStream)) setImmediate(() => me.resume(true))
+      if (me.paused && (!syncNext || otherStream)) scheduleNextTurn(() => me.resume(true))
     }
 
     const w = (x) => {
@@ -414,10 +415,10 @@ class Exstream extends EventEmitter {
     const s = this.consume((err, x, push, next) => {
       if (x === _.nil) {
         dest.off('drain', drainCallback)
-        process.nextTick(() => end.call(dest))
+        scheduleMicrotask(() => end.call(dest))
       } else if (err) {
-        // setImmediate is needed to exit from a promise context
-        setImmediate(() => {
+        // A next turn is needed to exit from a promise context.
+        scheduleNextTurn(() => {
           dest.emit('error', err)
           next()
         })
@@ -431,7 +432,7 @@ class Exstream extends EventEmitter {
     this.#addOnceListener('close', dest, onEnd)
     this.#addOnceListener('finish', dest, onEnd)
     dest.emit('pipe', this)
-    setImmediate(() => s.resume())
+    scheduleNextTurn(() => s.resume())
     return dest
   }
 
@@ -440,7 +441,7 @@ class Exstream extends EventEmitter {
       throw Error("this stream is already started. you can't fork it anymore")
     this.#synchronous = false
     this.#autostart = false
-    if (!disableAutostart) process.nextTick(() => this.start())
+    if (!disableAutostart) scheduleMicrotask(() => this.start())
     const res = new Exstream()
     this.#addConsumer(res, true)
     return res
@@ -476,15 +477,15 @@ class Exstream extends EventEmitter {
       s.resume()
       s.#addOnceListener('error', target, (e) => {
         s.write(e)
-        setImmediate(() => s.end())
+        scheduleNextTurn(() => s.end())
       })
       s.#addOnceListener('finish', target, () => {
         s.emit('finish')
-        setImmediate(() => s.destroy())
+        scheduleNextTurn(() => s.destroy())
       })
       s.#addOnceListener('close', target, () => {
         s.emit('close')
-        setImmediate(() => s.destroy())
+        scheduleNextTurn(() => s.destroy())
       })
       return s
     } else if (_.isFunction(target)) {

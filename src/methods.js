@@ -4,6 +4,7 @@
 
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
+const { monotonicNow, scheduleNextTurn } = require('./scheduler.js')
 const { Transform } = require('stream')
 const { StringDecoder } = require('string_decoder')
 
@@ -133,7 +134,7 @@ _m.ratelimit = _.curry((num, ms, s) => {
     } else if (x === _.nil) {
       push(null, _.nil)
     } else if (sent === 0) {
-      startWindow = process.hrtime.bigint()
+      startWindow = monotonicNow()
       sent++
       push(null, x)
       next()
@@ -141,20 +142,20 @@ _m.ratelimit = _.curry((num, ms, s) => {
       sent++
       push(null, x)
       next()
-    } else if (Number((process.hrtime.bigint() - startWindow) / 1000000n) > ms) {
-      startWindow = process.hrtime.bigint()
+    } else if (monotonicNow() - startWindow > ms) {
+      startWindow = monotonicNow()
       sent = 1
       push(null, x)
       next()
     } else {
       setTimeout(
         () => {
-          startWindow = process.hrtime.bigint()
+          startWindow = monotonicNow()
           sent = 1
           push(null, x)
           next()
         },
-        ms - Math.round(Number((process.hrtime.bigint() - startWindow) / 1000000n)),
+        ms - Math.round(monotonicNow() - startWindow),
       )
     }
   })
@@ -662,13 +663,13 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
     } else if (x === _.nil) {
       push(null, _.nil)
     } else {
-      lastSnapshot = process.hrtime.bigint()
+      lastSnapshot = monotonicNow()
       if (start === null) start = lastSnapshot
       else end = lastSnapshot
-      if (end !== null && (end - start) / 1000000n > maxSyncExecutionTime) {
-        setImmediate(() => {
+      if (end !== null && end - start > maxSyncExecutionTime) {
+        scheduleNextTurn(() => {
           push(null, x)
-          start = process.hrtime.bigint()
+          start = monotonicNow()
           next()
         })
       } else {
