@@ -2,7 +2,7 @@
 
 This audit records the Node.js coupling that exists in Exstream 0.27. It does
 not claim browser compatibility. Its purpose is to define extraction boundaries
-for the portable core planned for 0.30 without changing the 0.26 public API.
+for the portable core planned for 0.30 without changing the 0.27 public API.
 
 ## Runtime dependencies
 
