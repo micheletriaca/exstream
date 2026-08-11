@@ -5,11 +5,22 @@
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
 const { monotonicNow, scheduleNextTurn } = require('./scheduler.js')
+const { aggregateContexts, assignContext, createContext, forkContext } = require('./context.js')
 const { Transform } = require('stream')
 const { StringDecoder } = require('string_decoder')
 
 const _m = (module.exports = {})
 const noCancel = () => undefined
+
+const appendContext = (contexts, context, previousCount) => {
+  if (context === void 0) {
+    if (contexts) contexts.push(void 0)
+    return contexts
+  }
+  if (!contexts) contexts = Array(previousCount)
+  contexts.push(context)
+  return contexts
+}
 
 _m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
 
@@ -79,36 +90,113 @@ _m.decode = _.curry((encoding, s) => {
   })
 })
 
-_m.map = _.curry((fn, options, s) =>
-  s.consumeSync((err, x, push) => {
+_m.map = _.curry((fn, options, s) => {
+  if (fn.length < 2)
+    return s.consumeSync((err, x, push) => {
+      if (err) {
+        push(err)
+      } else if (x === _.nil) {
+        push(err, x)
+      } else {
+        try {
+          let res = fn(x)
+          const probablyPromise = res && res.then && res.catch
+          if (probablyPromise)
+            res = res.catch((e) => {
+              throw new ExstreamError(e, x)
+            })
+          if (!options || !options.wrap) {
+            return push(null, res)
+          } else if (probablyPromise) {
+            push(
+              null,
+              res.then((y) => ({ input: x, output: y })),
+            )
+          } else {
+            push(null, { input: x, output: res })
+          }
+        } catch (e) {
+          push(new ExstreamError(e, x))
+        }
+      }
+    })
+  let result
+  result = s.consumeSync((err, x, push, context) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
     } else {
+      const nextContext = context === void 0 ? createContext(x, result.signal) : context
       try {
-        let res = fn(x)
+        let res = fn(x, nextContext)
         const probablyPromise = res && res.then && res.catch
         if (probablyPromise)
           res = res.catch((e) => {
             throw new ExstreamError(e, x)
           })
         if (!options || !options.wrap) {
-          return push(null, res)
+          return push(null, res, nextContext)
         } else if (probablyPromise) {
           push(
             null,
             res.then((y) => ({ input: x, output: y })),
+            nextContext,
           )
         } else {
-          push(null, { input: x, output: res })
+          push(null, { input: x, output: res }, nextContext)
         }
       } catch (e) {
-        push(new ExstreamError(e, x))
+        push(new ExstreamError(e, x), null, nextContext)
       }
     }
-  }),
-)
+  })
+  return result
+})
+
+_m.withContext = _.curry((fn, s) => {
+  let result
+  result = s.consumeSync((err, x, push, context) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else {
+      const nextContext =
+        context === void 0 ? createContext(x, result.signal) : forkContext(context, result.signal)
+      try {
+        assignContext(nextContext, fn ? fn(x, nextContext) : void 0)
+        push(null, x, nextContext)
+      } catch (e) {
+        push(new ExstreamError(e, x), null, nextContext)
+      }
+    }
+  })
+  return result
+})
+
+_m.extendContext = _.curry((fn, s) => {
+  let result
+  result = s.consume(async (err, x, push, next, context) => {
+    if (err) {
+      push(err)
+      next()
+    } else if (x === _.nil) {
+      push(null, _.nil)
+    } else {
+      const nextContext = context === void 0 ? createContext(x, result.signal) : context
+      try {
+        assignContext(nextContext, await fn(x, nextContext))
+        push(null, x, nextContext)
+        next()
+      } catch (e) {
+        push(new ExstreamError(e, x), null, nextContext)
+        next()
+      }
+    }
+  })
+  return result
+})
 
 _m.where = _.curry((props, s) =>
   s.filter((x) => {
@@ -191,30 +279,41 @@ _m.throttle = _.curry((ms, s) => {
 
 _m.collect = (s) => {
   const xs = []
-  return s.consumeSync((err, x, push) => {
+  let contexts
+  let result
+  result = s.consumeSync((err, x, push, context) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
-      push(null, xs)
+      push(null, xs, contexts === void 0 ? void 0 : aggregateContexts(xs, contexts, result.signal))
       push(null, _.nil)
     } else {
+      contexts = appendContext(contexts, context, xs.length)
       xs.push(x)
     }
   })
+  return result
 }
 
-_m.flatten = (s) =>
-  s.consumeSync((err, x, push) => {
+_m.flatten = (s) => {
+  let result
+  result = s.consumeSync((err, x, push, context) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
     } else if (_.isIterable(x) && typeof x !== 'string') {
-      for (const y of x) push(null, y)
+      if (context === void 0) {
+        for (const y of x) push(null, y)
+      } else {
+        for (const y of x) push(null, y, forkContext(context, result.signal))
+      }
     } else {
       push(null, x)
     }
   })
+  return result
+}
 
 _m.flatMap = _.curry((fn, s) => s.map(fn).flatten())
 
@@ -228,79 +327,146 @@ _m.toArray = _.curry((fn, s) =>
   }),
 )
 
-_m.filter = _.curry((fn, s) =>
-  s.consumeSync((err, x, push) => {
+_m.filter = _.curry((fn, s) => {
+  if (fn.length < 2)
+    return s.consumeSync((err, x, push) => {
+      if (err) {
+        push(err)
+      } else if (x === _.nil) {
+        push(err, x)
+      } else {
+        try {
+          const res = fn(x)
+          if (res) push(null, x)
+        } catch (e) {
+          push(new ExstreamError(e, x))
+        }
+      }
+    })
+  let result
+  result = s.consumeSync((err, x, push, context) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
     } else {
+      const nextContext = context === void 0 ? createContext(x, result.signal) : context
       try {
-        const res = fn(x)
-        if (res) push(null, x)
+        const res = fn(x, nextContext)
+        if (res) push(null, x, nextContext)
       } catch (e) {
-        push(new ExstreamError(e, x))
+        push(new ExstreamError(e, x), null, nextContext)
       }
     }
-  }),
-)
+  })
+  return result
+})
 
-_m.reject = _.curry((fn, s) =>
-  s.consumeSync((err, x, push) => {
+_m.reject = _.curry((fn, s) => {
+  if (fn.length < 2)
+    return s.consumeSync((err, x, push) => {
+      if (err) {
+        push(err)
+      } else if (x === _.nil) {
+        push(err, x)
+      } else {
+        try {
+          const res = fn(x)
+          if (!res) push(null, x)
+        } catch (e) {
+          push(new ExstreamError(e, x))
+        }
+      }
+    })
+  let result
+  result = s.consumeSync((err, x, push, context) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
     } else {
+      const nextContext = context === void 0 ? createContext(x, result.signal) : context
       try {
-        const res = fn(x)
-        if (!res) push(null, x)
+        const res = fn(x, nextContext)
+        if (!res) push(null, x, nextContext)
       } catch (e) {
-        push(new ExstreamError(e, x))
+        push(new ExstreamError(e, x), null, nextContext)
       }
     }
-  }),
-)
+  })
+  return result
+})
 
-_m.asyncFilter = _.curry((fn, s) =>
-  s.consume(async (err, x, push, next) => {
+_m.asyncFilter = _.curry((fn, s) => {
+  if (fn.length < 2)
+    return s.consume(async (err, x, push, next) => {
+      if (err) {
+        push(err)
+        next()
+      } else if (x === _.nil) {
+        push(err, x)
+      } else {
+        try {
+          const res = await fn(x)
+          if (res) push(null, x)
+          next()
+        } catch (e) {
+          push(new ExstreamError(e, x))
+          next()
+        }
+      }
+    })
+  let result
+  result = s.consume(async (err, x, push, next, context) => {
     if (err) {
       push(err)
       next()
     } else if (x === _.nil) {
       push(err, x)
     } else {
+      const nextContext = context === void 0 ? createContext(x, result.signal) : context
       try {
-        const res = await fn(x)
-        if (res) push(null, x)
+        const res = await fn(x, nextContext)
+        if (res) push(null, x, nextContext)
         next()
       } catch (e) {
-        push(new ExstreamError(e, x))
+        push(new ExstreamError(e, x), null, nextContext)
         next()
-      }
-    }
-  }),
-)
-
-_m.batch = _.curry((size, s) => {
-  let buffer = []
-  size = _.asPositiveInteger(size)
-  if (size === null) throw Error('error in .batch(). size must be a valid number')
-  return s.consumeSync((err, x, push) => {
-    if (err) {
-      push(err)
-    } else if (x === _.nil) {
-      if (buffer.length) push(null, buffer)
-      buffer = []
-      push(err, x)
-    } else {
-      buffer.push(x)
-      if (buffer.length >= size) {
-        push(null, buffer)
-        buffer = []
       }
     }
   })
+  return result
+})
+
+_m.batch = _.curry((size, s) => {
+  let buffer = []
+  let contexts
+  let result
+  size = _.asPositiveInteger(size)
+  if (size === null) throw Error('error in .batch(). size must be a valid number')
+  const flush = (push) => {
+    const batch = buffer
+    push(
+      null,
+      batch,
+      contexts === void 0 ? void 0 : aggregateContexts(batch, contexts, result.signal),
+    )
+    buffer = []
+    contexts = void 0
+  }
+  result = s.consumeSync((err, x, push, context) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      if (buffer.length) flush(push)
+      push(err, x)
+    } else {
+      contexts = appendContext(contexts, context, buffer.length)
+      buffer.push(x)
+      if (buffer.length >= size) flush(push)
+    }
+  })
+  return result
 })
 
 _m.uniq = (s) => {
@@ -398,9 +564,17 @@ _m.uniqBy = _.curry((cfg, s) => {
   })
 })
 
-_m.massThen = _.curry((fn, s) => s.map((x) => x.then(fn)))
+_m.massThen = _.curry((fn, s) =>
+  fn.length >= 2
+    ? s.map((x, context) => x.then((value) => fn(value, context)))
+    : s.map((x) => x.then(fn)),
+)
 
-_m.massCatch = _.curry((fn, s) => s.map((x) => x.catch(fn)))
+_m.massCatch = _.curry((fn, s) =>
+  fn.length >= 2
+    ? s.map((x, context) => x.catch((error) => fn(error, context)))
+    : s.map((x) => x.catch(fn)),
+)
 
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   parallelism = _.asPositiveInteger(parallelism, true)
@@ -412,6 +586,10 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   let result
 
   function handlePromiseResult(isError, res, resPointer, push, next) {
+    if (result.ended) {
+      promises.splice(promises.indexOf(resPointer), 1)
+      return
+    }
     if (isError && res.exstreamFatal) {
       result.fail(res, res.exstreamInput)
       return
@@ -423,8 +601,8 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
     if (preserveOrder) {
       while (_.has(promises[0], 'result')) {
         const item = promises.shift()
-        if (item.isError) push(item.result)
-        else push(null, item.result)
+        if (item.isError) item.push(item.result)
+        else item.push(null, item.result)
       }
     } else {
       promises.splice(idx, 1)
@@ -447,7 +625,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
       push(new ExstreamError(Error('error in .resolve(). item must be a promise'), el))
       next()
     } else {
-      const resPointer = {}
+      const resPointer = { push }
       promises.push(resPointer)
       el.then((res) => handlePromiseResult(false, res, resPointer, push, next)).catch((res) => {
         handlePromiseResult(true, new ExstreamError(res, el), resPointer, push, next)
@@ -459,11 +637,12 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
 })
 
 _m.errors = _.curry((fn, s) =>
-  s.consumeSync((err, x, push) => {
+  s.consumeSync((err, x, push, context) => {
     if (x === _.nil) {
       push(null, _.nil)
     } else if (err) {
-      fn(err, push)
+      if (fn.length >= 3) fn(err, push, context)
+      else fn(err, push)
     } else {
       push(null, x)
     }
@@ -471,11 +650,12 @@ _m.errors = _.curry((fn, s) =>
 )
 
 _m.stopOnError = _.curry((fn, s) => {
-  const s1 = s.consumeSync((err, x, push) => {
+  const s1 = s.consumeSync((err, x, push, context) => {
     if (x === _.nil) {
       push(null, _.nil)
     } else if (err) {
-      fn(err, push)
+      if (fn.length >= 3) fn(err, push, context)
+      else fn(err, push)
       s1.destroy()
     } else {
       push(null, x)
@@ -554,18 +734,28 @@ _m.take = _.curry((n, s) => s.slice(0, n))
 _m.drop = _.curry((n, s) => s.slice(n, Infinity))
 
 _m.reduce = _.curry((fn, accumulator, s) => {
-  const s1 = s.consumeSync((err, x, push) => {
+  let contexts
+  let inputCount = 0
+  let s1
+  s1 = s.consumeSync((err, x, push, context) => {
     if (x === _.nil) {
-      push(null, accumulator)
+      push(
+        null,
+        accumulator,
+        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
+      )
       push(null, _.nil)
     } else if (err) {
       push(err)
     } else {
+      const nextContext =
+        context === void 0 && fn.length >= 3 ? createContext(x, s1.signal) : context
+      contexts = appendContext(contexts, nextContext, inputCount++)
       try {
-        accumulator = fn(accumulator, x)
+        accumulator = fn.length >= 3 ? fn(accumulator, x, nextContext) : fn(accumulator, x)
       } catch (e) {
         try {
-          push(new ExstreamError(e, x))
+          push(new ExstreamError(e, x), null, nextContext)
         } finally {
           accumulator = void 0
           s1.destroy()
@@ -579,21 +769,33 @@ _m.reduce = _.curry((fn, accumulator, s) => {
 _m.reduce1 = _.curry((fn, s) => {
   let init = false
   let accumulator
-  const s1 = s.consumeSync((err, x, push) => {
+  let contexts
+  let inputCount = 0
+  let s1
+  s1 = s.consumeSync((err, x, push, context) => {
     if (x === _.nil) {
-      push(null, accumulator)
+      push(
+        null,
+        accumulator,
+        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
+      )
       push(null, _.nil)
     } else if (err) {
       push(err)
-    } else if (!init) {
-      init = true
-      accumulator = x
     } else {
+      const nextContext =
+        context === void 0 && fn.length >= 3 ? createContext(x, s1.signal) : context
+      contexts = appendContext(contexts, nextContext, inputCount++)
+      if (!init) {
+        init = true
+        accumulator = x
+        return
+      }
       try {
-        accumulator = fn(accumulator, x)
+        accumulator = fn.length >= 3 ? fn(accumulator, x, nextContext) : fn(accumulator, x)
       } catch (e) {
         try {
-          push(new ExstreamError(e, x))
+          push(new ExstreamError(e, x), null, nextContext)
         } finally {
           accumulator = void 0
           s1.destroy()
@@ -605,20 +807,31 @@ _m.reduce1 = _.curry((fn, s) => {
 })
 
 _m.asyncReduce = _.curry((fn, accumulator, s) => {
-  const s1 = s.consume(async (err, x, push, next) => {
+  let contexts
+  let inputCount = 0
+  let s1
+  s1 = s.consume(async (err, x, push, next, context) => {
     if (x === _.nil) {
-      push(null, accumulator)
+      push(
+        null,
+        accumulator,
+        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
+      )
       push(null, _.nil)
     } else if (err) {
       push(err)
       next()
     } else {
+      const nextContext =
+        context === void 0 && fn.length >= 3 ? createContext(x, s1.signal) : context
+      contexts = appendContext(contexts, nextContext, inputCount++)
       try {
-        accumulator = await fn(accumulator, x)
+        accumulator =
+          fn.length >= 3 ? await fn(accumulator, x, nextContext) : await fn(accumulator, x)
         next()
       } catch (e) {
         try {
-          push(new ExstreamError(e, x))
+          push(new ExstreamError(e, x), null, nextContext)
         } finally {
           accumulator = void 0
           s1.destroy()
@@ -701,10 +914,15 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
 })
 
 _m.tap = _.curry((fn, s) =>
-  s.map((x) => {
-    fn(x)
-    return x
-  }),
+  fn.length >= 2
+    ? s.map((x, context) => {
+        fn(x, context)
+        return x
+      })
+    : s.map((x) => {
+        fn(x)
+        return x
+      }),
 )
 
 _m.compact = (s) => s.filter((x) => x)

@@ -33,6 +33,22 @@ bench(
 )
 
 bench(
+  'contextual synchronous map/filter pipeline (20k records)',
+  () => {
+    const result = _(coreValues)
+      .withContext((value) => ({ correlationId: value }))
+      .map((value, context) => {
+        context.output = value * 2
+        return context.output
+      })
+      .filter((value, context) => context.correlationId % 3 === 0 && value >= 0)
+      .values()
+    if (result.length !== 6667) throw Error(`unexpected result length: ${result.length}`)
+  },
+  options,
+)
+
+bench(
   'resolve(32) with fulfilled promises (2k records)',
   async () => {
     const result = await _(asyncValues)

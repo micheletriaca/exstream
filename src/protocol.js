@@ -7,13 +7,14 @@ const END = 2
 
 const endFrame = { [frameBrand]: true, type: END }
 
-const dataFrame = (value) => ({ [frameBrand]: true, type: DATA, value })
-const errorFrame = (error, input = error && error.exstreamInput, fatal = false) => ({
+const dataFrame = (value, context) => ({ [frameBrand]: true, type: DATA, value, context })
+const errorFrame = (error, input = error && error.exstreamInput, fatal = false, context) => ({
   [frameBrand]: true,
   type: ERROR,
   error,
   input,
   fatal,
+  context,
 })
 
 const dataValue = (value) => ({ [dataValueBrand]: true, value })

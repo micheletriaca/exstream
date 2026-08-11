@@ -70,5 +70,43 @@ Record errors remain recoverable through `.errors()`. Use
 record-error handlers, rejects Promise sinks, and aborts every connected fork
 and observer with the normalized error as `abortReason`.
 
+## Record context and cancellation
+
+Context is opt-in and belongs to a record as it moves through a branch. Use
+`withContext()` to establish it and `extendContext()` for asynchronous
+enrichment:
+
+```javascript
+const enriched = exs(rows)
+  .withContext((row) => ({ correlationId: row.id }))
+  .extendContext(async (row, context) => ({
+    customer: await loadCustomer(row.customerId, { signal: context.signal }),
+  }))
+  .map((row, context) => ({
+    correlationId: context.correlationId,
+    customer: context.customer,
+    row,
+  }))
+```
+
+The initializer may return an object or mutate the context directly. `input`
+is the value for which the context was established, while `signal` is managed
+by Exstream and is cancelled when that branch is aborted, destroyed, or fails.
+An external signal can cancel a source with `exs(source, { signal })`.
+
+Existing unary callbacks keep their historical argument list. Declare a
+second parameter to opt into context in `map`, `filter`, `reject`,
+`asyncFilter`, and `tap`; similarly, reducers receive it as their third
+parameter. Because callback arity is used for compatibility, a defaulted
+second parameter does not opt in.
+
+One-to-one operators preserve the same mutable context. `fork()` and
+`observe()` make shallow branch-local copies. `flatten()` makes one shallow
+copy per emitted child. Fan-in operators such as `batch()`, `collect()`, and
+the reducers create an aggregate context whose `input` is the aggregate value
+and whose `contexts` array is aligned with the contributing records.
+Concurrent `resolve()` and both ordered and unordered `merge()` retain each
+record's context.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).

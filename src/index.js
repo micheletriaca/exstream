@@ -28,6 +28,12 @@ _.extend('stopOnError', function (fn) {
 _.extend('map', function (fn, options = null) {
   return _.map(fn, options, this)
 })
+_.extend('withContext', function (fn = null) {
+  return _.withContext(fn, this)
+})
+_.extend('extendContext', function (fn) {
+  return _.extendContext(fn, this)
+})
 _.extend('flatMap', function (fn) {
   return _.flatMap(fn, this)
 })
