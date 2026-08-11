@@ -1,14 +1,31 @@
 {
   "name": "exstream.js",
   "version": "0.25.0",
-  "description": "",
-  "keywords": [],
+  "description": "Composable streaming ETL pipelines for JavaScript",
+  "keywords": [
+    "async",
+    "backpressure",
+    "csv",
+    "etl",
+    "pipeline",
+    "stream",
+    "streaming"
+  ],
+  "homepage": "https://exstream-js.github.io/",
+  "bugs": {
+    "url": "https://github.com/micheletriaca/exstream/issues"
+  },
   "license": "MIT",
   "author": "Michele Triaca",
   "repository": {
     "type": "git",
     "url": "https://github.com/micheletriaca/exstream"
   },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "src/index.js",
   "scripts": {
     "test": "vitest run --coverage",
