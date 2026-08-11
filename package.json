@@ -11,18 +11,19 @@
   },
   "main": "src/index.js",
   "scripts": {
-    "test": "jest --verbose --runInBand",
-    "ci:test": "jest --runInBand",
+    "test": "vitest run --coverage",
+    "ci:test": "vitest run --coverage",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write --ignore-path .oxfmtignore .",
     "format:check": "oxfmt --check --ignore-path .oxfmtignore ."
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.1.10",
     "highland": "2.13.5",
-    "jest": "29.7.0",
     "oxfmt": "0.63.0",
-    "oxlint": "1.78.0"
+    "oxlint": "1.78.0",
+    "vitest": "4.1.10"
   },
   "engines": {
     "node": ">=14.21.3"

@@ -36,7 +36,7 @@ test('keyByFn', () => {
 })
 
 test('wrong / missing key', () => {
-  const error = jest.fn()
+  const error = vi.fn()
   const res = _(dataset).keyBy('wrong').errors(error).value()
   // it fails because more than 1 item is keyed by _.nil
   expect(res).toBeUndefined()
@@ -44,7 +44,7 @@ test('wrong / missing key', () => {
 })
 
 test('multiple values per key', () => {
-  const error = jest.fn()
+  const error = vi.fn()
   _([...dataset, { id: 3, value: '4' }])
     .keyBy('id')
     .errors(error)

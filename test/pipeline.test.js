@@ -2,10 +2,10 @@ const _ = require('../src/index.js')
 const h = require('./helpers')
 
 const database = { existing: '1' }
-const query1 = jest.fn().mockImplementation(async (param) => database[param])
-const query2 = jest.fn().mockImplementation(async (param) => param + 1)
-const exit = jest.fn()
-const sourceInput = jest.fn()
+const query1 = vi.fn().mockImplementation(async (param) => database[param])
+const query2 = vi.fn().mockImplementation(async (param) => param + 1)
+const exit = vi.fn()
+const sourceInput = vi.fn()
 
 const innerPipeline = _.pipeline()
   .map(query1)
@@ -62,49 +62,50 @@ test('pipeline with fork', async () => {
   expect(res).toEqual([2, 3, 4, 6, 6, 9])
 })
 
-test('pipeline with pipe and multiple through', (done) => {
+test('pipeline with pipe and multiple through', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
     .resolve()
   const res = []
 
-  _([1, 2, 3])
-    .through(p)
-    .through(p)
-    .pipe(h.getSlowWritable(res, 0, 0))
-    .on('finish', () => {
-      done()
-      expect(res).toEqual([4, 8, 12])
-    })
+  await new Promise((resolve) => {
+    _([1, 2, 3])
+      .through(p)
+      .through(p)
+      .pipe(h.getSlowWritable(res, 0, 0))
+      .on('finish', resolve)
+  })
+
+  expect(res).toEqual([4, 8, 12])
 })
 
-test('pipeline in pipe', (done) => {
+test('pipeline in pipe', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
     .resolve()
   const res = []
 
-  _([1, 2, 3])
-    .pipe(p)
-    .pipe(p)
-    .pipe(h.getSlowWritable(res, 0, 0))
-    .on('finish', () => {
-      done()
-      expect(res).toEqual([4, 8, 12])
-    })
+  await new Promise((resolve) => {
+    _([1, 2, 3])
+      .pipe(p)
+      .pipe(p)
+      .pipe(h.getSlowWritable(res, 0, 0))
+      .on('finish', resolve)
+  })
+
+  expect(res).toEqual([4, 8, 12])
 })
 
-test('pipeline as node stream toArray', (done) => {
+test('pipeline as node stream toArray', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
     .resolve()
 
-  _([1, 2, 3])
-    .pipe(p.generateStream())
-    .toArray((res) => {
-      done()
-      expect(res).toEqual([2, 4, 6])
-    })
+  const res = await new Promise((resolve) => {
+    _([1, 2, 3]).pipe(p.generateStream()).toArray(resolve)
+  })
+
+  expect(res).toEqual([2, 4, 6])
 })
 
 test('error propagation in async chain', async () => {

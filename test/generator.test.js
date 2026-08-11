@@ -61,7 +61,7 @@ test('switch source', async () => {
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
-test('switch source + backpressure', (done) => {
+test('switch source + backpressure', async () => {
   const gen = (i = 0) =>
     _((write, next) => {
       if (i <= 5) {
@@ -71,10 +71,11 @@ test('switch source + backpressure', (done) => {
     })
 
   const res = []
-  _(gen())
-    .pipe(h.getSlowWritable(res, 1, 0))
-    .on('finish', () => {
-      done()
-      expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    })
+  await new Promise((resolve) => {
+    _(gen())
+      .pipe(h.getSlowWritable(res, 1, 0))
+      .on('finish', resolve)
+  })
+
+  expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })

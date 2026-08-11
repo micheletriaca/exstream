@@ -45,19 +45,20 @@ test('piping an error with pipeline', () => {
   })
 })
 
-test('piping an error after promise', (done) => {
+test('piping an error after promise', async () => {
   const res = []
-  _([1])
-    .map(async (x) => x)
-    .resolve()
-    .map(() => {
-      throw Error('an error')
-    })
-    .pipe(h.getSlowWritable(res))
-    .on('error', (e) => {
-      expect(e.message).toBe('an error')
-      done()
-    })
+  const error = await new Promise((resolve) => {
+    _([1])
+      .map(async (x) => x)
+      .resolve()
+      .map(() => {
+        throw Error('an error')
+      })
+      .pipe(h.getSlowWritable(res))
+      .on('error', resolve)
+  })
+
+  expect(error.message).toBe('an error')
 })
 
 test('piping an error after promise with through', async () => {

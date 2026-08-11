@@ -462,7 +462,7 @@ test('splitBy with different encodings', () => {
   expect(res).toEqual(['line1', 'line2', 'line3', 'line4'])
 })
 
-test('split with multibyte chars', (done) => {
+test('split with multibyte chars', async () => {
   const b = [
     'line1',
     Buffer.from('\n'),
@@ -470,12 +470,11 @@ test('split with multibyte chars', (done) => {
     Buffer.from([0x0a /* \n */, 0xf0, 0x9f]),
     Buffer.from([0x98, 0x8f]),
   ]
-  _(b)
-    .split()
-    .toArray((res) => {
-      done()
-      expect(res).toEqual(['line1', 'line2', '😏'])
-    })
+  const res = await new Promise((resolve) => {
+    _(b).split().toArray(resolve)
+  })
+
+  expect(res).toEqual(['line1', 'line2', '😏'])
 })
 
 test('toNodeStream', () => {

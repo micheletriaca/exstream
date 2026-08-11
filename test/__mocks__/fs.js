@@ -4,7 +4,7 @@
 const h = require('../helpers.js')
 const _ = require('../../src/index')
 
-const fs = jest.createMockFromModule('fs')
+const fs = { readFileSync: vi.fn() }
 
 let mockFiles = {}
 function __setMockFiles(newMockFiles) {

@@ -1,4 +1,4 @@
-/* eslint-disable jest/no-commented-out-tests */
+/* eslint-disable vitest/no-commented-out-tests */
 const _ = require('../src')
 // const __ = require('highland')
 const h = require('./helpers')
@@ -64,7 +64,7 @@ test('testPerformance - values', async () => {
   expect(k).toBe(49999)
 })
 
-jest.setTimeout(20000)
+vi.setConfig({ testTimeout: 20000 })
 test('testPerformance - highland', async () => {
   const x = Array(50000).fill(0).map((x, i) => i)
   const xs = __(x).map(async x => x).flatMap(__)

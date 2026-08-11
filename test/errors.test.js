@@ -76,31 +76,32 @@ test('fatal error in source stream - async generator', async () => {
   expect(errCatched).toBe(errGenerated)
 })
 
-test('error in source stream - node stream', (done) => {
+test('error in source stream - node stream', async () => {
   const errs = []
   let i = 0
-  _(
-    new Readable({
-      objectMode: true,
-      read() {
-        if (i === 4) {
-          this.push(null)
-        } else if (i > 2 && i < 4) {
-          this.emit('error', Error('an error'))
-        } else {
-          this.push(i)
-        }
-        i++
-      },
-    }),
-  )
-    .errors((e) => errs.push(e))
-    .toArray((res) => {
-      done()
-      expect(res).toEqual([0, 1, 2])
-      expect(errs.length).toBe(1)
-      expect(errs[0].message).toBe('an error')
-    })
+  const res = await new Promise((resolve) => {
+    _(
+      new Readable({
+        objectMode: true,
+        read() {
+          if (i === 4) {
+            this.push(null)
+          } else if (i > 2 && i < 4) {
+            this.emit('error', Error('an error'))
+          } else {
+            this.push(i)
+          }
+          i++
+        },
+      }),
+    )
+      .errors((e) => errs.push(e))
+      .toArray(resolve)
+  })
+
+  expect(res).toEqual([0, 1, 2])
+  expect(errs.length).toBe(1)
+  expect(errs[0].message).toBe('an error')
 })
 
 test('error in wrapped writable', async () => {
@@ -206,7 +207,7 @@ test('error in promise chain', async () => {
 })
 
 test('error in wrapped promise contains exstreamInput', async () => {
-  const catched = jest.fn()
+  const catched = vi.fn()
 
   const res = await _([1, 2, 3])
     .map(
@@ -407,17 +408,18 @@ test('async filter errors', async () => {
   expect(e.message).toBe('NOO')
 })
 
-test('stream in error without consumers emits an error event', (done) => {
-  _([1])
-    .map(() => {
-      throw Error('an error')
-    })
-    .on('error', (e) => {
-      done()
-      expect(e).not.toBe(null)
-      expect(e.message).toBe('an error')
-    })
-    .resume()
+test('stream in error without consumers emits an error event', async () => {
+  const error = await new Promise((resolve) => {
+    _([1])
+      .map(() => {
+        throw Error('an error')
+      })
+      .on('error', resolve)
+      .resume()
+  })
+
+  expect(error).not.toBe(null)
+  expect(error.message).toBe('an error')
 })
 
 test('stopOnError', () => {

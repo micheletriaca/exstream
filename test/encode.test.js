@@ -28,18 +28,20 @@ test('decode', () => {
   expect(res.toString()).toEqual('ciao, come va?')
 })
 
-test('incomplete decode', (done) => {
+test('incomplete decode', async () => {
   const s = _()
-  s.decode('base64')
-    .map((x) => x.toString())
-    .toArray((res) => {
-      done()
-      expect(res.join('')).toBe('ciao,')
-    })
+  const result = new Promise((resolve) => {
+    s.decode('base64')
+      .map((x) => x.toString())
+      .toArray(resolve)
+  })
 
   s.write('Y2l')
   s.write('hbyw')
   s.end()
+
+  const res = await result
+  expect(res.join('')).toBe('ciao,')
 })
 
 test('encode buffer', () => {

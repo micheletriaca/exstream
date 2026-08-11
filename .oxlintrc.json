@@ -4,7 +4,7 @@
     "es2021": true,
     "node": true
   },
-  "plugins": ["jest", "node", "oxc", "promise", "unicorn"],
+  "plugins": ["node", "oxc", "promise", "unicorn", "vitest"],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
@@ -33,12 +33,11 @@
     {
       "files": ["test/**/*.js"],
       "env": {
-        "jest": true
+        "vitest": true
       },
       "rules": {
         "eslint/no-await-in-loop": "off",
-        "jest/no-conditional-expect": "off",
-        "jest/no-done-callback": "off"
+        "vitest/no-conditional-expect": "off"
       }
     }
   ]

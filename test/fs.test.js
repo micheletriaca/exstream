@@ -1,9 +1,8 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const zlib = require('zlib')
-jest.mock('fs')
-const fs = require('fs')
-jest.setTimeout(2000)
+const fs = require('./__mocks__/fs.js')
+vi.setConfig({ testTimeout: 2000 })
 
 const out = [...h.randomStringGenerator(10000)].map((x) => x.toString() + '\n')
 
@@ -41,7 +40,7 @@ test('through node stream', () =>
       })
   }))
 
-test('pipe pipeline', (done) => {
+test('pipe pipeline', async () => {
   const p = _.pipeline()
     .map((x) => x.toString())
     .take(10)
@@ -51,13 +50,14 @@ test('pipe pipeline', (done) => {
     .map((x) => 'buahaha' + x + '\n')
 
   const res = []
-  fs.createReadStream('out')
-    .pipe(p.generateStream())
-    .pipe(h.getSlowWritable(res, 0))
-    .on('finish', () => {
-      done()
-      expect(res.length).toBe(11)
-    })
+  await new Promise((resolve) => {
+    fs.createReadStream('out')
+      .pipe(p.generateStream())
+      .pipe(h.getSlowWritable(res, 0))
+      .on('finish', resolve)
+  })
+
+  expect(res.length).toBe(11)
 })
 
 test('pipeToFile', () =>

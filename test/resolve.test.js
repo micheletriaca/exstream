@@ -1,4 +1,4 @@
-jest.setTimeout(500)
+vi.setConfig({ testTimeout: 500 })
 
 const _ = require('../src/index.js')
 
