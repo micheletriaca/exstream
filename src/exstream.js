@@ -261,55 +261,16 @@ class Exstream extends EventEmitter {
     return this._writeData(x, skipBackPressure)
   }
 
-  _writeData(value, skipBackPressure = false) {
-    if (this.paused && !skipBackPressure) {
-      this.#enqueue(DATA, value)
-    } else if (this.#consumeSyncFn) {
-      this.#consumeSyncFn(void 0, value, this.#push)
-    } else if (this.#consumeFn) {
-      this.#nextCalled = false
-      let syncNext = true
-      this.#consumeFn(void 0, value, this.#push, () => {
-        this.#nextCalled = true
-        if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
-      })
-      syncNext = false
-      if (!this.#nextCalled) this.pause(true)
-    } else {
-      this.#sendData(value)
-    }
-
-    return !this.paused || skipBackPressure
-  }
-
-  #writeContextData = (value, context, skipBackPressure = false) => {
+  _writeData(value, skipBackPressure = false, context) {
     if (this.paused && !skipBackPressure) {
       this.#enqueue(DATA, value, void 0, false, context)
     } else if (this.#consumeSyncFn) {
-      this.#activeContext = context
-      if (this.#consumeSyncFn.length >= 4) {
-        this.#consumeSyncFn(void 0, value, this.#pushContext, context)
-      } else {
-        this.#consumeSyncFn(void 0, value, this.#pushContext)
-      }
-      this.#activeContext = void 0
+      if (context === void 0) this.#consumeSyncFn(void 0, value, this.#push)
+      else this.#consumeSyncContext(void 0, value, context)
     } else if (this.#consumeFn) {
-      this.#nextCalled = false
-      let syncNext = true
-      const next = () => {
-        this.#nextCalled = true
-        if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
-      }
-      const push = this.#contextualPush(context)
-      if (this.#consumeFn.length >= 5) {
-        this.#consumeFn(void 0, value, push, next, context)
-      } else {
-        this.#consumeFn(void 0, value, push, next)
-      }
-      syncNext = false
-      if (!this.#nextCalled) this.pause(true)
+      this.#consumeAsyncRecord(void 0, value, context)
     } else {
-      this.#sendContextData(value, context)
+      this.#sendData(value, context)
     }
 
     return !this.paused || skipBackPressure
@@ -323,29 +284,10 @@ class Exstream extends EventEmitter {
     if (this.paused && !skipBackPressure) {
       this.#enqueue(type, value, input, fatal, context)
     } else if (this.#consumeSyncFn) {
-      if (context === void 0) {
-        this.#consumeSyncFn(err, x, this.#push)
-      } else if (this.#consumeSyncFn.length >= 4) {
-        this.#consumeSyncFn(err, x, this.#contextualPush(context), context)
-      } else {
-        this.#consumeSyncFn(err, x, this.#contextualPush(context))
-      }
+      if (context === void 0) this.#consumeSyncFn(err, x, this.#push)
+      else this.#consumeSyncContext(err, x, context)
     } else if (this.#consumeFn) {
-      this.#nextCalled = false
-      let syncNext = true
-      const next = () => {
-        this.#nextCalled = true
-        if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
-      }
-      if (context === void 0) {
-        this.#consumeFn(err, x, this.#push, next)
-      } else if (this.#consumeFn.length >= 5) {
-        this.#consumeFn(err, x, this.#contextualPush(context), next, context)
-      } else {
-        this.#consumeFn(err, x, this.#contextualPush(context), next)
-      }
-      syncNext = false
-      if (!this.#nextCalled) this.pause(true)
+      this.#consumeAsyncRecord(err, x, context)
     } else {
       this.#sendControl(type, value, input, fatal, context)
     }
@@ -353,48 +295,63 @@ class Exstream extends EventEmitter {
     return !this.paused || skipBackPressure
   }
 
+  #consumeSyncContext(err, x, context) {
+    this.#activeContext = context
+    if (this.#consumeSyncFn.length >= 4) this.#consumeSyncFn(err, x, this.#contextPush, context)
+    else this.#consumeSyncFn(err, x, this.#contextPush)
+    this.#activeContext = void 0
+  }
+
+  #consumeAsyncRecord(err, x, context) {
+    this.#nextCalled = false
+    let syncNext = true
+    const next = () => {
+      this.#nextCalled = true
+      if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
+    }
+    const push = context === void 0 ? this.#push : this.#contextualPush(context)
+    if (context !== void 0 && this.#consumeFn.length >= 5)
+      this.#consumeFn(err, x, push, next, context)
+    else this.#consumeFn(err, x, push, next)
+    syncNext = false
+    if (!this.#nextCalled) this.pause(true)
+  }
+
   #contextualPush =
     (context) =>
     (err, x, nextContext = context) =>
-      this.#pushContext(err, x, nextContext)
+      this.#push(err, x, nextContext)
+
+  #contextPush = (err, x, context = this.#activeContext) => this.#push(err, x, context)
 
   #push = (err, x, context) => {
-    if (context !== void 0) return this.#pushContext(err, x, context)
-    if (err) this.#sendControl(ERROR, err, err.exstreamInput, false)
-    else if (x === _.nil) this.#sendControl(END, void 0, void 0, false)
-    else this.#sendData(x)
-  }
-
-  #pushContext = (err, x, context = this.#activeContext) => {
     if (err) this.#sendControl(ERROR, err, err.exstreamInput, false, context)
-    else if (x === _.nil) this.#sendControl(END, void 0, void 0, false, void 0)
-    else this.#sendContextData(x, context)
+    else if (x === _.nil) this.#sendControl(END, void 0, void 0, false)
+    else this.#sendData(x, context)
   }
 
-  #contextFor = (consumer, context) =>
-    consumer.#contextBoundary ? forkContext(context, consumer.signal) : context
-
-  #sendData = (value) => {
+  #sendData = (value, context) => {
     const consumers = this.#consumers
-    for (let i = 0, len = consumers.length; i < len; i++) {
-      consumers[i]._writeData(value)
-    }
     const observers = this.#observers
-    for (let i = 0, len = observers.length; i < len; i++) {
-      observers[i].#writeObservedData(value)
+    if (context === void 0) {
+      for (let i = 0, len = consumers.length; i < len; i++) {
+        consumers[i]._writeData(value)
+      }
+      for (let i = 0, len = observers.length; i < len; i++) {
+        observers[i].#writeObservedData(value)
+      }
+      return
     }
-  }
-
-  #sendContextData = (value, context) => {
-    const consumers = this.#consumers
     for (let i = 0, len = consumers.length; i < len; i++) {
       const consumer = consumers[i]
-      consumer.#writeContextData(value, this.#contextFor(consumer, context))
+      const nextContext = consumer.#contextBoundary
+        ? forkContext(context, consumer.signal)
+        : context
+      consumer._writeData(value, false, nextContext)
     }
-    const observers = this.#observers
     for (let i = 0, len = observers.length; i < len; i++) {
       const observer = observers[i]
-      observer.#writeObservedContextData(value, forkContext(context, observer.signal))
+      observer.#writeObservedData(value, forkContext(context, observer.signal))
     }
   }
 
@@ -416,7 +373,10 @@ class Exstream extends EventEmitter {
     }
     for (let i = 0, len = consumers.length; i < len; i++) {
       const consumer = consumers[i]
-      consumer.#writeControlRecord(type, value, input, fatal, this.#contextFor(consumer, context))
+      const nextContext = consumer.#contextBoundary
+        ? forkContext(context, consumer.signal)
+        : context
+      consumer.#writeControlRecord(type, value, input, fatal, nextContext)
     }
     const observers = this.#observers
     for (let i = 0, len = observers.length; i < len; i++) {
@@ -431,19 +391,11 @@ class Exstream extends EventEmitter {
     }
   }
 
-  #writeObservedData = (value) => {
+  #writeObservedData = (value, context) => {
     if (this.ended || this.#state === 'ending') return
     try {
-      this._writeData(value)
-    } catch (error) {
-      this.abort(error)
-    }
-  }
-
-  #writeObservedContextData = (value, context) => {
-    if (this.ended || this.#state === 'ending') return
-    try {
-      this.#writeContextData(value, context)
+      if (context === void 0) this._writeData(value)
+      else this._writeData(value, false, context)
     } catch (error) {
       this.abort(error)
     }
@@ -599,9 +551,7 @@ class Exstream extends EventEmitter {
       const frame = this.#buffer[i]
       const wrote =
         frame.type === DATA
-          ? frame.context === void 0
-            ? this._writeData(frame.value, force)
-            : this.#writeContextData(frame.value, frame.context, force)
+          ? this._writeData(frame.value, force, frame.context)
           : this.#writeControlRecord(
               frame.type,
               frame.error,
@@ -932,7 +882,7 @@ class Exstream extends EventEmitter {
               ? merged.#writeControlRecord(ERROR, err, err.exstreamInput, false, context)
               : context === void 0
                 ? merged._writeData(x)
-                : merged.#writeContextData(x, context))
+                : merged._writeData(x, false, context))
           ) {
             nextCallback = next
           } else {
