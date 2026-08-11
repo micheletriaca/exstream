@@ -1,6 +1,6 @@
 {
   "name": "exstream.js",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Composable streaming ETL pipelines for JavaScript",
   "keywords": [
     "async",
