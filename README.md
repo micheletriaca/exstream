@@ -27,5 +27,26 @@ const res = exs([1, 2, 3])
 // res is 6
 ```
 
+## Lifecycle, fan-out, and buffering
+
+Streams expose an explicit `state` (`idle`, `running`, `ending`, `ended`,
+`aborted`, or `destroyed`). `start()`, `end()`, `destroy()`, and `abort()` are
+idempotent; `abortReason` retains the first abort reason.
+
+`fork()` is reliable fan-out: every fork participates in backpressure.
+`observe()` never slows the main flow, so a slow observer may need an explicit
+bounded best-effort policy:
+
+```javascript
+const source = exs(rows)
+const audit = source.observe({ bufferLimit: 1000, overflow: 'drop-oldest' })
+
+console.log(audit.buffered, audit.peakBuffered, audit.dropped)
+```
+
+The same `{ bufferLimit, overflow }` options can be passed as the second
+argument to `exs()`. The default limit is `Infinity` and the default overflow
+policy is `error`. `drop-oldest` and `drop-newest` require a finite limit.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).

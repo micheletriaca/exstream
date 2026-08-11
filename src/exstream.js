@@ -37,6 +37,15 @@ class ExstreamError extends Error {
   }
 }
 
+class BufferOverflowError extends Error {
+  constructor(limit) {
+    super(`Exstream buffer limit of ${limit} exceeded`)
+    this.name = 'BufferOverflowError'
+    this.code = 'EXSTREAM_BUFFER_OVERFLOW'
+    this.limit = limit
+  }
+}
+
 class Exstream extends EventEmitter {
   __exstream__ = true
   writable = true
@@ -54,6 +63,11 @@ class Exstream extends EventEmitter {
   #nilPushed = false
 
   #buffer = []
+  #buffered = 0
+  #peakBuffered = 0
+  #dropped = 0
+  #bufferLimit = Infinity
+  #overflowPolicy = 'error'
   #sourceData = null
   #generator = null
 
@@ -63,6 +77,7 @@ class Exstream extends EventEmitter {
   #nextGenCalled = true
   #consumers = []
   #observers = []
+  #observedSource = null
   #autostart = true
   #synchronous = true
 
@@ -80,8 +95,29 @@ class Exstream extends EventEmitter {
     return this.#abortReason
   }
 
-  constructor(xs) {
+  get buffered() {
+    return this.#buffered
+  }
+
+  get peakBuffered() {
+    return this.#peakBuffered
+  }
+
+  get dropped() {
+    return this.#dropped
+  }
+
+  get bufferLimit() {
+    return this.#bufferLimit
+  }
+
+  get overflowPolicy() {
+    return this.#overflowPolicy
+  }
+
+  constructor(xs, options = null) {
     super()
+    this.#configureBuffer(options)
     if (!xs) {
       return this
     } else if (_.isExstream(xs)) {
@@ -105,6 +141,28 @@ class Exstream extends EventEmitter {
     }
   }
 
+  #configureBuffer = (options) => {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) return
+    let limit
+    try {
+      limit = options.bufferLimit === void 0 ? Infinity : Number(options.bufferLimit)
+    } catch {
+      limit = NaN
+    }
+    if (limit !== Infinity && (!Number.isInteger(limit) || limit < 0)) {
+      throw Error('bufferLimit must be a non-negative integer or Infinity')
+    }
+    const overflow = options.overflow === void 0 ? 'error' : options.overflow
+    if (!['error', 'drop-oldest', 'drop-newest'].includes(overflow)) {
+      throw Error('overflow must be one of: error, drop-oldest, drop-newest')
+    }
+    if (overflow !== 'error' && limit === Infinity) {
+      throw Error('best-effort overflow requires a finite bufferLimit')
+    }
+    this.#bufferLimit = limit
+    this.#overflowPolicy = overflow
+  }
+
   #pipeReadable = (xs) => {
     this.#synchronous = false
     xs.pipe(this)
@@ -126,6 +184,24 @@ class Exstream extends EventEmitter {
     return this._write(x)
   }
 
+  #enqueue = (x) => {
+    if (x === _.nil) {
+      this.#buffer.push(x)
+      return true
+    }
+    if (this.#buffered === this.#bufferLimit) {
+      if (this.#overflowPolicy === 'error') throw new BufferOverflowError(this.#bufferLimit)
+      this.#dropped++
+      if (this.#overflowPolicy === 'drop-newest' || this.#bufferLimit === 0) return false
+      this.#buffer.shift()
+      this.#buffered--
+    }
+    this.#buffer.push(x)
+    this.#buffered++
+    this.#peakBuffered = Math.max(this.#peakBuffered, this.#buffered)
+    return true
+  }
+
   _write(x, skipBackPressure = false) {
     if (x === _.nil) this.#nilPushed = true
     const isError = _.isError(x)
@@ -133,7 +209,7 @@ class Exstream extends EventEmitter {
     const err = isError ? x : void 0
 
     if (this.paused && !skipBackPressure) {
-      this.#buffer.push(x)
+      this.#enqueue(x)
     } else if (this.#consumeSyncFn) {
       this.#consumeSyncFn(err, xx, this.#send)
     } else if (this.#consumeFn) {
@@ -161,8 +237,18 @@ class Exstream extends EventEmitter {
     for (let i = 0, len = consumers.length; i < len; i++) {
       consumers[i].write(err || x)
     }
-    for (let i = 0, len = this.#observers.length; i < len; i++) {
-      this.#observers[i]._write(err || x, true)
+    const observers = this.#observers
+    for (let i = 0, len = observers.length; i < len; i++) {
+      observers[i].#writeObserved(err || x)
+    }
+  }
+
+  #writeObserved = (x) => {
+    if (this.ended || this.#state === 'ending') return
+    try {
+      this._write(x)
+    } catch (error) {
+      this.abort(error)
     }
   }
 
@@ -188,7 +274,10 @@ class Exstream extends EventEmitter {
   #terminate = (terminalState, discardBuffer = false) => {
     if (this.ended || this.#state === 'ending') return
     this.#state = 'ending'
-    if (discardBuffer) this.#buffer = []
+    if (discardBuffer) {
+      this.#buffer = []
+      this.#buffered = 0
+    }
     if (!this.#nilPushed) this._write(_.nil)
     if (this.paused) this.#flushBuffer(true)
     this.#state = terminalState
@@ -203,11 +292,13 @@ class Exstream extends EventEmitter {
         else source.destroy()
       }
     }
+    if (this.#observedSource) this.#observedSource.#removeObserver(this)
     this.#generator = null
     this.#sourceData = null
     this.removeAllListeners()
     this.#destroyers.forEach((x) => x())
     this.#destroyers = []
+    for (const observer of this.#observers) observer.#observedSource = null
     this.#observers = []
   }
 
@@ -236,7 +327,9 @@ class Exstream extends EventEmitter {
       // write can synchronously pause the stream in case of back pressure
       if (!this._write(this.#buffer[i], force)) break
     }
+    const removed = this.#buffer.slice(0, i + 1)
     this.#buffer = this.#buffer.slice(i + 1)
+    this.#buffered -= removed.filter((value) => value !== _.nil).length
   }
 
   #consumeSourceData = () => {
@@ -270,6 +363,13 @@ class Exstream extends EventEmitter {
         otherStream.pausedFromInside = true
         otherStream.pausedFromOutside = false
         otherStream.#buffer = this.#buffer
+        otherStream.#buffered = this.#buffered
+        otherStream.#peakBuffered = Math.max(this.#peakBuffered, otherStream.#peakBuffered)
+        otherStream.#dropped += this.#dropped
+        otherStream.#bufferLimit = this.#bufferLimit
+        otherStream.#overflowPolicy = this.#overflowPolicy
+        this.#buffer = []
+        this.#buffered = 0
         otherStream.#synchronous = false
         this.#consumers = []
         this.destroy()
@@ -399,6 +499,11 @@ class Exstream extends EventEmitter {
     this.#checkBackPressure()
   }
 
+  #removeObserver = (observer) => {
+    this.#observers = this.#observers.filter((candidate) => candidate !== observer)
+    observer.#observedSource = null
+  }
+
   pipe(dest, options = {}) {
     let nextCallback
     const drainCallback = () => {
@@ -447,8 +552,9 @@ class Exstream extends EventEmitter {
     return res
   }
 
-  observe() {
-    const res = new Exstream()
+  observe(options = null) {
+    const res = new Exstream(null, options)
+    res.#observedSource = this
     this.#observers.push(res)
     return res
   }
@@ -584,6 +690,7 @@ class Exstream extends EventEmitter {
 }
 
 module.exports = {
+  BufferOverflowError,
   Exstream,
   ExstreamError,
 }

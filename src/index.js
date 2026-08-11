@@ -1,11 +1,18 @@
 /* eslint-disable max-len */
-const { Exstream } = require('./exstream')
+const { BufferOverflowError, Exstream } = require('./exstream')
 const methods = require('./methods')
 const csv = require('./csv')
 const joins = require('./joins')
 const utils = require('./utils')
 
-const _ = (module.exports = Object.assign((xs) => new Exstream(xs), utils, csv, joins, methods))
+const _ = (module.exports = Object.assign(
+  (xs, options) => new Exstream(xs, options),
+  { BufferOverflowError },
+  utils,
+  csv,
+  joins,
+  methods,
+))
 
 /* eslint-disable max-statements-per-line */
 _.extend = (name, fn) => {
