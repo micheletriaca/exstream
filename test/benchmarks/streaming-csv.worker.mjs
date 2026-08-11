@@ -3,7 +3,8 @@ import { performance } from 'node:perf_hooks'
 import { Readable, Writable } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
 
-const [library, rowsArg, chunkBytesArg, throttleBytesArg, throttleMsArg] = process.argv.slice(2)
+const [library, rowsArg, chunkBytesArg, throttleBytesArg, throttleMsArg, sourceMode = 'buffer'] =
+  process.argv.slice(2)
 const rowCount = Number(rowsArg)
 const chunkBytes = Number(chunkBytesArg)
 const throttleBytes = Number(throttleBytesArg)
@@ -13,31 +14,73 @@ const headers = ['id', 'name', 'description', 'active']
 if (!['exstream', 'node-csv', 'fast-csv'].includes(library)) {
   throw Error(`unknown CSV library: ${library}`)
 }
+if (!['buffer', 'constant-memory'].includes(sourceMode)) {
+  throw Error(`unknown source mode: ${sourceMode}`)
+}
 if (![rowCount, chunkBytes, throttleBytes, throttleMs].every(Number.isFinite)) {
   throw Error('invalid numeric benchmark argument')
 }
 if (!global.gc) throw Error('run this worker with --expose-gc')
 
 function makeInput(rows) {
-  const blocks = ['id,name,description,active\n']
-  const blockRows = 10_000
-
-  for (let start = 0; start < rows; start += blockRows) {
-    const end = Math.min(start + blockRows, rows)
-    const block = Array(end - start)
-    for (let index = start; index < end; index++) {
-      block[index - start] =
-        `${index},name-${index},description-${index % 1000},${index % 2 === 0}\n`
+  const header = 'id,name,description,active\n'
+  const digitLengthSum = (count) => {
+    if (count === 0) return 0
+    let sum = 1 // zero
+    for (let digits = 1, start = 1; start < count; digits++, start *= 10) {
+      sum += (Math.min(count, start * 10) - start) * digits
     }
-    blocks.push(block.join(''))
+    return sum
+  }
+  const descriptionCycleDigits = digitLengthSum(1000)
+  const descriptionDigits =
+    Math.floor(rows / 1000) * descriptionCycleDigits + digitLengthSum(rows % 1000)
+  const bytes =
+    Buffer.byteLength(header) +
+    rows * 25 +
+    digitLengthSum(rows) * 2 +
+    descriptionDigits +
+    Math.floor(rows / 2)
+  const input = Buffer.allocUnsafe(bytes)
+  let offset = input.write(header)
+
+  for (let index = 0; index < rows; index++) {
+    offset += input.write(
+      `${index},name-${index},description-${index % 1000},${index % 2 === 0}\n`,
+      offset,
+    )
   }
 
-  return Buffer.from(blocks.join(''))
+  if (offset !== bytes) throw Error(`generated ${offset} CSV bytes; expected ${bytes}`)
+
+  return input
 }
 
 function* chunkInput(input) {
   for (let offset = 0; offset < input.length; offset += chunkBytes) {
     yield input.subarray(offset, Math.min(offset + chunkBytes, input.length))
+  }
+}
+
+function makeConstantMemoryInput(rows) {
+  const header = Buffer.from('id,name,description,active\n')
+  const row = '123456,name-123456,description-456,true\n'
+  const rowBytes = Buffer.byteLength(row)
+  const rowsPerChunk = Math.floor(chunkBytes / rowBytes)
+  const fullChunk = Buffer.from(row.repeat(rowsPerChunk))
+  const fullChunks = Math.floor(rows / rowsPerChunk)
+  const remainder = Buffer.from(row.repeat(rows % rowsPerChunk))
+
+  return {
+    bytes: header.length + rows * rowBytes,
+    source() {
+      function* chunks() {
+        yield header
+        for (let index = 0; index < fullChunks; index++) yield fullChunk
+        if (remainder.length > 0) yield remainder
+      }
+      return Readable.from(chunks(), { objectMode: false })
+    },
   }
 }
 
@@ -116,7 +159,16 @@ if (library === 'exstream') {
     )
 }
 
-const input = makeInput(rowCount)
+const input =
+  sourceMode === 'constant-memory'
+    ? makeConstantMemoryInput(rowCount)
+    : (() => {
+        const buffer = makeInput(rowCount)
+        return {
+          bytes: buffer.length,
+          source: () => Readable.from(chunkInput(buffer), { objectMode: false }),
+        }
+      })()
 global.gc()
 global.gc()
 
@@ -134,7 +186,7 @@ memorySampler.unref()
 const startedAt = performance.now()
 const sink = new BenchmarkSink(startedAt)
 try {
-  await runPipeline(Readable.from(chunkInput(input), { objectMode: false }), sink)
+  await runPipeline(input.source(), sink)
 } finally {
   clearInterval(memorySampler)
   sampleMemory()
@@ -153,7 +205,7 @@ process.stdout.write(
     elapsedMs,
     firstByteMs: sink.firstByteMs,
     heapDeltaBytes: Math.max(0, peakHeapUsed - baselineMemory.heapUsed),
-    inputBytes: input.length,
+    inputBytes: input.bytes,
     outputBytes: sink.bytes,
     parsedRows,
     rssDeltaBytes: Math.max(0, peakRss - baselineMemory.rss),

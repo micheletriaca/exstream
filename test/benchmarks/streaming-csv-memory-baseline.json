@@ -1,0 +1,445 @@
+{
+  "config": {
+    "chunkBytes": 65536,
+    "measuredRuns": 3,
+    "memorySampleMs": 10,
+    "rows": [50000, 500000, 5000000],
+    "warmupRuns": 0,
+    "scenarios": [
+      {
+        "id": "32-mib-s-sink",
+        "throttleBytes": 65536,
+        "throttleMs": 2
+      }
+    ]
+  },
+  "environment": {
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "node": "v26.4.0",
+    "platform": "darwin"
+  },
+  "libraries": [
+    {
+      "name": "Exstream",
+      "version": "0.25.0"
+    },
+    {
+      "name": "Node CSV",
+      "version": "7.0.2 / 6.8.3"
+    },
+    {
+      "name": "Fast-CSV",
+      "version": "5.0.7"
+    }
+  ],
+  "results": [
+    {
+      "library": "Exstream",
+      "scenario": "32-mib-s-sink",
+      "rows": 50000,
+      "median": {
+        "elapsedMs": 85.76,
+        "firstByteMs": 3.16,
+        "heapDeltaMiB": 3.86,
+        "inputBytes": 2000027,
+        "inputMiBPerSecond": 22.24,
+        "outputBytes": 2000027,
+        "rssDeltaMiB": 17.97
+      },
+      "samples": [
+        {
+          "elapsedMs": 85.76,
+          "firstByteMs": 3.21,
+          "heapDeltaMiB": 4.84,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 22.24,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 17.97
+        },
+        {
+          "elapsedMs": 91.08,
+          "firstByteMs": 2.9,
+          "heapDeltaMiB": 3.8,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 20.94,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 18.22
+        },
+        {
+          "elapsedMs": 82.91,
+          "firstByteMs": 3.16,
+          "heapDeltaMiB": 3.86,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 23.01,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 17.92
+        }
+      ]
+    },
+    {
+      "library": "Node CSV",
+      "scenario": "32-mib-s-sink",
+      "rows": 50000,
+      "median": {
+        "elapsedMs": 123.98,
+        "firstByteMs": 3.16,
+        "heapDeltaMiB": 8.36,
+        "inputBytes": 2000027,
+        "inputMiBPerSecond": 15.38,
+        "outputBytes": 2000027,
+        "rssDeltaMiB": 29.7
+      },
+      "samples": [
+        {
+          "elapsedMs": 124.95,
+          "firstByteMs": 3.22,
+          "heapDeltaMiB": 11.32,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 15.27,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 29.97
+        },
+        {
+          "elapsedMs": 115.23,
+          "firstByteMs": 2.97,
+          "heapDeltaMiB": 7.17,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 16.55,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 29.53
+        },
+        {
+          "elapsedMs": 123.98,
+          "firstByteMs": 3.16,
+          "heapDeltaMiB": 8.36,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 15.38,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 29.7
+        }
+      ]
+    },
+    {
+      "library": "Fast-CSV",
+      "scenario": "32-mib-s-sink",
+      "rows": 50000,
+      "median": {
+        "elapsedMs": 106.75,
+        "firstByteMs": 6.41,
+        "heapDeltaMiB": 14.78,
+        "inputBytes": 2000027,
+        "inputMiBPerSecond": 17.87,
+        "outputBytes": 2000027,
+        "rssDeltaMiB": 42.53
+      },
+      "samples": [
+        {
+          "elapsedMs": 106.55,
+          "firstByteMs": 6.39,
+          "heapDeltaMiB": 14.71,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 17.9,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 42.92
+        },
+        {
+          "elapsedMs": 106.75,
+          "firstByteMs": 6.41,
+          "heapDeltaMiB": 16.41,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 17.87,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 40.55
+        },
+        {
+          "elapsedMs": 107.46,
+          "firstByteMs": 6.69,
+          "heapDeltaMiB": 14.78,
+          "inputBytes": 2000027,
+          "inputMiBPerSecond": 17.75,
+          "outputBytes": 2000027,
+          "rssDeltaMiB": 42.53
+        }
+      ]
+    },
+    {
+      "library": "Exstream",
+      "scenario": "32-mib-s-sink",
+      "rows": 500000,
+      "median": {
+        "elapsedMs": 796.64,
+        "firstByteMs": 3.25,
+        "heapDeltaMiB": 16.77,
+        "inputBytes": 20000027,
+        "inputMiBPerSecond": 23.94,
+        "outputBytes": 20000027,
+        "rssDeltaMiB": 42.83
+      },
+      "samples": [
+        {
+          "elapsedMs": 796.64,
+          "firstByteMs": 3.38,
+          "heapDeltaMiB": 16.84,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 23.94,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 42.83
+        },
+        {
+          "elapsedMs": 800.31,
+          "firstByteMs": 3.23,
+          "heapDeltaMiB": 16.75,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 23.83,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 42.66
+        },
+        {
+          "elapsedMs": 793.51,
+          "firstByteMs": 3.25,
+          "heapDeltaMiB": 16.77,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 24.04,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 42.86
+        }
+      ]
+    },
+    {
+      "library": "Node CSV",
+      "scenario": "32-mib-s-sink",
+      "rows": 500000,
+      "median": {
+        "elapsedMs": 991.21,
+        "firstByteMs": 2.85,
+        "heapDeltaMiB": 28.41,
+        "inputBytes": 20000027,
+        "inputMiBPerSecond": 19.24,
+        "outputBytes": 20000027,
+        "rssDeltaMiB": 77.64
+      },
+      "samples": [
+        {
+          "elapsedMs": 991.21,
+          "firstByteMs": 3.26,
+          "heapDeltaMiB": 29.02,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 19.24,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 77.53
+        },
+        {
+          "elapsedMs": 1001.57,
+          "firstByteMs": 2.79,
+          "heapDeltaMiB": 24.55,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 19.04,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 77.64
+        },
+        {
+          "elapsedMs": 989.21,
+          "firstByteMs": 2.85,
+          "heapDeltaMiB": 28.41,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 19.28,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 78.52
+        }
+      ]
+    },
+    {
+      "library": "Fast-CSV",
+      "scenario": "32-mib-s-sink",
+      "rows": 500000,
+      "median": {
+        "elapsedMs": 833.19,
+        "firstByteMs": 6.64,
+        "heapDeltaMiB": 40.05,
+        "inputBytes": 20000027,
+        "inputMiBPerSecond": 22.89,
+        "outputBytes": 20000027,
+        "rssDeltaMiB": 97.42
+      },
+      "samples": [
+        {
+          "elapsedMs": 831.8,
+          "firstByteMs": 6.39,
+          "heapDeltaMiB": 40.05,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 22.93,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 97.42
+        },
+        {
+          "elapsedMs": 833.19,
+          "firstByteMs": 6.64,
+          "heapDeltaMiB": 47.38,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 22.89,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 105.8
+        },
+        {
+          "elapsedMs": 835.28,
+          "firstByteMs": 6.72,
+          "heapDeltaMiB": 31.27,
+          "inputBytes": 20000027,
+          "inputMiBPerSecond": 22.84,
+          "outputBytes": 20000027,
+          "rssDeltaMiB": 80.3
+        }
+      ]
+    },
+    {
+      "library": "Exstream",
+      "scenario": "32-mib-s-sink",
+      "rows": 5000000,
+      "median": {
+        "elapsedMs": 8272.57,
+        "firstByteMs": 3.15,
+        "heapDeltaMiB": 28.54,
+        "inputBytes": 200000027,
+        "inputMiBPerSecond": 23.06,
+        "outputBytes": 200000027,
+        "rssDeltaMiB": 71.25
+      },
+      "samples": [
+        {
+          "elapsedMs": 8272.57,
+          "firstByteMs": 3.24,
+          "heapDeltaMiB": 28.54,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 23.06,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 71.31
+        },
+        {
+          "elapsedMs": 8240.35,
+          "firstByteMs": 2.7,
+          "heapDeltaMiB": 28.53,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 23.15,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 70.86
+        },
+        {
+          "elapsedMs": 8287.27,
+          "firstByteMs": 3.15,
+          "heapDeltaMiB": 28.57,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 23.02,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 71.25
+        }
+      ]
+    },
+    {
+      "library": "Node CSV",
+      "scenario": "32-mib-s-sink",
+      "rows": 5000000,
+      "median": {
+        "elapsedMs": 9682.93,
+        "firstByteMs": 2.87,
+        "heapDeltaMiB": 34.89,
+        "inputBytes": 200000027,
+        "inputMiBPerSecond": 19.7,
+        "outputBytes": 200000027,
+        "rssDeltaMiB": 77.98
+      },
+      "samples": [
+        {
+          "elapsedMs": 9682.93,
+          "firstByteMs": 2.88,
+          "heapDeltaMiB": 35.01,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 19.7,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 78.75
+        },
+        {
+          "elapsedMs": 9696.28,
+          "firstByteMs": 2.79,
+          "heapDeltaMiB": 34.89,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 19.67,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 77.98
+        },
+        {
+          "elapsedMs": 9352.51,
+          "firstByteMs": 2.87,
+          "heapDeltaMiB": 33.19,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 20.39,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 77.41
+        }
+      ]
+    },
+    {
+      "library": "Fast-CSV",
+      "scenario": "32-mib-s-sink",
+      "rows": 5000000,
+      "median": {
+        "elapsedMs": 8059.43,
+        "firstByteMs": 6.12,
+        "heapDeltaMiB": 39.71,
+        "inputBytes": 200000027,
+        "inputMiBPerSecond": 23.67,
+        "outputBytes": 200000027,
+        "rssDeltaMiB": 94.98
+      },
+      "samples": [
+        {
+          "elapsedMs": 7944.6,
+          "firstByteMs": 6.12,
+          "heapDeltaMiB": 38.83,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 24.01,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 94.05
+        },
+        {
+          "elapsedMs": 8059.43,
+          "firstByteMs": 5.86,
+          "heapDeltaMiB": 39.71,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 23.67,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 94.98
+        },
+        {
+          "elapsedMs": 8111.66,
+          "firstByteMs": 6.23,
+          "heapDeltaMiB": 41.42,
+          "inputBytes": 200000027,
+          "inputMiBPerSecond": 23.51,
+          "outputBytes": 200000027,
+          "rssDeltaMiB": 100.03
+        }
+      ]
+    }
+  ],
+  "scaling": [
+    {
+      "library": "Exstream",
+      "inputGrowth": 100,
+      "heapGrowth": 7.39,
+      "rssGrowth": 3.96
+    },
+    {
+      "library": "Node CSV",
+      "inputGrowth": 100,
+      "heapGrowth": 4.17,
+      "rssGrowth": 2.63
+    },
+    {
+      "library": "Fast-CSV",
+      "inputGrowth": 100,
+      "heapGrowth": 2.69,
+      "rssGrowth": 2.23
+    }
+  ]
+}

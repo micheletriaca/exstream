@@ -30,6 +30,18 @@ The reported heap and RSS values are sampled 10 ms peak deltas, not exact
 allocation totals. The entire input buffer is retained outside the measured
 delta so the memory figure represents pipeline working memory.
 
+Run the memory-scaling comparison under backpressure and regenerate
+`streaming-csv-memory-baseline.json`:
+
+```shell
+npm run benchmark:csv:memory
+```
+
+This variant compares 50,000, 500,000, and 5,000,000 rows with the throttled
+sink. Input grows by 100 times between the smallest and largest datasets. Its
+synthetic readable repeats pre-built valid CSV chunks, so the source itself uses
+constant memory and does not pre-grow the JavaScript heap before measurement.
+
 Benchmark results depend on the Node.js version, operating system and CPU. Compare
 results on equivalent environments; `baseline.json` records the environment used
 for its generation.
