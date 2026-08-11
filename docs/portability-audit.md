@@ -1,6 +1,6 @@
 # Core portability audit
 
-This audit records the Node.js coupling that exists in Exstream 0.26. It does
+This audit records the Node.js coupling that exists in Exstream 0.27. It does
 not claim browser compatibility. Its purpose is to define extraction boundaries
 for the portable core planned for 0.30 without changing the 0.26 public API.
 
@@ -39,6 +39,22 @@ The constructor accepts Node readable streams and async iterables, while `pipe`,
 `through` and `toNodeStream` contain writable/transform integration. Iterable,
 async iterable and promise sources are the natural portable protocol. Node and
 Web Stream support should adapt to that protocol at the package boundary.
+
+Writable destinations are watched with native `finished()` and automatic
+listener cleanup. Error watching is disabled there because Exstream errors are
+records in the pipeline rather than fatal Node stream errors. Native
+`pipeline()` is therefore not used internally: treating every record error as a
+fatal pipeline failure would change the existing public contract instead of
+simplifying the boundary.
+
+### Fan-out and buffering
+
+Reliable consumers and non-blocking observers now have separate ownership and
+cleanup paths. `fork()` consumers participate in source backpressure. Observer
+ingress has its own configurable buffer and explicit `error`, `drop-oldest`, or
+`drop-newest` overflow policy; an observer that ends early detaches without
+pausing or retaining its source. Current, peak, and dropped counts are exposed
+on each stream.
 
 ### Byte-oriented operators
 

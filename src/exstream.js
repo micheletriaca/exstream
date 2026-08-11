@@ -3,7 +3,7 @@
 */
 
 const EventEmitter = require('events').EventEmitter
-const { Readable } = require('stream')
+const { finished, Readable } = require('stream')
 const _ = require('./utils')
 const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 
@@ -512,7 +512,6 @@ class Exstream extends EventEmitter {
         nextCallback = null
       }
     }
-    dest.on('drain', drainCallback)
     this.#synchronous = false
     if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
     const canClose = dest !== process.stdout && dest !== process.stderr && options.end !== false
@@ -520,7 +519,10 @@ class Exstream extends EventEmitter {
     const s = this.consume((err, x, push, next) => {
       if (x === _.nil) {
         dest.off('drain', drainCallback)
-        scheduleMicrotask(() => end.call(dest))
+        scheduleMicrotask(() => {
+          end.call(dest)
+          if (!canClose) s.end()
+        })
       } else if (err) {
         // A next turn is needed to exit from a promise context.
         scheduleNextTurn(() => {
@@ -533,9 +535,10 @@ class Exstream extends EventEmitter {
         next()
       }
     })
-    const onEnd = () => s.end()
-    this.#addOnceListener('close', dest, onEnd)
-    this.#addOnceListener('finish', dest, onEnd)
+    dest.on('drain', drainCallback)
+    s.#destroyers.push(() => dest.off('drain', drainCallback))
+    const stopWatching = finished(dest, { cleanup: true, error: false }, () => s.end())
+    s.#destroyers.push(stopWatching)
     dest.emit('pipe', this)
     scheduleNextTurn(() => s.resume())
     return dest
@@ -680,6 +683,7 @@ class Exstream extends EventEmitter {
       return this.toPromise()
     }
     const res = []
+    /* v8 ignore next 5 -- V8 does not attribute this synchronous private callback. */
     this.consumeSync((err, x, push) => {
       if (err) throw err
       else if (x === _.nil) push(null, _.nil)

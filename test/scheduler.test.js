@@ -22,12 +22,25 @@ test('scheduler preserves microtask and next-turn ordering', async () => {
 test('next-turn scheduling falls back to browser timers', async () => {
   vi.stubGlobal('setImmediate', undefined)
   try {
+    const cancelled = vi.fn()
+    scheduleNextTurn(cancelled)()
     await expect(new Promise((resolve) => scheduleNextTurn(() => resolve('done')))).resolves.toBe(
       'done',
     )
+    expect(cancelled).not.toHaveBeenCalled()
   } finally {
     vi.unstubAllGlobals()
   }
+})
+
+test('a scheduled next turn can be cancelled', async () => {
+  const callback = vi.fn()
+  const cancel = scheduleNextTurn(callback)
+  cancel()
+
+  await new Promise((resolve) => scheduleNextTurn(resolve))
+
+  expect(callback).not.toHaveBeenCalled()
 })
 
 test('monotonic clock does not move backwards', () => {

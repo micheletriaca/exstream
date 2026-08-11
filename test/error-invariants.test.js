@@ -24,3 +24,9 @@ test('normalized error-like objects preserve their supplied stack', () => {
   expect(wrapped.reason).toBe(reason)
   expect(wrapped.exstreamInput).toBe('input')
 })
+
+test('synchronous values rethrows an error record unchanged', () => {
+  const reason = Error('synchronous failure')
+
+  expect(() => _([reason]).values()).toThrow(reason)
+})

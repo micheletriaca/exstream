@@ -9,6 +9,7 @@ const { Transform } = require('stream')
 const { StringDecoder } = require('string_decoder')
 
 const _m = (module.exports = {})
+const noCancel = () => undefined
 
 _m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
 
@@ -127,7 +128,8 @@ _m.ratelimit = _.curry((num, ms, s) => {
   if (ms === null) throw Error('error in .ratelimit(). ms must be a non-negative finite number')
   let sent = 0
   let startWindow
-  return s.consume((err, x, push, next) => {
+  let timer
+  const result = s.consume((err, x, push, next) => {
     if (err) {
       push(err)
       next()
@@ -148,7 +150,7 @@ _m.ratelimit = _.curry((num, ms, s) => {
       push(null, x)
       next()
     } else {
-      setTimeout(
+      timer = setTimeout(
         () => {
           startWindow = monotonicNow()
           sent = 1
@@ -159,6 +161,11 @@ _m.ratelimit = _.curry((num, ms, s) => {
       )
     }
   })
+  result.once('end', () => {
+    clearTimeout(timer)
+    timer = void 0
+  })
+  return result
 })
 
 _m.throttle = _.curry((ms, s) => {
@@ -656,7 +663,8 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null
   let start = null
   let end = null
-  return s.consume((err, x, push, next) => {
+  let cancelTurn = noCancel
+  const result = s.consume((err, x, push, next) => {
     if (err) {
       push(err)
       next()
@@ -667,7 +675,8 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
       if (start === null) start = lastSnapshot
       else end = lastSnapshot
       if (end !== null && end - start > maxSyncExecutionTime) {
-        scheduleNextTurn(() => {
+        cancelTurn = scheduleNextTurn(() => {
+          cancelTurn = noCancel
           push(null, x)
           start = monotonicNow()
           next()
@@ -678,6 +687,11 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
       }
     }
   })
+  result.once('end', () => {
+    cancelTurn()
+    cancelTurn = noCancel
+  })
+  return result
 })
 
 _m.tap = _.curry((fn, s) =>
@@ -726,9 +740,9 @@ _m.pipeline = () =>
         if (target[propKey] || !Exstream.prototype[propKey]) {
           return Reflect.get(target, propKey, receiver)
         }
-        return function (...args) {
+        return (...args) => {
           target.definitions.push({ method: propKey, args })
-          return this
+          return receiver
         }
       },
     },

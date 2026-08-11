@@ -39,6 +39,52 @@ test('pipe removes every listener it installs on a destination', async () => {
   removeSentinels()
 })
 
+test('destroying a destination early stops its source and removes pipe listeners', async () => {
+  let close
+  const closed = new Promise((resolve) => {
+    close = resolve
+  })
+  const destination = new Writable({
+    objectMode: true,
+    highWaterMark: 1,
+    write() {
+      this.destroy()
+    },
+  })
+  const events = ['close', 'drain', 'error', 'finish']
+  destination.on('close', close)
+  const baseline = listenerSnapshot(destination, events)
+  let produced = 0
+  const source = _((write, next) => {
+    write(produced++)
+    next()
+  })
+
+  source.pipe(destination)
+  await closed
+  await nextTurn()
+
+  expect(source.state).toBe('destroyed')
+  expect(produced).toBe(1)
+  expect(listenerSnapshot(destination, events)).toEqual(baseline)
+  destination.off('close', close)
+})
+
+test('pipe with end disabled releases destination listeners when its source ends', async () => {
+  const { destination, events, removeSentinels } = writableWithSentinels()
+  const baseline = listenerSnapshot(destination, events)
+  const source = _([1, 2, 3])
+
+  source.pipe(destination, { end: false })
+  await new Promise((resolve) => source.once('end', resolve))
+  await nextTurn()
+
+  expect(destination.writableEnded).toBe(false)
+  expect(listenerSnapshot(destination, events)).toEqual(baseline)
+  removeSentinels()
+  destination.destroy()
+})
+
 test('through writable removes every listener it installs on a destination', async () => {
   const { destination, events, removeSentinels } = writableWithSentinels()
   const baseline = listenerSnapshot(destination, events)
@@ -98,4 +144,35 @@ test('destroy prevents pending resolve work from starting more tasks', async () 
   expect(received).toEqual([])
   expect(resolved.ended).toBe(true)
   expect(resolved.eventNames()).toEqual([])
+})
+
+test('destroy clears a pending ratelimit timer', () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const limited = _([1, 2]).ratelimit(1, 1000)
+    limited.resume()
+
+    expect(vi.getTimerCount()).toBe(1)
+    limited.destroy()
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('destroy cancels a pending makeAsync turn', () => {
+  vi.useFakeTimers({ toFake: ['setImmediate', 'clearImmediate'] })
+  const clock = vi.spyOn(globalThis.performance, 'now')
+  clock.mockReturnValueOnce(0).mockReturnValueOnce(1)
+  try {
+    const asynchronous = _([1, 2]).makeAsync(0)
+    asynchronous.resume()
+
+    expect(vi.getTimerCount()).toBe(1)
+    asynchronous.destroy()
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    clock.mockRestore()
+    vi.useRealTimers()
+  }
 })
