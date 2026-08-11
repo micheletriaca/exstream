@@ -6,6 +6,7 @@ const EventEmitter = require('events').EventEmitter
 const { finished, Readable } = require('stream')
 const _ = require('./utils')
 const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
+const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
 
 function getErrorMessage(value) {
   if (value && value.message !== void 0) return String(value.message)
@@ -184,9 +185,15 @@ class Exstream extends EventEmitter {
     return this._write(x)
   }
 
-  #enqueue = (x) => {
-    if (x === _.nil) {
-      this.#buffer.push(x)
+  writeData(value) {
+    if (this.#nilPushed) throw Error('Cannot write to stream after nil')
+    return this._writeData(value)
+  }
+
+  #enqueue = (type, value, input, fatal) => {
+    if (type === END) {
+      const frame = endFrame
+      this.#buffer.push(frame)
       return true
     }
     if (this.#buffered === this.#bufferLimit) {
@@ -196,57 +203,113 @@ class Exstream extends EventEmitter {
       this.#buffer.shift()
       this.#buffered--
     }
-    this.#buffer.push(x)
+    const frame = type === DATA ? dataFrame(value) : errorFrame(value, input, fatal)
+    this.#buffer.push(frame)
     this.#buffered++
     this.#peakBuffered = Math.max(this.#peakBuffered, this.#buffered)
     return true
   }
 
   _write(x, skipBackPressure = false) {
-    if (x === _.nil) this.#nilPushed = true
-    const isError = _.isError(x)
-    const xx = isError ? null : x
-    const err = isError ? x : void 0
+    if (x && typeof x === 'object' && isDataValue(x))
+      return this._writeData(x.value, skipBackPressure)
+    if (x === _.nil) return this.#writeControlRecord(END, void 0, void 0, false, skipBackPressure)
+    if (_.isError(x))
+      return this.#writeControlRecord(ERROR, x, x.exstreamInput, false, skipBackPressure)
+    return this._writeData(x, skipBackPressure)
+  }
 
+  _writeData(value, skipBackPressure = false) {
     if (this.paused && !skipBackPressure) {
-      this.#enqueue(x)
+      this.#enqueue(DATA, value)
     } else if (this.#consumeSyncFn) {
-      this.#consumeSyncFn(err, xx, this.#send)
+      this.#consumeSyncFn(void 0, value, this.#push)
     } else if (this.#consumeFn) {
       this.#nextCalled = false
       let syncNext = true
-      this.#consumeFn(err, xx, this.#send, () => {
+      this.#consumeFn(void 0, value, this.#push, () => {
         this.#nextCalled = true
         if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
       })
       syncNext = false
       if (!this.#nextCalled) this.pause(true)
     } else {
-      this.#send(err, xx)
+      this.#sendData(value)
     }
 
     return !this.paused || skipBackPressure
   }
 
-  #send = (err, x) => {
-    if (x === _.nil) scheduleMicrotask(() => this.end())
-    // i store it locally because this array could be filtered
-    // during the loop if one consumer ends (for ex. it can happen withtake or slice)
+  #writeControlRecord = (type, value, input, fatal, skipBackPressure = false) => {
+    if (type === END) this.#nilPushed = true
+    const err = type === ERROR ? value : void 0
+    const x = type === END ? _.nil : null
+
+    if (this.paused && !skipBackPressure) {
+      this.#enqueue(type, value, input, fatal)
+    } else if (this.#consumeSyncFn) {
+      this.#consumeSyncFn(err, x, this.#push)
+    } else if (this.#consumeFn) {
+      this.#nextCalled = false
+      let syncNext = true
+      this.#consumeFn(err, x, this.#push, () => {
+        this.#nextCalled = true
+        if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
+      })
+      syncNext = false
+      if (!this.#nextCalled) this.pause(true)
+    } else {
+      this.#sendControl(type, value, input, fatal)
+    }
+
+    return !this.paused || skipBackPressure
+  }
+
+  #push = (err, x) => {
+    if (err) this.#sendControl(ERROR, err, err.exstreamInput, false)
+    else if (x === _.nil) this.#sendControl(END, void 0, void 0, false)
+    else this.#sendData(x)
+  }
+
+  #sendData = (value) => {
     const consumers = this.#consumers
-    if (err && !this.#consumers.length) this.emit('error', err)
     for (let i = 0, len = consumers.length; i < len; i++) {
-      consumers[i].write(err || x)
+      consumers[i]._writeData(value)
     }
     const observers = this.#observers
     for (let i = 0, len = observers.length; i < len; i++) {
-      observers[i].#writeObserved(err || x)
+      observers[i].#writeObservedData(value)
     }
   }
 
-  #writeObserved = (x) => {
+  #sendControl = (type, value, input, fatal) => {
+    if (type === END) scheduleMicrotask(() => this.end())
+    // i store it locally because this array could be filtered
+    // during the loop if one consumer ends (for ex. it can happen withtake or slice)
+    const consumers = this.#consumers
+    if (type === ERROR && !this.#consumers.length) this.emit('error', value)
+    for (let i = 0, len = consumers.length; i < len; i++) {
+      consumers[i].#writeControlRecord(type, value, input, fatal)
+    }
+    const observers = this.#observers
+    for (let i = 0, len = observers.length; i < len; i++) {
+      observers[i].#writeObservedControl(type, value, input, fatal)
+    }
+  }
+
+  #writeObservedData = (value) => {
     if (this.ended || this.#state === 'ending') return
     try {
-      this._write(x)
+      this._writeData(value)
+    } catch (error) {
+      this.abort(error)
+    }
+  }
+
+  #writeObservedControl = (type, value, input, fatal) => {
+    if (this.ended || this.#state === 'ending') return
+    try {
+      this.#writeControlRecord(type, value, input, fatal)
     } catch (error) {
       this.abort(error)
     }
@@ -278,7 +341,7 @@ class Exstream extends EventEmitter {
       this.#buffer = []
       this.#buffered = 0
     }
-    if (!this.#nilPushed) this._write(_.nil)
+    if (!this.#nilPushed) this.#writeControlRecord(END, void 0, void 0, false)
     if (this.paused) this.#flushBuffer(true)
     this.#state = terminalState
     if (terminalState === 'aborted') this.emit('abort', this.#abortReason)
@@ -325,11 +388,16 @@ class Exstream extends EventEmitter {
     let i = 0
     for (const len = this.#buffer.length; i < len; i++) {
       // write can synchronously pause the stream in case of back pressure
-      if (!this._write(this.#buffer[i], force)) break
+      const frame = this.#buffer[i]
+      const wrote =
+        frame.type === DATA
+          ? this._writeData(frame.value, force)
+          : this.#writeControlRecord(frame.type, frame.error, frame.input, frame.fatal, force)
+      if (!wrote) break
     }
     const removed = this.#buffer.slice(0, i + 1)
     this.#buffer = this.#buffer.slice(i + 1)
-    this.#buffered -= removed.filter((value) => value !== _.nil).length
+    this.#buffered -= removed.filter((frame) => frame.type !== END).length
   }
 
   #consumeSourceData = () => {
@@ -639,7 +707,7 @@ class Exstream extends EventEmitter {
             merged.off('end', endListener)
             merged.off('drain', drainCallback)
             resolve()
-          } else if (!merged.write(err || x)) {
+          } else if (!(err ? merged.write(err) : merged.writeData(x))) {
             nextCallback = next
           } else {
             next()

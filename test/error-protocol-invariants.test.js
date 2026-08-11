@@ -18,7 +18,7 @@ test('an error-like object remains an ordinary data value', () => {
   expect(_([value]).values()).toEqual([value])
 })
 
-test('pushing an Error as data still routes it through the error channel', async () => {
+test('pushing an Error through the data argument does not reclassify it', async () => {
   const reason = Error('ambiguous value')
   const errors = []
 
@@ -30,8 +30,53 @@ test('pushing an Error as data still routes it through the error channel', async
     .errors((error) => errors.push(error))
     .toPromise()
 
-  expect(values).toEqual([])
-  expect(errors).toEqual([reason])
+  expect(values).toEqual([reason])
+  expect(errors).toEqual([])
+})
+
+test('an Error can be marked as data in an iterable source', () => {
+  const reason = Error('business value')
+
+  expect(
+    _([_.data(reason)])
+      .map((value) => value)
+      .values(),
+  ).toEqual([reason])
+})
+
+test('writeData writes an Error without routing it through the error channel', async () => {
+  const reason = Error('manual value')
+  const source = _()
+  const errors = []
+  const result = source.errors((error) => errors.push(error)).toPromise()
+
+  source.writeData(reason)
+  source.end()
+
+  await expect(result).resolves.toEqual([reason])
+  expect(errors).toEqual([])
+})
+
+test('an Error data value remains data across reliable forks', async () => {
+  const reason = Error('forked value')
+  const source = _([_.data(reason)])
+  const first = source.fork().toPromise()
+  const second = source.fork().toPromise()
+
+  await expect(Promise.all([first, second])).resolves.toEqual([[reason], [reason]])
+})
+
+test('merge does not reclassify an Error data value', async () => {
+  const reason = Error('merged value')
+  const errors = []
+
+  const values = await _([_([_.data(reason)])])
+    .merge()
+    .errors((error) => errors.push(error))
+    .toPromise()
+
+  expect(values).toEqual([reason])
+  expect(errors).toEqual([])
 })
 
 test('an error record is delivered to every fork without ending data flow', async () => {

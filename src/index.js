@@ -4,10 +4,11 @@ const methods = require('./methods')
 const csv = require('./csv')
 const joins = require('./joins')
 const utils = require('./utils')
+const { dataValue } = require('./protocol')
 
 const _ = (module.exports = Object.assign(
   (xs, options) => new Exstream(xs, options),
-  { BufferOverflowError },
+  { BufferOverflowError, data: dataValue },
   utils,
   csv,
   joins,

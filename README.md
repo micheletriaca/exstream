@@ -48,5 +48,22 @@ The same `{ bufferLimit, overflow }` options can be passed as the second
 argument to `exs()`. The default limit is `Infinity` and the default overflow
 policy is `error`. `drop-oldest` and `drop-newest` require a finite limit.
 
+## Data and error records
+
+For compatibility, `stream.write(error)` and `push(error)` create an error
+record. The second argument of `push` is always data, so `push(null, error)`
+passes an `Error` object through the pipeline as an ordinary value.
+
+Use `exs.data(value)` to mark a value in an iterable source explicitly, or
+`stream.writeData(value)` when writing manually:
+
+```javascript
+const errorAsData = exs([exs.data(new Error('business value'))])
+const writable = exs()
+
+writable.writeData(new Error('another business value'))
+writable.end()
+```
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).
