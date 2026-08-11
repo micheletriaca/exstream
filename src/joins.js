@@ -42,6 +42,10 @@ _m.sortedGroupBy = _.curry((fnOrString, s) => {
 })
 
 _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, s) => {
+  buffer = _.asPositiveInteger(buffer)
+  if (buffer === null) {
+    throw Error('error in .sortedJoin(). buffer must be a positive integer')
+  }
   const slaveFn = type === 'right' ? joinKeyOrFnA : joinKeyOrFnB
   const masterFn = type === 'right' ? joinKeyOrFnB : joinKeyOrFnA
   const getterSlave = _.isString(slaveFn) ? _.makeGetter(slaveFn) : slaveFn

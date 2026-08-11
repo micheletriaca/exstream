@@ -11,6 +11,25 @@ _.isFunction = (x) => typeof x === 'function'
 _.isString = (x) => typeof x === 'string'
 _.isError = (x) => x instanceof Error
 _.isNodeStream = (x) => x && _.isFunction(x.on) && _.isFunction(x.pipe)
+_.asPositiveInteger = (value, allowInfinity = false) => {
+  let number
+  try {
+    number = Number(value)
+  } catch {
+    return null
+  }
+  if (allowInfinity && number === Infinity) return number
+  return Number.isInteger(number) && number > 0 ? number : null
+}
+_.asNonNegativeFiniteNumber = (value) => {
+  let number
+  try {
+    number = Number(value)
+  } catch {
+    return null
+  }
+  return Number.isFinite(number) && number >= 0 ? number : null
+}
 _.escapeRegExp = (text) => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 _.partial = function (f, ...args) {
   return function (...args2) {

@@ -120,6 +120,10 @@ _m.where = _.curry((props, s) =>
 _m.findWhere = _.curry((props, s) => s.where(props).take(1))
 
 _m.ratelimit = _.curry((num, ms, s) => {
+  num = _.asPositiveInteger(num)
+  ms = _.asNonNegativeFiniteNumber(ms)
+  if (num === null) throw Error('error in .ratelimit(). num must be a positive integer')
+  if (ms === null) throw Error('error in .ratelimit(). ms must be a non-negative finite number')
   let sent = 0
   let startWindow
   return s.consume((err, x, push, next) => {
@@ -157,6 +161,8 @@ _m.ratelimit = _.curry((num, ms, s) => {
 })
 
 _m.throttle = _.curry((ms, s) => {
+  ms = _.asNonNegativeFiniteNumber(ms)
+  if (ms === null) throw Error('error in .throttle(). ms must be a non-negative finite number')
   let last = 0 - ms
   return s.consume((err, x, push, next) => {
     const now = new Date().getTime()
@@ -270,8 +276,8 @@ _m.asyncFilter = _.curry((fn, s) =>
 
 _m.batch = _.curry((size, s) => {
   let buffer = []
-  size = parseFloat(size)
-  if (isNaN(size)) throw Error('error in .batch(). size must be a valid number')
+  size = _.asPositiveInteger(size)
+  if (size === null) throw Error('error in .batch(). size must be a valid number')
   return s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
@@ -346,10 +352,23 @@ _m.omit = _.curry((fields, s) =>
 
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
+  const seenComposite = new Map()
+  const compositeLeaf = Symbol('uniqBy composite leaf')
   const isFn = _.isFunction(cfg)
   if (!isFn && !Array.isArray(cfg)) cfg = [cfg]
 
-  const fn = !isFn ? (x) => cfg.map((f) => x[f]).join('_') : cfg
+  const fn = !isFn ? (x) => cfg.map((f) => x[f]) : cfg
+
+  function hasSeenCompositeKey(key) {
+    let level = seenComposite
+    for (const part of key) {
+      if (!level.has(part)) level.set(part, new Map())
+      level = level.get(part)
+    }
+    if (level.has(compositeLeaf)) return true
+    level.set(compositeLeaf, true)
+    return false
+  }
 
   return s.consumeSync((err, x, push) => {
     if (err) {
@@ -359,8 +378,9 @@ _m.uniqBy = _.curry((cfg, s) => {
     } else {
       try {
         const k = fn(x)
-        if (!seen.has(k)) {
-          seen.add(k)
+        const alreadySeen = isFn ? seen.has(k) : hasSeenCompositeKey(k)
+        if (!alreadySeen) {
+          if (isFn) seen.add(k)
           push(null, x)
         }
       } catch (e) {
@@ -375,6 +395,10 @@ _m.massThen = _.curry((fn, s) => s.map((x) => x.then(fn)))
 _m.massCatch = _.curry((fn, s) => s.map((x) => x.catch(fn)))
 
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
+  parallelism = _.asPositiveInteger(parallelism, true)
+  if (parallelism === null) {
+    throw Error('error in .resolve(). parallelism must be a positive integer or Infinity')
+  }
   const promises = []
   let ended = false
 
@@ -412,9 +436,9 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
     } else {
       const resPointer = {}
       promises.push(resPointer)
-      el.then((res) => handlePromiseResult(false, res, resPointer, push, next)).catch((res) =>
-        handlePromiseResult(true, res, resPointer, push, next),
-      )
+      el.then((res) => handlePromiseResult(false, res, resPointer, push, next)).catch((res) => {
+        handlePromiseResult(true, new ExstreamError(res, el), resPointer, push, next)
+      })
       if (promises.length < parallelism) next()
     }
   })
@@ -624,6 +648,10 @@ _m.sortBy = _.curry((fn, s) =>
 _m.sort = (s) => _m.sortBy(void 0, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
+  maxSyncExecutionTime = _.asNonNegativeFiniteNumber(maxSyncExecutionTime)
+  if (maxSyncExecutionTime === null) {
+    throw Error('error in .makeAsync(). maxSyncExecutionTime must be a non-negative finite number')
+  }
   let lastSnapshot = null
   let start = null
   let end = null

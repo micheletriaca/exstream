@@ -6,20 +6,33 @@ const EventEmitter = require('events').EventEmitter
 const { Readable } = require('stream')
 const _ = require('./utils')
 
+function getErrorMessage(value) {
+  if (value && value.message !== void 0) return String(value.message)
+  if (typeof value === 'string') return value
+  try {
+    const serialized = JSON.stringify(value)
+    if (serialized !== void 0) return serialized
+  } catch {
+    // Fall back to the standard string conversion for cyclic objects.
+  }
+  return String(value)
+}
+
 class ExstreamError extends Error {
   constructor(e, exstreamInput) {
-    super(e.message)
-    if (e.exstreamError) {
+    super(getErrorMessage(e))
+    if (e && e.exstreamError) {
       return e
     } else if (e instanceof Error) {
       e.exstreamError = true
       e.exstreamInput = exstreamInput
       return e
     }
-    Object.assign(this, e)
-    if (e.stack) this.stack = e.stack
+    if (e && (typeof e === 'object' || typeof e === 'function')) Object.assign(this, e)
+    if (e && e.stack) this.stack = e.stack
     this.exstreamError = true
     this.exstreamInput = exstreamInput
+    this.reason = e
   }
 }
 
@@ -441,6 +454,10 @@ class Exstream extends EventEmitter {
   }
 
   merge(parallelism = Infinity, preserveOrder = false) {
+    parallelism = _.asPositiveInteger(parallelism, true)
+    if (parallelism === null) {
+      throw Error('error in .merge(). parallelism must be a positive integer or Infinity')
+    }
     this.#synchronous = false
 
     const merged = new Exstream()
