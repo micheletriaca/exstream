@@ -11,6 +11,8 @@ yarn add exstream.js
 npm install exstream.js
 ```
 
+Exstream requires Node.js 22 or newer.
+
 ## How to use it
 
 Here is a sync example:

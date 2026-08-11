@@ -60,7 +60,7 @@ test('fork and merging with promises in second fork', async () => {
         .map(async (i) => i * 3)
         .resolve(),
     ])
-      .merge(1)
+      .merge(2, true)
       .toArray(resolve)
   })
 

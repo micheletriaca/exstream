@@ -138,11 +138,11 @@ class Exstream extends EventEmitter {
   }
 
   start() {
-    this.#autostart = true
     // setImmediate is needed to guarantee that .pipe() has resumed the source stream
     return new Promise((resolve) =>
       setImmediate(() => {
-        this.resume()
+        this.#autostart = true
+        this.#checkBackPressure()
         resolve()
       }),
     )
