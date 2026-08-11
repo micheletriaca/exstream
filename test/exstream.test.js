@@ -613,22 +613,19 @@ test('multipipe', () => new Promise(resolve => {
   */
   const s = _()
   const res = []
-  s.merge(2, false).pipe(h.getSlowWritable(res, 0, 1))
+  s.merge(2, false)
+    .pipe(h.getSlowWritable(res, 0, 1))
+    .on('finish', () => {
+      expect(res).toHaveLength(22)
+      expect(res.filter(x => x === '0')).toHaveLength(10)
+      expect(res.filter(x => x === '1')).toHaveLength(10)
+      expect(res.filter(x => x !== '0' && x !== '1')).toEqual(['a', 'b'])
+      resolve()
+    })
   const s1 = _(Array(10).fill('0'))
   const s2 = _(Array(10).fill('1'))
   s.write(s1)
   s.write(s2)
   s.write(_(['a', 'b']))
   s.write(_.nil)
-  setImmediate(() => {
-    resolve()
-    /* eslint-disable array-element-newline */
-    expect(res).toEqual([
-      '0', '1', '0', '1', '0',
-      '1', '0', '1', '0', '1',
-      '0', '1', '0', '1', '0',
-      '1', '0', '1', '0', '1',
-      'a', 'b',
-    ])
-  })
 }))
