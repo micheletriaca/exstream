@@ -16,7 +16,7 @@ test('throw in async mapping', async () => {
         push(error)
       })
       .toPromise()
-  } catch(error) {
+  } catch (error) {
     expect(error.message).toEqual('big booom in the async pipeline')
   }
 })
@@ -34,7 +34,7 @@ test('throw in sync mapping', () => {
         push(error)
       })
       .values()
-  } catch(error) {
+  } catch (error) {
     expect(error.message).toEqual('big booom in the sync pipeline')
   }
 })

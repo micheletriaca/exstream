@@ -4,7 +4,7 @@ const _ = require('../src/index')
 test('csv', () => {
   _(['a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n'])
     .csv({ header: true })
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([
         { a: '1', b: '2', c: '3' },
         { a: 'ciao "amico"', b: 'multiline\nrow', c: '3' },
@@ -13,7 +13,7 @@ test('csv', () => {
 
   _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
     .csv({ header: true })
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([
         { a: '1', b: '2', c: '3' },
         { a: 'ciao "amico"', b: 'multiline\nrow', c: '3' },
@@ -22,7 +22,7 @@ test('csv', () => {
 
   _([Buffer.from('a,b,c\n1,2,3\n"ciao "'), Buffer.from('"amico""","multiline\nrow",3\n')])
     .csv({ header: ['aa', 'bb', 'cc'] })
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([
         { aa: 'a', bb: 'b', cc: 'c' },
         { aa: '1', bb: '2', cc: '3' },
@@ -31,8 +31,8 @@ test('csv', () => {
     })
 
   _([Buffer.from('a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n')])
-    .csv({ header: row => row.map(x => x + x) })
-    .toArray(res => {
+    .csv({ header: (row) => row.map((x) => x + x) })
+    .toArray((res) => {
       expect(res).toEqual([
         { aa: '1', bb: '2', cc: '3' },
         { aa: 'ciao "amico"', bb: 'multiline\nrow', cc: '3' },
@@ -41,7 +41,7 @@ test('csv', () => {
 
   _([Buffer.from('a,b,c\r\n1,2,3\r\n"ciao ""amico""","multi,li""n""e\nrow","3""bis"""\n')])
     .csv({ header: false })
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([
         ['a', 'b', 'c'],
         ['1', '2', '3'],
@@ -122,7 +122,10 @@ test('csv fast mode', () => {
 })
 
 test('csv stringify - non string values', () => {
-  const res = _([[1, false, true], [null, 5, 6]])
+  const res = _([
+    [1, false, true],
+    [null, 5, 6],
+  ])
     .csvStringify()
     .values()
     .join('')
@@ -130,7 +133,10 @@ test('csv stringify - non string values', () => {
 })
 
 test('csv stringify - injected header', () => {
-  const res = _([['1', '2', '3'], ['4', '5', '6']])
+  const res = _([
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+  ])
     .csvStringify({ header: ['h1', null, 'h3'] })
     .values()
     .join('')
@@ -138,7 +144,10 @@ test('csv stringify - injected header', () => {
 })
 
 test('csv stringify - injected header + objects', () => {
-  const res = _([{ a: 1, b: 2 }, { a: 3, b: 4 }])
+  const res = _([
+    { a: 1, b: 2 },
+    { a: 3, b: 4 },
+  ])
     .csvStringify({ header: ['a'] })
     .values()
     .join('')
@@ -146,7 +155,10 @@ test('csv stringify - injected header + objects', () => {
 })
 
 test('csv stringify - autodetect header + objects', () => {
-  const res = _([{ a: 1, b: 2 }, { a: 3, b: 4 }])
+  const res = _([
+    { a: 1, b: 2 },
+    { a: 3, b: 4 },
+  ])
     .csvStringify({ header: true })
     .values()
     .join('')
@@ -156,7 +168,10 @@ test('csv stringify - autodetect header + objects', () => {
 test('csv stringify - autodetect header + arrays throw an error', () => {
   let ex = null
   try {
-    _([['1', '2', '3'], ['4', '5', '6']])
+    _([
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+    ])
       .csvStringify({ header: true })
       .values()
       .join('')

@@ -16,7 +16,7 @@ npm install exstream.js
 Here is a sync example:
 
 ```javascript
-const exs = require('exstream.js');
+const exs = require('exstream.js')
 
 const res = exs([1, 2, 3])
   .reduce((memo, x) => memo + x, 0)

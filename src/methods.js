@@ -7,7 +7,7 @@ const { Exstream, ExstreamError } = require('./exstream.js')
 const { Transform } = require('stream')
 const { StringDecoder } = require('string_decoder')
 
-const _m = module.exports = {}
+const _m = (module.exports = {})
 
 _m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
 
@@ -42,11 +42,17 @@ _m.encode = _.curry((encoding, s) => {
       push(null, str)
       if (isNil) push(null, _.nil)
     } catch (e) {
-      push(new ExstreamError({
-        message:
-          'error in .encode(). expected string, Buffer, ' +
-          'ArrayBuffer, Array, or Array-like Object. Got ' + typeof x,
-      }, x))
+      push(
+        new ExstreamError(
+          {
+            message:
+              'error in .encode(). expected string, Buffer, ' +
+              'ArrayBuffer, Array, or Array-like Object. Got ' +
+              typeof x,
+          },
+          x,
+        ),
+      )
     }
   })
 })
@@ -71,37 +77,45 @@ _m.decode = _.curry((encoding, s) => {
   })
 })
 
-_m.map = _.curry((fn, options, s) => s.consumeSync((err, x, push) => {
-  if (err) {
-    push(err)
-  } else if (x === _.nil) {
-    push(err, x)
-  } else {
-    try {
-      let res = fn(x)
-      const probablyPromise = res && res.then && res.catch
-      if (probablyPromise) res = res.catch(e => {
-        throw new ExstreamError(e, x)
-      })
-      if (!options || !options.wrap) {
-        return push(null, res)
-      } else if (probablyPromise) {
-        push(null, res.then(y => ({ input: x, output: y })))
-      } else {
-        push(null, { input: x, output: res })
+_m.map = _.curry((fn, options, s) =>
+  s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      push(err, x)
+    } else {
+      try {
+        let res = fn(x)
+        const probablyPromise = res && res.then && res.catch
+        if (probablyPromise)
+          res = res.catch((e) => {
+            throw new ExstreamError(e, x)
+          })
+        if (!options || !options.wrap) {
+          return push(null, res)
+        } else if (probablyPromise) {
+          push(
+            null,
+            res.then((y) => ({ input: x, output: y })),
+          )
+        } else {
+          push(null, { input: x, output: res })
+        }
+      } catch (e) {
+        push(new ExstreamError(e, x))
       }
-    } catch (e) {
-      push(new ExstreamError(e, x))
     }
-  }
-}))
+  }),
+)
 
-_m.where = _.curry((props, s) => s.filter(x => {
-  for (const p in props) {
-    if (x[p] !== props[p]) return false
-  }
-  return true
-}))
+_m.where = _.curry((props, s) =>
+  s.filter((x) => {
+    for (const p in props) {
+      if (x[p] !== props[p]) return false
+    }
+    return true
+  }),
+)
 
 _m.findWhere = _.curry((props, s) => s.where(props).take(1))
 
@@ -129,12 +143,15 @@ _m.ratelimit = _.curry((num, ms, s) => {
       push(null, x)
       next()
     } else {
-      setTimeout(() => {
-        startWindow = process.hrtime.bigint()
-        sent = 1
-        push(null, x)
-        next()
-      }, ms - Math.round(Number((process.hrtime.bigint() - startWindow) / 1000000n)))
+      setTimeout(
+        () => {
+          startWindow = process.hrtime.bigint()
+          sent = 1
+          push(null, x)
+          next()
+        },
+        ms - Math.round(Number((process.hrtime.bigint() - startWindow) / 1000000n)),
+      )
     }
   })
 })
@@ -158,7 +175,7 @@ _m.throttle = _.curry((ms, s) => {
   })
 })
 
-_m.collect = s => {
+_m.collect = (s) => {
   const xs = []
   return s.consumeSync((err, x, push) => {
     if (err) {
@@ -172,75 +189,84 @@ _m.collect = s => {
   })
 }
 
-_m.flatten = s => s.consumeSync((err, x, push) => {
-  if (err) {
-    push(err)
-  } else if (x === _.nil) {
-    push(err, x)
-  } else if (_.isIterable(x) && typeof x !== 'string') {
-    for (const y of x) push(null, y)
-  } else {
-    push(null, x)
-  }
-})
+_m.flatten = (s) =>
+  s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      push(err, x)
+    } else if (_.isIterable(x) && typeof x !== 'string') {
+      for (const y of x) push(null, y)
+    } else {
+      push(null, x)
+    }
+  })
 
 _m.flatMap = _.curry((fn, s) => s.map(fn).flatten())
 
-_m.toArray = _.curry((fn, s) => s.collect().pull((err, x) => {
-  if (err) {
-    (s.endOfChain || s).emit('error', err)
-  } else {
-    fn(x)
-  }
-}))
-
-_m.filter = _.curry((fn, s) => s.consumeSync((err, x, push) => {
-  if (err) {
-    push(err)
-  } else if (x === _.nil) {
-    push(err, x)
-  } else {
-    try {
-      const res = fn(x)
-      if (res) push(null, x)
-    } catch (e) {
-      push(new ExstreamError(e, x))
+_m.toArray = _.curry((fn, s) =>
+  s.collect().pull((err, x) => {
+    if (err) {
+      ;(s.endOfChain || s).emit('error', err)
+    } else {
+      fn(x)
     }
-  }
-}))
+  }),
+)
 
-_m.reject = _.curry((fn, s) => s.consumeSync((err, x, push) => {
-  if (err) {
-    push(err)
-  } else if (x === _.nil) {
-    push(err, x)
-  } else {
-    try {
-      const res = fn(x)
-      if (!res) push(null, x)
-    } catch (e) {
-      push(new ExstreamError(e, x))
+_m.filter = _.curry((fn, s) =>
+  s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      push(err, x)
+    } else {
+      try {
+        const res = fn(x)
+        if (res) push(null, x)
+      } catch (e) {
+        push(new ExstreamError(e, x))
+      }
     }
-  }
-}))
+  }),
+)
 
-_m.asyncFilter = _.curry((fn, s) => s.consume(async (err, x, push, next) => {
-  if (err) {
-    push(err)
-    next()
-  } else if (x === _.nil) {
-    push(err, x)
-  } else {
-    try {
-      const res = await fn(x)
-      if (res) push(null, x)
+_m.reject = _.curry((fn, s) =>
+  s.consumeSync((err, x, push) => {
+    if (err) {
+      push(err)
+    } else if (x === _.nil) {
+      push(err, x)
+    } else {
+      try {
+        const res = fn(x)
+        if (!res) push(null, x)
+      } catch (e) {
+        push(new ExstreamError(e, x))
+      }
+    }
+  }),
+)
+
+_m.asyncFilter = _.curry((fn, s) =>
+  s.consume(async (err, x, push, next) => {
+    if (err) {
+      push(err)
       next()
-    } catch (e) {
-      push(new ExstreamError(e, x))
-      next()
+    } else if (x === _.nil) {
+      push(err, x)
+    } else {
+      try {
+        const res = await fn(x)
+        if (res) push(null, x)
+        next()
+      } catch (e) {
+        push(new ExstreamError(e, x))
+        next()
+      }
     }
-  }
-}))
+  }),
+)
 
 _m.batch = _.curry((size, s) => {
   let buffer = []
@@ -263,7 +289,7 @@ _m.batch = _.curry((size, s) => {
   })
 })
 
-_m.uniq = s => {
+_m.uniq = (s) => {
   const seen = new Set()
   return s.consumeSync((err, x, push) => {
     if (err) {
@@ -285,41 +311,45 @@ _m.pluck = _.curry((field, defaultValue, s) => {
   return s.map(getter)
 })
 
-_m.pick = _.curry((fields, s) => s.map(x => {
-  const res = {}
-  let hasKey
-  for (let i = 0, len = fields.length; i < len; i++) {
-    try {
-      hasKey = fields[i] in x
-    } catch (e) {
-      throw new ExstreamError(Error('error in .pick(). expected object, got ' + typeof x), x)
+_m.pick = _.curry((fields, s) =>
+  s.map((x) => {
+    const res = {}
+    let hasKey
+    for (let i = 0, len = fields.length; i < len; i++) {
+      try {
+        hasKey = fields[i] in x
+      } catch (e) {
+        throw new ExstreamError(Error('error in .pick(). expected object, got ' + typeof x), x)
+      }
+      if (hasKey) res[fields[i]] = x[fields[i]]
     }
-    if (hasKey) res[fields[i]] = x[fields[i]]
-  }
-  return res
-}))
+    return res
+  }),
+)
 
-_m.omit = _.curry((fields, s) => s.map(x => {
-  const res = { ...x }
-  fields = Array.isArray(fields) ? fields : [fields]
-  let hasKey
-  for (let i = 0, len = fields.length; i < len; i++) {
-    try {
-      hasKey = fields[i] in x
-    } catch (e) {
-      throw new ExstreamError(Error('error in .omit(). expected object, got ' + typeof x), x)
+_m.omit = _.curry((fields, s) =>
+  s.map((x) => {
+    const res = { ...x }
+    fields = Array.isArray(fields) ? fields : [fields]
+    let hasKey
+    for (let i = 0, len = fields.length; i < len; i++) {
+      try {
+        hasKey = fields[i] in x
+      } catch (e) {
+        throw new ExstreamError(Error('error in .omit(). expected object, got ' + typeof x), x)
+      }
+      if (hasKey) delete res[fields[i]]
     }
-    if(hasKey) delete res[fields[i]]
-  }
-  return res
-}))
+    return res
+  }),
+)
 
 _m.uniqBy = _.curry((cfg, s) => {
   const seen = new Set()
   const isFn = _.isFunction(cfg)
   if (!isFn && !Array.isArray(cfg)) cfg = [cfg]
 
-  const fn = !isFn ? x => cfg.map(f => x[f]).join('_') : cfg
+  const fn = !isFn ? (x) => cfg.map((f) => x[f]).join('_') : cfg
 
   return s.consumeSync((err, x, push) => {
     if (err) {
@@ -340,15 +370,15 @@ _m.uniqBy = _.curry((cfg, s) => {
   })
 })
 
-_m.massThen = _.curry((fn, s) => s.map(x => x.then(fn)))
+_m.massThen = _.curry((fn, s) => s.map((x) => x.then(fn)))
 
-_m.massCatch = _.curry((fn, s) => s.map(x => x.catch(fn)))
+_m.massCatch = _.curry((fn, s) => s.map((x) => x.catch(fn)))
 
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   const promises = []
   let ended = false
 
-  function handlePromiseResult (isError, res, resPointer, push, next) {
+  function handlePromiseResult(isError, res, resPointer, push, next) {
     resPointer.result = res
     resPointer.isError = isError
     const idx = promises.indexOf(resPointer)
@@ -382,22 +412,25 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
     } else {
       const resPointer = {}
       promises.push(resPointer)
-      el.then(res => handlePromiseResult(false, res, resPointer, push, next))
-        .catch(res => handlePromiseResult(true, res, resPointer, push, next))
+      el.then((res) => handlePromiseResult(false, res, resPointer, push, next)).catch((res) =>
+        handlePromiseResult(true, res, resPointer, push, next),
+      )
       if (promises.length < parallelism) next()
     }
   })
 })
 
-_m.errors = _.curry((fn, s) => s.consumeSync((err, x, push) => {
-  if (x === _.nil) {
-    push(null, _.nil)
-  } else if (err) {
-    fn(err, push)
-  } else {
-    push(null, x)
-  }
-}))
+_m.errors = _.curry((fn, s) =>
+  s.consumeSync((err, x, push) => {
+    if (x === _.nil) {
+      push(null, _.nil)
+    } else if (err) {
+      fn(err, push)
+    } else {
+      push(null, x)
+    }
+  }),
+)
 
 _m.stopOnError = _.curry((fn, s) => {
   const s1 = s.consumeSync((err, x, push) => {
@@ -421,25 +454,32 @@ _m.stopWhen = _.curry((fn, s) => {
       push(err)
     } else {
       push(null, x)
-      if(fn(x)) s1.destroy()
+      if (fn(x)) s1.destroy()
     }
   })
   return s1
 })
 
-_m.toPromise = s => new Promise((resolve, reject) => s.once('error', reject).toArray(res => {
-  s.off('error', reject)
-  resolve(res)
-}))
+_m.toPromise = (s) =>
+  new Promise((resolve, reject) =>
+    s.once('error', reject).toArray((res) => {
+      s.off('error', reject)
+      resolve(res)
+    }),
+  )
 
-_m.toNodeStream = _.curry((options, s) => s.pipe(new Transform({
-  objectMode: true,
-  transform: function (chunk, enc, cb) {
-    this.push(chunk)
-    cb()
-  },
-  ...options,
-})))
+_m.toNodeStream = _.curry((options, s) =>
+  s.pipe(
+    new Transform({
+      objectMode: true,
+      transform: function (chunk, enc, cb) {
+        this.push(chunk)
+        cb()
+      },
+      ...options,
+    }),
+  ),
+)
 
 _m.slice = _.curry((start, end, s) => {
   let index = 0
@@ -574,9 +614,14 @@ _m.keyBy = _.curry((fnOrString, s) => {
   }, {})
 })
 
-_m.sortBy = _.curry((fn, s) => s.collect().map(x => x.sort(fn)).flatten())
+_m.sortBy = _.curry((fn, s) =>
+  s
+    .collect()
+    .map((x) => x.sort(fn))
+    .flatten(),
+)
 
-_m.sort = s => _m.sortBy(void 0, s)
+_m.sort = (s) => _m.sortBy(void 0, s)
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   let lastSnapshot = null
@@ -606,18 +651,20 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   })
 })
 
-_m.tap = _.curry((fn, s) => s.map(x => {
-  fn(x)
-  return x
-}))
+_m.tap = _.curry((fn, s) =>
+  s.map((x) => {
+    fn(x)
+    return x
+  }),
+)
 
-_m.compact = s => s.filter(x => x)
+_m.compact = (s) => s.filter((x) => x)
 
 _m.find = _.curry((fn, s) => s.filter(fn).take(1))
 
-_m.head = s => s.take(1)
+_m.head = (s) => s.take(1)
 
-_m.last = s => {
+_m.last = (s) => {
   const nothing = {}
   let last = nothing
   return s.consumeSync((err, x, push) => {
@@ -632,24 +679,28 @@ _m.last = s => {
   })
 }
 
-_m.pipeline = () => new Proxy({
-  __exstream_pipeline__: true, // eslint-disable-line camelcase
-  definitions: [],
-  generateStream: function () {
-    const s = new Exstream()
-    let curr = s
-    for (const { method, args } of this.definitions) curr = curr[method](...args)
-    s.endOfChain = curr.endOfChain || curr
-    return s
-  },
-}, {
-  get (target, propKey, receiver) {
-    if (target[propKey] || !Exstream.prototype[propKey]) {
-      return Reflect.get(target, propKey, receiver)
-    }
-    return function (...args) {
-      target.definitions.push({ method: propKey, args })
-      return this
-    }
-  },
-})
+_m.pipeline = () =>
+  new Proxy(
+    {
+      __exstream_pipeline__: true, // eslint-disable-line camelcase
+      definitions: [],
+      generateStream: function () {
+        const s = new Exstream()
+        let curr = s
+        for (const { method, args } of this.definitions) curr = curr[method](...args)
+        s.endOfChain = curr.endOfChain || curr
+        return s
+      },
+    },
+    {
+      get(target, propKey, receiver) {
+        if (target[propKey] || !Exstream.prototype[propKey]) {
+          return Reflect.get(target, propKey, receiver)
+        }
+        return function (...args) {
+          target.definitions.push({ method: propKey, args })
+          return this
+        }
+      },
+    },
+  )

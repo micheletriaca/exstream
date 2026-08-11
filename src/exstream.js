@@ -7,7 +7,7 @@ const { Readable } = require('stream')
 const _ = require('./utils')
 
 class ExstreamError extends Error {
-  constructor (e, exstreamInput) {
+  constructor(e, exstreamInput) {
     super(e.message)
     if (e.exstreamError) {
       return e
@@ -20,7 +20,6 @@ class ExstreamError extends Error {
     if (e.stack) this.stack = e.stack
     this.exstreamError = true
     this.exstreamInput = exstreamInput
-
   }
 }
 
@@ -52,7 +51,7 @@ class Exstream extends EventEmitter {
 
   #destroyers = []
 
-  constructor (xs) {
+  constructor(xs) {
     super()
     if (!xs) {
       return this
@@ -70,15 +69,17 @@ class Exstream extends EventEmitter {
       this.#synchronous = false
       this.#generator = xs
     } else {
-      throw Error('error creating exstream: invalid source. source can be one of: iterable, ' +
-      'async iterable, exstream function, a promise, a node readable stream')
+      throw Error(
+        'error creating exstream: invalid source. source can be one of: iterable, ' +
+          'async iterable, exstream function, a promise, a node readable stream',
+      )
     }
   }
 
-  #pipeReadable = xs => {
+  #pipeReadable = (xs) => {
     this.#synchronous = false
     xs.pipe(this)
-    this.#addOnceListener('error', xs, e => {
+    this.#addOnceListener('error', xs, (e) => {
       // sometimes e is not an instance of Error, nobody knows why
       this.write(new ExstreamError(e))
       setImmediate(() => this.end())
@@ -91,12 +92,12 @@ class Exstream extends EventEmitter {
     this.#destroyers.push(() => target.off(event, handler))
   }
 
-  write (x) {
+  write(x) {
     if (this.#nilPushed) throw Error('Cannot write to stream after nil')
     return this._write(x)
   }
 
-  _write (x, skipBackPressure = false) {
+  _write(x, skipBackPressure = false) {
     if (x === _.nil) this.#nilPushed = true
     const isError = _.isError(x)
     const xx = isError ? null : x
@@ -136,17 +137,19 @@ class Exstream extends EventEmitter {
     }
   }
 
-  start () {
+  start() {
     this.#autostart = true
     // setImmediate is needed to guarantee that .pipe() has resumed the source stream
-    return new Promise(resolve => setImmediate(() => {
-      this.resume()
-      resolve()
-    }))
+    return new Promise((resolve) =>
+      setImmediate(() => {
+        this.resume()
+        resolve()
+      }),
+    )
   }
 
   // eslint-disable-next-line max-statements
-  end () {
+  end() {
     if (this.ended) return
     if (!this.#nilPushed) this._write(_.nil)
     if (this.paused) this.#flushBuffer(true)
@@ -161,12 +164,12 @@ class Exstream extends EventEmitter {
     this.#generator = null
     this.#sourceData = null
     this.removeAllListeners()
-    this.#destroyers.forEach(x => x())
+    this.#destroyers.forEach((x) => x())
     this.#destroyers = []
     this.#observers = []
   }
 
-  destroy () {
+  destroy() {
     if (this.paused) this.#buffer = [] // destroy brutally ends the stream discarding pending data
     this.end()
   }
@@ -199,13 +202,13 @@ class Exstream extends EventEmitter {
 
   #consumeGenerator = () => {
     let syncNext = true
-    const next = otherStream => {
+    const next = (otherStream) => {
       this.#nextGenCalled = true
       let me = this
       if (otherStream) {
         otherStream = new Exstream(otherStream)
         otherStream.#consumers = this.#consumers
-        otherStream.#consumers.forEach(x => {
+        otherStream.#consumers.forEach((x) => {
           x.source = otherStream
         })
         otherStream.#resumedAtLeastOnce = true
@@ -220,7 +223,7 @@ class Exstream extends EventEmitter {
       if (me.paused && (!syncNext || otherStream)) setImmediate(() => me.resume(true))
     }
 
-    const w = x => {
+    const w = (x) => {
       this.write(x)
       if (x === _.nil) next()
     }
@@ -234,17 +237,17 @@ class Exstream extends EventEmitter {
     } while (!this.paused && !this.#nilPushed)
   }
 
-  pause (fromInside = false) {
+  pause(fromInside = false) {
     this.paused = true
-    if(fromInside) this.pausedFromInside = true
+    if (fromInside) this.pausedFromInside = true
     else this.pausedFromOutside = true
     if (this.source) this.source.pause()
   }
 
-  resume (fromInside = false) {
-    if(fromInside) this.pausedFromInside = false
+  resume(fromInside = false) {
+    if (fromInside) this.pausedFromInside = false
     else this.pausedFromOutside = false
-    if(this.pausedFromInside || this.pausedFromOutside) return
+    if (this.pausedFromInside || this.pausedFromOutside) return
     if (!this.#autostart || !this.#nextCalled || !this.#nextGenCalled || !this.paused) return
 
     this.#resumedAtLeastOnce = true
@@ -271,7 +274,7 @@ class Exstream extends EventEmitter {
     this.resume()
   }
 
-  consume (fn) {
+  consume(fn) {
     this.#synchronous = false
     const res = new Exstream()
     res.#consumeFn = fn
@@ -279,15 +282,15 @@ class Exstream extends EventEmitter {
     return res
   }
 
-  consumeSync (fn) {
+  consumeSync(fn) {
     const res = new Exstream()
     res.#consumeSyncFn = fn
     this.#addConsumer(res)
     return res
   }
 
-  pull (fn) {
-    const _pull = fn => {
+  pull(fn) {
+    const _pull = (fn) => {
       const s2 = this.consumeSync((err, x) => {
         this.#removeConsumer(s2)
         fn(err, x)
@@ -295,20 +298,21 @@ class Exstream extends EventEmitter {
       s2.resume()
     }
 
-    if(fn) _pull(fn)
-    else return new Promise((resolve, reject) => {
-      _pull((err, x) => {
-        if (err) reject(err)
-        else if (x === _.nil) resolve(_.nil)
-        else resolve(x)
+    if (fn) _pull(fn)
+    else
+      return new Promise((resolve, reject) => {
+        _pull((err, x) => {
+          if (err) reject(err)
+          else if (x === _.nil) resolve(_.nil)
+          else resolve(x)
+        })
       })
-    })
   }
 
-  each (fn) {
+  each(fn) {
     const s2 = this.consumeSync((err, x, push) => {
       if (err) {
-        (this.endOfChain || this).emit('error', err)
+        ;(this.endOfChain || this).emit('error', err)
       } else if (x === _.nil) {
         push(null, _.nil)
       } else {
@@ -323,8 +327,8 @@ class Exstream extends EventEmitter {
     if (!skipCheck && realSource.#consumers.length) {
       throw Error(
         'This stream has already been transformed or consumed. Please ' +
-        'fork() or observe() the stream if you want to perform ' +
-        'parallel transformations.',
+          'fork() or observe() the stream if you want to perform ' +
+          'parallel transformations.',
       )
     }
     s.source = realSource
@@ -332,13 +336,13 @@ class Exstream extends EventEmitter {
     realSource.#checkBackPressure()
   }
 
-  #removeConsumer = s => {
-    this.#consumers = this.#consumers.filter(c => c !== s)
+  #removeConsumer = (s) => {
+    this.#consumers = this.#consumers.filter((c) => c !== s)
     s.source = null
     this.#checkBackPressure()
   }
 
-  pipe (dest, options = {}) {
+  pipe(dest, options = {}) {
     let nextCallback
     const drainCallback = () => {
       if (nextCallback) {
@@ -375,9 +379,9 @@ class Exstream extends EventEmitter {
     return dest
   }
 
-  fork (disableAutostart = false) {
+  fork(disableAutostart = false) {
     if (this.#resumedAtLeastOnce)
-      throw Error('this stream is already started. you can\'t fork it anymore')
+      throw Error("this stream is already started. you can't fork it anymore")
     this.#synchronous = false
     this.#autostart = false
     if (!disableAutostart) process.nextTick(() => this.start())
@@ -386,17 +390,17 @@ class Exstream extends EventEmitter {
     return res
   }
 
-  observe () {
+  observe() {
     const res = new Exstream()
     this.#observers.push(res)
     return res
   }
 
   // eslint-disable-next-line max-statements, max-lines-per-function
-  through (target, { writable = false } = {}) {
+  through(target, { writable = false } = {}) {
     if (!target) return this
     else if (_.isExstream(target)) {
-      const findParent = x => x.source ? findParent(x.source) : x
+      const findParent = (x) => (x.source ? findParent(x.source) : x)
       this.#addConsumer(findParent(target))
       return target
     } else if (_.isExstreamPipeline(target)) {
@@ -414,7 +418,7 @@ class Exstream extends EventEmitter {
       s.readable = false
       s.source = this
       s.resume()
-      s.#addOnceListener('error', target, e => {
+      s.#addOnceListener('error', target, (e) => {
         s.write(e)
         setImmediate(() => s.end())
       })
@@ -434,10 +438,9 @@ class Exstream extends EventEmitter {
       'error in .through(). you must pass a non consumed' +
         'exstream instance, a pipeline or a node stream',
     )
-
   }
 
-  merge (parallelism = Infinity, preserveOrder = false) {
+  merge(parallelism = Infinity, preserveOrder = false) {
     this.#synchronous = false
 
     const merged = new Exstream()
@@ -446,12 +449,12 @@ class Exstream extends EventEmitter {
 
     const pipeline = preserveOrder
       ? new Exstream().resolve(parallelism, preserveOrder).flatten()
-      : new Exstream().errors(err => merged.write(err)).resolve(parallelism, preserveOrder)
+      : new Exstream().errors((err) => merged.write(err)).resolve(parallelism, preserveOrder)
 
-    const ss = this.map(subS => {
+    const ss = this.map((subS) => {
       if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
       if (preserveOrder) return subS.toPromise()
-      return new Promise(resolve => {
+      return new Promise((resolve) => {
         let nextCallback
         // eslint-disable-next-line sonarjs/no-identical-functions
         const drainCallback = () => {
@@ -484,10 +487,10 @@ class Exstream extends EventEmitter {
     return merged
   }
 
-  value () {
+  value() {
     const res = this.values()
     if (_.isPromise(res)) {
-      return res.then(result => {
+      return res.then((result) => {
         if (result.length > 1)
           throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
         return result[0]
@@ -499,7 +502,7 @@ class Exstream extends EventEmitter {
     }
   }
 
-  values () {
+  values() {
     let curr = this
     let isSync = this.#synchronous
     while (isSync && curr.source) {
@@ -516,7 +519,6 @@ class Exstream extends EventEmitter {
       else res.push(x)
     }).resume()
     return res
-
   }
 }
 

@@ -7,14 +7,14 @@
 */
 
 const _ = require('./utils.js')
-const _m = module.exports = {}
+const _m = (module.exports = {})
 
-function replace (str, c, replacement) {
+function replace(str, c, replacement) {
   let outstr = ''
   const len = c.length
   let start = -len
   let end = 0
-  while ((end = str.indexOf(c, start += len)) > -1) {
+  while ((end = str.indexOf(c, (start += len))) > -1) {
     outstr += str.slice(start, end) + replacement
     start = end
   }
@@ -40,26 +40,25 @@ _m.csvStringify = (opts, s) => {
   const escapeDifferentFromQuote = opts.escape !== opts.quote
   const doubleQuote = opts.quote + opts.quote
 
-  function checkQuote (x) {
+  function checkQuote(x) {
     return (
-      typeof x === 'string' && (
-        x.indexOf(opts.separator) > -1 ||
+      typeof x === 'string' &&
+      (x.indexOf(opts.separator) > -1 ||
         x.indexOf(opts.quote) > -1 ||
         x.indexOf(opts.lineEnding) > -1 ||
-        escapeDifferentFromQuote && x.indexOf(opts.escape) > -1
-      )
+        (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1))
     )
   }
 
   let firstRow = false
 
-  function processCell (x) {
+  function processCell(x) {
     if (!opts.quoted && !checkQuote(x)) return x
     if (escapeDifferentFromQuote) x = replace(x, opts.escape, escapedEscape)
     return opts.quote + replace(x, opts.quote, escapedQuote) + opts.quote
   }
 
-  function processRow (x, push) {
+  function processRow(x, push) {
     const row = Array(firstRow.length)
     for (let i = 0, len = firstRow.length; i < len; i++) {
       const cell = x[firstRow[i]] + ''
@@ -71,17 +70,17 @@ _m.csvStringify = (opts, s) => {
     else push(null, res)
   }
 
-  function processFirstRow (x, push) {
+  function processFirstRow(x, push) {
     const arrayMode = Array.isArray(x)
     const injectedHeader = Array.isArray(opts.header)
 
     if (!opts.header) {
       firstRow = Object.keys(x)
-      if (arrayMode) firstRow = firstRow.map(x => parseInt(x))
+      if (arrayMode) firstRow = firstRow.map((x) => parseInt(x))
       processRow(x, push)
     } else if (arrayMode) {
       if (!injectedHeader) throw Error('.csvStringify() called with an invalid header option')
-      firstRow = opts.header.map((y, i) => _.isDefined(y) ? i : null).filter(_.isDefined)
+      firstRow = opts.header.map((y, i) => (_.isDefined(y) ? i : null)).filter(_.isDefined)
       processRow(opts.header, push)
       processRow(x, push)
     } else {
@@ -126,12 +125,12 @@ _m.csv = (opts, s) => {
   let firstRow = Array.isArray(opts.header) ? opts.header : []
   let currentBuffer = Buffer.alloc(0)
 
-  function getFirstRow (row) {
+  function getFirstRow(row) {
     if (_.isFunction(opts.header)) return opts.header(row)
     return row
   }
 
-  function convertObj (row) {
+  function convertObj(row) {
     const res = {}
     for (let i = 0; i < row.length; i++) {
       res[firstRow[i]] = row[i]
@@ -139,7 +138,7 @@ _m.csv = (opts, s) => {
     return res
   }
 
-  function storeCell (row, col, colStart, colEnd, handleQuote) {
+  function storeCell(row, col, colStart, colEnd, handleQuote) {
     const idx = firstRow.length ? firstRow[col] : col
     row[idx] = currentBuffer.toString(opts.encoding, colStart, colEnd)
     if (handleQuote) {
@@ -161,7 +160,6 @@ _m.csv = (opts, s) => {
       }
       isEnding = true
       x = Buffer.from('\n')
-
     }
 
     const bufx = Buffer.from(x)
@@ -186,34 +184,34 @@ _m.csv = (opts, s) => {
       for (let i = 0; i < currentBuffer.length; i++) {
         if (!inQuote) {
           switch (currentBuffer[i]) {
-          case quote:
-            inQuote = true
-            colStart = i + 1
-            continue
-          case separator:
-            handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-            ++col
-            endOffset = 0
-            colStart = i + 1
-            continue
-          case newLine:
-          case carriage:
-            while (currentBuffer[i + 1] === newLine || currentBuffer[i + 1] === carriage) {
-              i++
-              endOffset++
-            }
-            handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-            if (opts.header) {
-              if (!firstRow.length) firstRow = getFirstRow(row)
-              else push(null, row)
-              row = {}
-            } else {
-              push(null, row)
-              row = []
-            }
-            col = endOffset = 0
-            colStart = prevIdx = i + 1
-            continue
+            case quote:
+              inQuote = true
+              colStart = i + 1
+              continue
+            case separator:
+              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
+              ++col
+              endOffset = 0
+              colStart = i + 1
+              continue
+            case newLine:
+            case carriage:
+              while (currentBuffer[i + 1] === newLine || currentBuffer[i + 1] === carriage) {
+                i++
+                endOffset++
+              }
+              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
+              if (opts.header) {
+                if (!firstRow.length) firstRow = getFirstRow(row)
+                else push(null, row)
+                row = {}
+              } else {
+                push(null, row)
+                row = []
+              }
+              col = endOffset = 0
+              colStart = prevIdx = i + 1
+              continue
           }
         } else if (currentBuffer[i] === escape && currentBuffer[i + 1] === quote) {
           handleQuote = true

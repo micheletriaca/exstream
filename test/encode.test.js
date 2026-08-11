@@ -1,20 +1,14 @@
 const _ = require('../src')
 
 test('encode', () => {
-  const res = _(['ciao', ', come va?'])
-    .encode('base64')
-    .values()
-    .join('')
+  const res = _(['ciao', ', come va?']).encode('base64').values().join('')
   expect(res).toEqual('Y2lhbywgY29tZSB2YT8=')
 })
 
 test('invalid encode', () => {
   let ex = null
   try {
-    _([1, ', come va?'])
-      .encode('base64')
-      .values()
-      .join('')
+    _([1, ', come va?']).encode('base64').values().join('')
   } catch (e) {
     ex = e
   }
@@ -28,18 +22,20 @@ test('invalid encode', () => {
 test('decode', () => {
   const res = _(['Y2l', 'hbywgY29tZSB2YT8='])
     .decode('base64')
-    .map(x => x.toString())
+    .map((x) => x.toString())
     .values()
     .join('')
   expect(res.toString()).toEqual('ciao, come va?')
 })
 
-test('incomplete decode', done => {
+test('incomplete decode', (done) => {
   const s = _()
-  s.decode('base64').map(x => x.toString()).toArray(res => {
-    done()
-    expect(res.join('')).toBe('ciao,')
-  })
+  s.decode('base64')
+    .map((x) => x.toString())
+    .toArray((res) => {
+      done()
+      expect(res.join('')).toBe('ciao,')
+    })
 
   s.write('Y2l')
   s.write('hbyw')
@@ -71,10 +67,7 @@ test('encode error', () => {
 test('invalid decode', () => {
   let ex = null
   try {
-    _(['Y2l', 'hbywgY29tZSB2YT8='])
-      .decode('aes256')
-      .values()
-      .join('')
+    _(['Y2l', 'hbywgY29tZSB2YT8=']).decode('aes256').values().join('')
   } catch (e) {
     ex = e
   }

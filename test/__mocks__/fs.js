@@ -7,14 +7,14 @@ const _ = require('../../src/index')
 const fs = jest.createMockFromModule('fs')
 
 let mockFiles = {}
-function __setMockFiles (newMockFiles) {
+function __setMockFiles(newMockFiles) {
   mockFiles = newMockFiles
 }
 
-function createReadStream (file) {
+function createReadStream(file) {
   return _(mockFiles[file])
     .batch(1000)
-    .map(async x => {
+    .map(async (x) => {
       await h.sleep(10)
       return x
     })
@@ -23,7 +23,7 @@ function createReadStream (file) {
     .toNodeStream()
 }
 
-function createWriteStream (file) {
+function createWriteStream(file) {
   mockFiles[file] = []
   return h.getSlowWritable(mockFiles[file], 0, 10)
 }

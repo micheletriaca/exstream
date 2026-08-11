@@ -15,7 +15,9 @@ test('basic', async () => {
 })
 
 test('basic async', async () => {
-  const xs = _([1, 2, 3]).map(async x => x).resolve()
+  const xs = _([1, 2, 3])
+    .map(async (x) => x)
+    .resolve()
   expect(await xs.pull()).toEqual(1)
   expect(await xs.pull()).toEqual(2)
   expect(await xs.pull()).toEqual(3)
@@ -23,15 +25,19 @@ test('basic async', async () => {
 })
 
 test('basic error handling', async () => {
-  const xs = _([1, 2, 3]).map(async x => {
-    if (x === 2) throw Error('NOO')
-    return x
-  }).resolve()
+  const xs = _([1, 2, 3])
+    .map(async (x) => {
+      if (x === 2) throw Error('NOO')
+      return x
+    })
+    .resolve()
   expect(await xs.pull()).toEqual(1)
   let exc
   try {
     await xs.pull()
-  } catch (e) { exc = e }
+  } catch (e) {
+    exc = e
+  }
   expect(exc.message).toBe('NOO')
   expect(await xs.pull()).toEqual(3)
   expect(await xs.pull()).toEqual(_.nil)

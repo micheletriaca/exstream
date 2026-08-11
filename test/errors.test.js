@@ -23,7 +23,7 @@ test('error in source stream - exstream generator', () => {
     .errors((err, push) => {
       if (err.message === '3') push(null, 3)
     })
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([1, 2, 3])
     })
 })
@@ -31,10 +31,10 @@ test('error in source stream - exstream generator', () => {
 test('fatal error in source stream - generator', () => {
   const errSkipped = []
   _(h.randomStringGenerator(5, 2))
-    .errors(err => {
+    .errors((err) => {
       errSkipped.push(err)
     })
-    .toArray(res => {
+    .toArray((res) => {
       expect(res.length).toBe(2)
       expect(res).toEqual(expect.not.arrayContaining(errSkipped))
     })
@@ -42,7 +42,7 @@ test('fatal error in source stream - generator', () => {
 
 test('fatal error in source stream - async generator', async () => {
   const errSkipped = []
-  const asyncGenerator = async function * () {
+  const asyncGenerator = async function* () {
     for (let i = 0; i < 5; i++) {
       await h.sleep(10)
       if (i === 3) throw Error('can\t be 3!')
@@ -68,7 +68,7 @@ test('fatal error in source stream - async generator', async () => {
       push(err)
     })
     .toPromise()
-    .catch(err => {
+    .catch((err) => {
       errCatched = err
     })
 
@@ -76,24 +76,26 @@ test('fatal error in source stream - async generator', async () => {
   expect(errCatched).toBe(errGenerated)
 })
 
-test('error in source stream - node stream', done => {
+test('error in source stream - node stream', (done) => {
   const errs = []
   let i = 0
-  _(new Readable({
-    objectMode: true,
-    read () {
-      if (i === 4) {
-        this.push(null)
-      } else if (i > 2 && i < 4) {
-        this.emit('error', Error('an error'))
-      } else {
-        this.push(i)
-      }
-      i++
-    },
-  }))
-    .errors(e => errs.push(e))
-    .toArray(res => {
+  _(
+    new Readable({
+      objectMode: true,
+      read() {
+        if (i === 4) {
+          this.push(null)
+        } else if (i > 2 && i < 4) {
+          this.emit('error', Error('an error'))
+        } else {
+          this.push(i)
+        }
+        i++
+      },
+    }),
+  )
+    .errors((e) => errs.push(e))
+    .toArray((res) => {
       done()
       expect(res).toEqual([0, 1, 2])
       expect(errs.length).toBe(1)
@@ -104,14 +106,19 @@ test('error in source stream - node stream', done => {
 test('error in wrapped writable', async () => {
   const errs = []
   const res = await _([1, 2])
-    .map(x => _([x]).through(new Writable({
-      objectMode: true,
-      write (chunk, enc, cb) {
-        cb(Error('an error'))
-      },
-    }), { writable: true }))
+    .map((x) =>
+      _([x]).through(
+        new Writable({
+          objectMode: true,
+          write(chunk, enc, cb) {
+            cb(Error('an error'))
+          },
+        }),
+        { writable: true },
+      ),
+    )
     .merge()
-    .errors(e => errs.push(e))
+    .errors((e) => errs.push(e))
     .toPromise()
   expect(res).toEqual([])
   expect(errs.length).toBe(2)
@@ -126,32 +133,36 @@ test('invalid source', () => {
     ex = e
   }
   expect(ex).not.toBe(null)
-  expect(ex.message)
-    .toEqual('error creating exstream: invalid source. source can be one of: iterable, ' +
-  'async iterable, exstream function, a promise, a node readable stream')
+  expect(ex.message).toEqual(
+    'error creating exstream: invalid source. source can be one of: iterable, ' +
+      'async iterable, exstream function, a promise, a node readable stream',
+  )
 })
 
 test('error in map', () => {
-  _([1, 2, 3]).map(x => {
-    if (x === 2) throw Error('can\'t be 2!!')
-    else return x
-  })
+  _([1, 2, 3])
+    .map((x) => {
+      if (x === 2) throw Error("can't be 2!!")
+      else return x
+    })
     .errors((err, push) => {
       if (err.exstreamInput === 2) push(null, 5)
     })
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([1, 5, 3])
     })
 })
 
 test('error in resolve', async () => {
   let error = null
-  const res = await _([1, 2, 3]).map(async x => {
-    await h.sleep(10)
-    if (x === 2) throw Error('can\'t be 2')
-    return x
-  }).resolve()
-    .errors(err => {
+  const res = await _([1, 2, 3])
+    .map(async (x) => {
+      await h.sleep(10)
+      if (x === 2) throw Error("can't be 2")
+      return x
+    })
+    .resolve()
+    .errors((err) => {
       error = err
     })
     .toPromise()
@@ -163,16 +174,16 @@ test('error in resolve', async () => {
 test('error in promise chain', async () => {
   let errorCatched = false
   const res = await _([1, 2, 3, 4, 5, 6])
-    .map(async x => {
+    .map(async (x) => {
       await h.sleep(10)
       return x
     })
-    .massThen(x => {
+    .massThen((x) => {
       if (x === 2) throw Error('err2')
       return x
     })
     .massCatch(() => 2)
-    .massThen(x => {
+    .massThen((x) => {
       if (x === 5) throw Error('err5')
       return x
     })
@@ -180,11 +191,11 @@ test('error in promise chain', async () => {
     .errors(() => {
       errorCatched = true
     })
-    .map(x => {
+    .map((x) => {
       if (x === 6) throw Error('err6')
       return x
     })
-    .map(x => x) // test error pass through
+    .map((x) => x) // test error pass through
     .errors((err, push) => {
       if (err.message === 'err6') push(null, 6)
     })
@@ -198,12 +209,15 @@ test('error in wrapped promise contains exstreamInput', async () => {
   const catched = jest.fn()
 
   const res = await _([1, 2, 3])
-    .map(async x => {
-      if (x === 2) throw Error('an error')
-      else return x * 2
-    }, { wrap: true })
+    .map(
+      async (x) => {
+        if (x === 2) throw Error('an error')
+        else return x * 2
+      },
+      { wrap: true },
+    )
     .resolve()
-    .errors(e => {
+    .errors((e) => {
       if (e.exstreamInput === 2) catched()
     })
     .pluck('output')
@@ -216,8 +230,7 @@ test('error in wrapped promise contains exstreamInput', async () => {
 test('synchronous tasks errors - .value() with multiple values', () => {
   let exception = false
   try {
-    _([1, 2, 3, 4, 5, 6])
-      .value() // Throw error because the result has more than 1 value
+    _([1, 2, 3, 4, 5, 6]).value() // Throw error because the result has more than 1 value
   } catch (e) {
     exception = true
   }
@@ -228,7 +241,7 @@ test('async task errors - .value() with multiple values', async () => {
   let exception = null
   try {
     await _([1, 2, 3, 4, 5, 6])
-      .map(async x => x * 2)
+      .map(async (x) => x * 2)
       .resolve()
       .batch(3)
       .value()
@@ -236,15 +249,16 @@ test('async task errors - .value() with multiple values', async () => {
     exception = e
   }
   expect(exception).not.toBe(null)
-  expect(exception.message)
-    .toBe('this stream has emitted more than 1 value. use .values() instad of .value()')
+  expect(exception.message).toBe(
+    'this stream has emitted more than 1 value. use .values() instad of .value()',
+  )
 })
 
 test('synchronous tasks error - runtime error', () => {
   let exc = null
   try {
     _([1, 2, 3, 4, 5, 6])
-      .map(x => {
+      .map((x) => {
         if (x === 3) throw Error('NOO')
         return x * 2
       })
@@ -260,31 +274,33 @@ test('synchronous tasks error - runtime error', () => {
 test('error propagation', async () => {
   const errs = []
   const res = await _([1, 2, 3])
-    .map(() => { throw Error('NOO') })
+    .map(() => {
+      throw Error('NOO')
+    })
     .ratelimit(1, 10000)
     .batch(3)
     .flatten()
-    .filter(x => x)
-    .reject(x => x)
-    .asyncFilter(async x => x)
+    .filter((x) => x)
+    .reject((x) => x)
+    .asyncFilter(async (x) => x)
     .uniq()
     .encode('base64')
     .decode('base64')
     .split()
     .splitBy('|')
-    .uniqBy(x => x)
+    .uniqBy((x) => x)
     .throttle(10)
     .csv()
-    .stopWhen(x => x)
+    .stopWhen((x) => x)
     .csvStringify()
     .head()
-    .sortedGroupBy(x => x)
+    .sortedGroupBy((x) => x)
     .last()
     .findWhere()
     .resolve()
     .slice(1, 3)
     .makeAsync(10)
-    .errors(err => errs.push(err))
+    .errors((err) => errs.push(err))
     .toPromise()
 
   expect(res).toEqual([])
@@ -294,7 +310,10 @@ test('error propagation', async () => {
 
 test('resolve non promises', async () => {
   const errs = []
-  _([1, 2, 3]).resolve().errors(e => errs.push(e)).resume()
+  _([1, 2, 3])
+    .resolve()
+    .errors((e) => errs.push(e))
+    .resume()
   expect(errs.length).toBe(3)
   expect(errs[0].message).toBe('error in .resolve(). item must be a promise')
 })
@@ -304,7 +323,7 @@ test('resolve promises errors', async () => {
   await _([1, 2, 3])
     .map(async () => Promise.reject(Error('NOO')))
     .resolve(1, false)
-    .errors(e => errs.push(e))
+    .errors((e) => errs.push(e))
     .toPromise()
   expect(errs.length).toBe(3)
   expect(errs[0].message).toBe('NOO')
@@ -313,10 +332,10 @@ test('resolve promises errors', async () => {
 test('uniqBy errors', () => {
   const errs = []
   const res = _([1, 2, 3])
-    .uniqBy(x => {
+    .uniqBy((x) => {
       if ('value' in x) return x.value
     })
-    .errors(e => errs.push(e))
+    .errors((e) => errs.push(e))
     .values()
 
   expect(res).toEqual([])
@@ -328,15 +347,15 @@ test('each errors', () => {
   const res = []
   let exc = false
   _([1, 2, 3, 'NOO', 'NOO', 4])
-    .map(x => {
-      if (_.isString(x))
-        throw Error(x)
+    .map((x) => {
+      if (_.isString(x)) throw Error(x)
       else return x
     })
-    .on('error', e => {
+    .on('error', (e) => {
       exc = true
       expect(e.message).toBe('NOO')
-    }).each(x => {
+    })
+    .each((x) => {
       res.push(x)
       expect(x).toBe(i++)
     })
@@ -347,11 +366,11 @@ test('each errors', () => {
 test('filter errors', () => {
   let ex = null
   const res = _([1, 2, 3])
-    .filter(x => {
+    .filter((x) => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => void (ex = e))
+    .errors((e) => void (ex = e))
     .values()
   expect(res).toEqual([1, 2])
   expect(ex).not.toBe(null)
@@ -361,11 +380,11 @@ test('filter errors', () => {
 test('reject errors', () => {
   let ex = null
   const res = _([1, 2, 3])
-    .reject(x => {
+    .reject((x) => {
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(e => void (ex = e))
+    .errors((e) => void (ex = e))
     .values()
   expect(res).toEqual([])
   expect(ex).not.toBe(null)
@@ -375,12 +394,12 @@ test('reject errors', () => {
 test('async filter errors', async () => {
   let e = null
   const res = await _([1, 2, 3])
-    .asyncFilter(async x => {
+    .asyncFilter(async (x) => {
       await h.sleep(100)
       if (x === 3) throw Error('NOO')
       return true
     })
-    .errors(ex => void (e = ex))
+    .errors((ex) => void (e = ex))
     .toPromise()
 
   expect(res).toEqual([1, 2])
@@ -388,24 +407,27 @@ test('async filter errors', async () => {
   expect(e.message).toBe('NOO')
 })
 
-test('stream in error without consumers emits an error event', done => {
-  _([1]).map(() => {
-    throw Error('an error')
-  }).on('error', e => {
-    done()
-    expect(e).not.toBe(null)
-    expect(e.message).toBe('an error')
-  }).resume()
+test('stream in error without consumers emits an error event', (done) => {
+  _([1])
+    .map(() => {
+      throw Error('an error')
+    })
+    .on('error', (e) => {
+      done()
+      expect(e).not.toBe(null)
+      expect(e.message).toBe('an error')
+    })
+    .resume()
 })
 
 test('stopOnError', () => {
   let ex = null
   const res = _([1, 2, 3])
-    .map(x => {
+    .map((x) => {
       if (x === 2) throw Error('an error')
       return x
     })
-    .stopOnError(e => void (ex = e))
+    .stopOnError((e) => void (ex = e))
     .values()
 
   expect(ex).not.toBe(null)
@@ -415,7 +437,7 @@ test('stopOnError', () => {
 
 test('stopOnError repush', () => {
   const res = _([1, 2, 3])
-    .map(x => {
+    .map((x) => {
       if (x === 2) throw Error('an error')
       return x
     })
@@ -429,7 +451,7 @@ test('stopOnError repush error', () => {
   let ex = null
   try {
     _([1, 2, 3])
-      .map(x => {
+      .map((x) => {
         if (x === 2) throw Error('an error')
         return x
       })
@@ -453,10 +475,15 @@ test('return an exstream instance from async method', async () => {
 test('async errors in stream of streams', async () => {
   const exc = []
   const res = await _([
-    _([1, 2, 3]).map(async () => { throw Error('an error') }).resolve(),
+    _([1, 2, 3])
+      .map(async () => {
+        throw Error('an error')
+      })
+      .resolve(),
     _([4, 5, 6]),
-  ]).merge()
-    .errors(e => exc.push(e))
+  ])
+    .merge()
+    .errors((e) => exc.push(e))
     .values()
   expect(exc.length).toBe(3)
   expect(res).toEqual([4, 5, 6])

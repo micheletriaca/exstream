@@ -38,21 +38,23 @@ test('consume stream', () => {
 test('write', () => {
   const x = _()
   const y = []
-  return new Promise(resolve => {
-    const z = x.consume((err, x, push, next) => {
-      if (err) {
-        y.push(err)
-        next()
-      } else if (x !== _.nil) {
-        y.push(x)
-        next()
-      } else {
-        push(null, _.nil)
-      }
-    }).on('end', () => {
-      expect(y).toEqual([1, 2, 3, 4])
-      resolve()
-    })
+  return new Promise((resolve) => {
+    const z = x
+      .consume((err, x, push, next) => {
+        if (err) {
+          y.push(err)
+          next()
+        } else if (x !== _.nil) {
+          y.push(x)
+          next()
+        } else {
+          push(null, _.nil)
+        }
+      })
+      .on('end', () => {
+        expect(y).toEqual([1, 2, 3, 4])
+        resolve()
+      })
     z.resume()
     x.write(1)
     x.write(2)
@@ -70,23 +72,25 @@ test('write', () => {
 })
 
 test('toArray', () => {
-  _([1, 2, 3]).toArray(res => {
+  _([1, 2, 3]).toArray((res) => {
     expect(res).toEqual([1, 2, 3])
   })
 })
 
 test('collect', () => {
-  _([1, 2, 3]).collect().toArray(res => {
-    expect(res).toEqual([[1, 2, 3]])
-  })
+  _([1, 2, 3])
+    .collect()
+    .toArray((res) => {
+      expect(res).toEqual([[1, 2, 3]])
+    })
 })
 
 test('each', () => {
   let i = 1
-  _([1, 2, 3]).each(x => expect(x).toBe(i++))
+  _([1, 2, 3]).each((x) => expect(x).toBe(i++))
 })
 
-const largeArray = n => {
+const largeArray = (n) => {
   const res = []
   for (let i = 0; i < n; i++) {
     res.push(i)
@@ -94,17 +98,19 @@ const largeArray = n => {
   return res
 }
 const k = largeArray(1000)
-const k2 = k.map(x => x * 2)
+const k2 = k.map((x) => x * 2)
 
 test('map1', () => {
-  _(k).map(x => x * 2).toArray(res => {
-    expect(res).toEqual(k2)
-  })
+  _(k)
+    .map((x) => x * 2)
+    .toArray((res) => {
+      expect(res).toEqual(k2)
+    })
 })
 
 test('map wrap', () => {
   const res = _(k)
-    .map(x => x * 2, { wrap: true })
+    .map((x) => x * 2, { wrap: true })
     .values()
 
   expect(res.length).toEqual(k2.length)
@@ -113,7 +119,7 @@ test('map wrap', () => {
 
 test('async map wrap', async () => {
   const res = await _(k)
-    .map(async x => x * 2, { wrap: true })
+    .map(async (x) => x * 2, { wrap: true })
     .resolve()
     .toPromise()
 
@@ -123,21 +129,33 @@ test('async map wrap', async () => {
 
 test('map set', () => {
   const x = new Set([1, 2, 3])
-  _(x).map(x => x * 2).toArray(res => {
-    expect(res).toEqual([2, 4, 6])
-  })
+  _(x)
+    .map((x) => x * 2)
+    .toArray((res) => {
+      expect(res).toEqual([2, 4, 6])
+    })
 })
 
 test('batch', () => {
-  _([1, 2, 3, 4, 5]).batch(3).toArray(res => {
-    expect(res).toEqual([[1, 2, 3], [4, 5]])
-  })
+  _([1, 2, 3, 4, 5])
+    .batch(3)
+    .toArray((res) => {
+      expect(res).toEqual([
+        [1, 2, 3],
+        [4, 5],
+      ])
+    })
 })
 
 test('batch strange params', () => {
-  _([1, 2, 3, 4, 5]).batch('3').toArray(res => {
-    expect(res).toEqual([[1, 2, 3], [4, 5]])
-  })
+  _([1, 2, 3, 4, 5])
+    .batch('3')
+    .toArray((res) => {
+      expect(res).toEqual([
+        [1, 2, 3],
+        [4, 5],
+      ])
+    })
   let e = null
   try {
     _([1, 2, 3, 4, 5]).batch('nan')
@@ -149,9 +167,11 @@ test('batch strange params', () => {
 })
 
 test('uniq', () => {
-  _([1, 2, 2, 2, 5]).uniq().toArray(res => {
-    expect(res).toEqual([1, 2, 5])
-  })
+  _([1, 2, 2, 2, 5])
+    .uniq()
+    .toArray((res) => {
+      expect(res).toEqual([1, 2, 5])
+    })
 })
 
 test('uniqBy', () => {
@@ -159,48 +179,65 @@ test('uniqBy', () => {
     { a: 1, b: 1, c: 1 },
     { a: 1, b: 2, c: 2 },
     { a: 1, b: 3, c: 1 },
-  ]).uniqBy(['a', 'c']).toArray(res => {
-    expect(res).toEqual([{ a: 1, b: 1, c: 1 }, { a: 1, b: 2, c: 2 }])
-  })
+  ])
+    .uniqBy(['a', 'c'])
+    .toArray((res) => {
+      expect(res).toEqual([
+        { a: 1, b: 1, c: 1 },
+        { a: 1, b: 2, c: 2 },
+      ])
+    })
 
   _([
     { a: 1, b: 1, c: 1 },
     { a: 1, b: 2, c: 2 },
     { a: 1, b: 3, c: 1 },
-  ]).uniqBy('c').toArray(res => {
-    expect(res).toEqual([{ a: 1, b: 1, c: 1 }, { a: 1, b: 2, c: 2 }])
-  })
+  ])
+    .uniqBy('c')
+    .toArray((res) => {
+      expect(res).toEqual([
+        { a: 1, b: 1, c: 1 },
+        { a: 1, b: 2, c: 2 },
+      ])
+    })
 
-  _([1, 2, 3, 4]).uniqBy(x => x % 2 === 0).toArray(res => expect(res).toEqual([1, 2]))
+  _([1, 2, 3, 4])
+    .uniqBy((x) => x % 2 === 0)
+    .toArray((res) => expect(res).toEqual([1, 2]))
 })
 
 test('flatten', () => {
-  _([[1, [2, 3]], [4, [5]]])
+  _([
+    [1, [2, 3]],
+    [4, [5]],
+  ])
     .flatten()
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([1, [2, 3], 4, [5]])
-      _(res).flatten().toArray(res2 => {
-        expect(res2).toEqual([1, 2, 3, 4, 5])
-      })
+      _(res)
+        .flatten()
+        .toArray((res2) => {
+          expect(res2).toEqual([1, 2, 3, 4, 5])
+        })
     })
 
   _([1, 2, 3, 4, 5])
     .batch(3)
     .flatten()
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([1, 2, 3, 4, 5])
     })
 
   _([1, 2, 3, 4, 5])
     .flatten()
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([1, 2, 3, 4, 5])
     })
 })
 
 test('flatMap', () => {
   const res = _([1, 2, 3])
-    .flatMap(x => Array(x).fill(x))
+    .flatMap((x) => Array(x).fill(x))
     .values()
   expect(res).toEqual([1, 2, 2, 3, 3, 3])
 })
@@ -208,19 +245,22 @@ test('flatMap', () => {
 test('flatten iterable', () => {
   _([1, 2, 3, 4, 5])
     .batch(3)
-    .map(x => new Set(x))
+    .map((x) => new Set(x))
     .flatten()
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([1, 2, 3, 4, 5])
     })
 })
 
 test('synchronous tasks', () => {
   const res = _([1, 2, 3, 4, 5, 6])
-    .map(x => x * 2)
+    .map((x) => x * 2)
     .batch(3)
     .values()
-  expect(res).toEqual([[2, 4, 6], [8, 10, 12]])
+  expect(res).toEqual([
+    [2, 4, 6],
+    [8, 10, 12],
+  ])
 })
 
 test('synchronous reduce', () => {
@@ -232,68 +272,73 @@ test('synchronous reduce', () => {
 
 test('async values', async () => {
   const res = await _([1, 2, 3, 4, 5, 6])
-    .map(async x => x * 2)
+    .map(async (x) => x * 2)
     .resolve()
     .batch(3)
     .values()
-  expect(res).toEqual([[2, 4, 6], [8, 10, 12]])
+  expect(res).toEqual([
+    [2, 4, 6],
+    [8, 10, 12],
+  ])
 })
 
 test('async value', async () => {
   const res = await _([1, 2, 3, 4, 5, 6])
-    .map(async x => x * 2)
+    .map(async (x) => x * 2)
     .resolve()
     .reduce1((a, b) => a + b)
     .value()
   expect(res).toBe(42)
 })
 
-test('piping', () => new Promise(resolve => {
-  const res = []
-  _([1, 2, 3])
-    .map(x => x * 2)
-    .map(x => x.toString())
-    .pipe(_().map(x => x + x))
-    .pipe(_.pipeline().map(x => x + x))
-    .pipe(h.getSlowWritable(res))
-    .on('finish', () => {
-      resolve()
-      expect(res).toEqual(['2222', '4444', '6666'])
-    })
-}))
+test('piping', () =>
+  new Promise((resolve) => {
+    const res = []
+    _([1, 2, 3])
+      .map((x) => x * 2)
+      .map((x) => x.toString())
+      .pipe(_().map((x) => x + x))
+      .pipe(_.pipeline().map((x) => x + x))
+      .pipe(h.getSlowWritable(res))
+      .on('finish', () => {
+        resolve()
+        expect(res).toEqual(['2222', '4444', '6666'])
+      })
+  }))
 
 test('extend', () => {
   _.extend('duplicate', function () {
-    return this.map(x => x * 2)
+    return this.map((x) => x * 2)
   })
   _([1, 2, 3])
     .duplicate()
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([2, 4, 6])
     })
 })
 
 test('filter', () => {
   const res = _([1, 2, 3])
-    .filter(x => x % 2 === 0)
+    .filter((x) => x % 2 === 0)
     .values()
   expect(res).toEqual([2])
 })
 
 test('reject', () => {
   const res = _([1, 2, 3])
-    .reject(x => x % 2 === 0)
+    .reject((x) => x % 2 === 0)
     .values()
   expect(res).toEqual([1, 3])
 })
 
 test('through pipeline', () => {
   _([1, 2, 3])
-    .through(_.pipeline()
-      .map(x => x * 2)
-      .map(x => x * 2),
+    .through(
+      _.pipeline()
+        .map((x) => x * 2)
+        .map((x) => x * 2),
     )
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([4, 8, 12])
     })
 })
@@ -305,22 +350,21 @@ test('through accepts null', () => {
 })
 
 test('through _.function', async () => {
-  const transform = _.map(x => x.toString(), null)
+  const transform = _.map((x) => x.toString(), null)
 
-  const res = await _([1, 2, 3])
-    .through(transform)
-    .toPromise()
+  const res = await _([1, 2, 3]).through(transform).toPromise()
 
   expect(res).toEqual(['1', '2', '3'])
 })
 
 test('through stream', () => {
   _([1, 2, 3])
-    .through(_()
-      .map(x => x * 2)
-      .map(x => x * 2),
+    .through(
+      _()
+        .map((x) => x * 2)
+        .map((x) => x * 2),
     )
-    .toArray(res => {
+    .toArray((res) => {
       expect(res).toEqual([4, 8, 12])
     })
 
@@ -335,7 +379,7 @@ test('through stream', () => {
 
 test('toPromise', async () => {
   const res = await _([1, 2, 3])
-    .map(x => x * 2)
+    .map((x) => x * 2)
     .toPromise()
 
   expect(res).toEqual([2, 4, 6])
@@ -347,8 +391,8 @@ test('promise in constructor', () => {
     return 'x'
   }
 
-  return new Promise(resolve => {
-    _(p()).toArray(res => {
+  return new Promise((resolve) => {
+    _(p()).toArray((res) => {
       expect(res).toEqual(['x'])
       resolve()
     })
@@ -362,31 +406,31 @@ test('generator', () => {
 
 test('generator end event', () => {
   const res = []
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     _(h.fibonacci(6))
       .on('end', () => {
         resolve()
         expect(res).toEqual(['0', '1', '1', '2', '3', '5'])
       })
-      .map(x => x.toString())
+      .map((x) => x.toString())
       .pipe(h.getSlowWritable(res, 0, 0))
   })
 })
 
-const asyncIterator = async function * (iterations = 10) {
+const asyncIterator = async function* (iterations = 10) {
   for (let i = 0; i < iterations; i++) {
     await h.sleep(0)
     yield i
   }
 }
 
-test('async generator', () => new Promise(resolve => {
-  _(asyncIterator(10))
-    .toArray(res => {
+test('async generator', () =>
+  new Promise((resolve) => {
+    _(asyncIterator(10)).toArray((res) => {
       resolve()
       expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     })
-}))
+  }))
 
 test('async generator no exstream', async () => {
   const res = []
@@ -418,47 +462,53 @@ test('splitBy with different encodings', () => {
   expect(res).toEqual(['line1', 'line2', 'line3', 'line4'])
 })
 
-test('split with multibyte chars', done => {
+test('split with multibyte chars', (done) => {
   const b = [
     'line1',
     Buffer.from('\n'),
     'line2',
     Buffer.from([0x0a /* \n */, 0xf0, 0x9f]),
-    Buffer.from([0x98, 0x8f])]
-  _(b).split().toArray(res => {
-    done()
-    expect(res).toEqual(['line1', 'line2', '😏'])
-  })
+    Buffer.from([0x98, 0x8f]),
+  ]
+  _(b)
+    .split()
+    .toArray((res) => {
+      done()
+      expect(res).toEqual(['line1', 'line2', '😏'])
+    })
 })
 
 test('toNodeStream', () => {
   const res = []
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     _([1, 2, 3])
-      .map(x => x.toString())
+      .map((x) => x.toString())
       .toNodeStream()
       .on('end', () => {
         resolve()
-        expect(res.map(x => x.toString())).toEqual(['1', '2', '3'])
+        expect(res.map((x) => x.toString())).toEqual(['1', '2', '3'])
       })
       .pipe(h.getSlowWritable(res, 0, 0))
   })
 })
 
 test('consume xs stream as an async iterator', async () => {
-  const s = _([1,2,3]).map(async x => x).resolve().toAsyncIterator()
+  const s = _([1, 2, 3])
+    .map(async (x) => x)
+    .resolve()
+    .toAsyncIterator()
   const res = []
   for await (const x of s) {
     res.push(x)
   }
-  expect(res).toEqual([1,2,3])
+  expect(res).toEqual([1, 2, 3])
 })
 
 test('handling errors in source promise', async () => {
   const oops = Promise.reject(new Error('muahaha'))
   const err = []
   await _(oops)
-    .errors(e => err.push(e))
+    .errors((e) => err.push(e))
     .values()
   expect(err.length).toBe(1)
   expect(err[0].message).toBe('muahaha')
@@ -466,9 +516,18 @@ test('handling errors in source promise', async () => {
 
 test('forking', async () => {
   const s = _([1, 2, 3])
-  const p1 = s.fork().map(x => x * 2 + 1).toPromise()
-  const p2 = s.fork().map(x => x * 2 + 2).toPromise()
-  const p3 = s.fork().map(x => x * 2 + 3).toPromise()
+  const p1 = s
+    .fork()
+    .map((x) => x * 2 + 1)
+    .toPromise()
+  const p2 = s
+    .fork()
+    .map((x) => x * 2 + 2)
+    .toPromise()
+  const p3 = s
+    .fork()
+    .map((x) => x * 2 + 3)
+    .toPromise()
   const [r1, r2, r3] = await Promise.all([p1, p2, p3])
   expect(r1).toEqual([3, 5, 7])
   expect(r2).toEqual([4, 6, 8])
@@ -477,22 +536,22 @@ test('forking', async () => {
 
 test('not more than 1 consumer if not fork', () => {
   const s = _()
-  s.map(x => x)
+  s.map((x) => x)
   let exception = false
   try {
-    s.map(x => x * 2)
+    s.map((x) => x * 2)
   } catch (e) {
     exception = true
   }
   expect(exception).toBe(true)
-  s.fork().map(x => x)
+  s.fork().map((x) => x)
 })
 
 test('tap', () => {
   const sideEffect = []
   const res = _([1, 2, 3])
-    .tap(x => sideEffect.push(x))
-    .map(x => x * 2)
+    .tap((x) => sideEffect.push(x))
+    .map((x) => x * 2)
     .values()
 
   expect(res).toEqual([2, 4, 6])
@@ -500,89 +559,95 @@ test('tap', () => {
 })
 
 test('compact', () => {
-  const res = _([1, 2, 0, null, undefined, false, ''])
-    .compact()
-    .values()
+  const res = _([1, 2, 0, null, undefined, false, '']).compact().values()
 
   expect(res).toEqual([1, 2])
 })
 
 test('find', () => {
   const res = _([1, 2, 0, null, undefined, ''])
-    .find(x => x === 2)
+    .find((x) => x === 2)
     .value()
 
   expect(res).toEqual(2)
 })
 
 test('drop', () => {
-  const res = _([1, 2, 3])
-    .drop(1)
-    .values()
+  const res = _([1, 2, 3]).drop(1).values()
 
   expect(res).toEqual([2, 3])
 })
 
 test('where', () => {
-  const res = _([{ a: 'a', b: 'b' }, { a: 'a', b: 'c' }, { a: 'b', b: 'b' }])
+  const res = _([
+    { a: 'a', b: 'b' },
+    { a: 'a', b: 'c' },
+    { a: 'b', b: 'b' },
+  ])
     .where({ a: 'a', b: 'b' })
     .values()
   expect(res).toEqual([{ a: 'a', b: 'b' }])
 })
 
 test('stopWhen', () => {
-  const res = _([1,2,3,4,5,6])
-    .map(x => x * 2)
-    .stopWhen(x => x === 10)
+  const res = _([1, 2, 3, 4, 5, 6])
+    .map((x) => x * 2)
+    .stopWhen((x) => x === 10)
     .values()
-  expect(res).toEqual([2,4,6,8,10])
+  expect(res).toEqual([2, 4, 6, 8, 10])
 })
 
 test('stopWhenAsync', async () => {
-  const res = await _([1,2,3,4,5,6])
-    .map(async x => {
+  const res = await _([1, 2, 3, 4, 5, 6])
+    .map(async (x) => {
       await h.sleep(10)
       return x
     })
     .resolve()
-    .map(x => x * 2)
-    .stopWhen(x => x === 10)
+    .map((x) => x * 2)
+    .stopWhen((x) => x === 10)
     .values()
-  expect(res).toEqual([2,4,6,8,10])
+  expect(res).toEqual([2, 4, 6, 8, 10])
 })
 
-test('overpushing a paused stopWhen', () => new Promise(resolve => {
-  const res = []
-  _([1, 2, 3, 4, 5, 6])
-    .collect()
-    .flatten()
-    .stopWhen(x => x === 2)
-    .pipe(h.getSlowWritable(res, 0, 0))
-    .on('finish', () => {
-      resolve()
-      expect(res).toEqual([1, 2])
-    })
-}))
+test('overpushing a paused stopWhen', () =>
+  new Promise((resolve) => {
+    const res = []
+    _([1, 2, 3, 4, 5, 6])
+      .collect()
+      .flatten()
+      .stopWhen((x) => x === 2)
+      .pipe(h.getSlowWritable(res, 0, 0))
+      .on('finish', () => {
+        resolve()
+        expect(res).toEqual([1, 2])
+      })
+  }))
 
-test('overpushing a paused stopOnError', () => new Promise(resolve => {
-  const res = []
-  _([1, 2, 3, 4, 5, 6])
-    .collect()
-    .flatten()
-    .map(x => {
-      if(x === 2) throw Error('an error')
-      return x
-    })
-    .stopOnError((err, push) => push(null, 'errHandled'))
-    .pipe(h.getSlowWritable(res, 0, 0))
-    .on('finish', () => {
-      resolve()
-      expect(res).toEqual([1, 'errHandled'])
-    })
-}))
+test('overpushing a paused stopOnError', () =>
+  new Promise((resolve) => {
+    const res = []
+    _([1, 2, 3, 4, 5, 6])
+      .collect()
+      .flatten()
+      .map((x) => {
+        if (x === 2) throw Error('an error')
+        return x
+      })
+      .stopOnError((err, push) => push(null, 'errHandled'))
+      .pipe(h.getSlowWritable(res, 0, 0))
+      .on('finish', () => {
+        resolve()
+        expect(res).toEqual([1, 'errHandled'])
+      })
+  }))
 
 test('findWhere', () => {
-  const res = _([{ a: 'a', b: 'b' }, { a: 'b', b: 'c' }, { a: 'a', b: 'b' }])
+  const res = _([
+    { a: 'a', b: 'b' },
+    { a: 'b', b: 'c' },
+    { a: 'a', b: 'b' },
+  ])
     .findWhere({ a: 'a' })
     .value()
   expect(res).toEqual({ a: 'a', b: 'b' })
@@ -600,32 +665,33 @@ test('sort strings', () => {
 
 test('sort by', () => {
   const res = _(['1', '2', '10', '20'])
-    .sortBy((a, b) => parseInt(a) > parseInt(b) ? 1 : -1)
+    .sortBy((a, b) => (parseInt(a) > parseInt(b) ? 1 : -1))
     .values()
   expect(res).toEqual(['1', '2', '10', '20'])
 })
 
-test('multipipe', () => new Promise(resolve => {
-  /*
+test('multipipe', () =>
+  new Promise((resolve) => {
+    /*
     This demonstrates how to pipe multiple input streams into an exstream writer.
     You can even control parallelism and order.
     The whole chain has back-pressure.
   */
-  const s = _()
-  const res = []
-  s.merge(2, false)
-    .pipe(h.getSlowWritable(res, 0, 1))
-    .on('finish', () => {
-      expect(res).toHaveLength(22)
-      expect(res.filter(x => x === '0')).toHaveLength(10)
-      expect(res.filter(x => x === '1')).toHaveLength(10)
-      expect(res.filter(x => x !== '0' && x !== '1')).toEqual(['a', 'b'])
-      resolve()
-    })
-  const s1 = _(Array(10).fill('0'))
-  const s2 = _(Array(10).fill('1'))
-  s.write(s1)
-  s.write(s2)
-  s.write(_(['a', 'b']))
-  s.write(_.nil)
-}))
+    const s = _()
+    const res = []
+    s.merge(2, false)
+      .pipe(h.getSlowWritable(res, 0, 1))
+      .on('finish', () => {
+        expect(res).toHaveLength(22)
+        expect(res.filter((x) => x === '0')).toHaveLength(10)
+        expect(res.filter((x) => x === '1')).toHaveLength(10)
+        expect(res.filter((x) => x !== '0' && x !== '1')).toEqual(['a', 'b'])
+        resolve()
+      })
+    const s1 = _(Array(10).fill('0'))
+    const s2 = _(Array(10).fill('1'))
+    s.write(s1)
+    s.write(s2)
+    s.write(_(['a', 'b']))
+    s.write(_.nil)
+  }))
