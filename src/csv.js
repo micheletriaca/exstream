@@ -120,7 +120,9 @@ _m.csv = (opts, s) => {
   const carriage = Buffer.from('\r', opts.encoding)[0]
   const quote = Buffer.from(opts.quote, opts.encoding)[0]
   const escape = Buffer.from(opts.escape, opts.encoding)[0]
-  const separator = Buffer.from(opts.separator, opts.encoding)[0]
+  const separator = Buffer.from(opts.separator, opts.encoding)
+  const separatorStart = separator[0]
+  const separatorLength = separator.length
   const escapedQuote = opts.escape + opts.quote
   let firstRow = Array.isArray(opts.header) ? opts.header : []
   let currentBuffer = Buffer.alloc(0)
@@ -143,8 +145,15 @@ _m.csv = (opts, s) => {
     row[idx] = currentBuffer.toString(opts.encoding, colStart, colEnd)
     if (handleQuote) {
       row[idx] = replace(row[idx], escapedQuote, opts.quote)
-      return false
     }
+    return false
+  }
+
+  function isSeparatorAt(index) {
+    return (
+      separatorLength === 1 ||
+      currentBuffer.subarray(index, index + separatorLength).equals(separator)
+    )
   }
   let row = firstRow.length ? {} : []
   let isEnding = false
@@ -188,10 +197,12 @@ _m.csv = (opts, s) => {
               inQuote = true
               colStart = i + 1
               continue
-            case separator:
+            case separatorStart:
+              if (!isSeparatorAt(i)) continue
               handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
               ++col
               endOffset = 0
+              i += separatorLength - 1
               colStart = i + 1
               continue
             case newLine:
