@@ -14,6 +14,7 @@
     "test": "vitest run --coverage",
     "ci:test": "vitest run --coverage",
     "benchmark": "vitest bench --run test/benchmarks/performance-baseline.bench.mjs",
+    "benchmark:csv:stream": "node test/benchmarks/streaming-csv.mjs",
     "benchmark:update": "node test/benchmarks/update-baseline.mjs",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix .",
@@ -22,6 +23,9 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "4.1.10",
+    "csv-parse": "7.0.2",
+    "csv-stringify": "6.8.3",
+    "fast-csv": "5.0.7",
     "highland": "2.13.5",
     "oxfmt": "0.63.0",
     "oxlint": "1.78.0",

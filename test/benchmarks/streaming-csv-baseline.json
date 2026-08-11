@@ -1,0 +1,295 @@
+{
+  "config": {
+    "chunkBytes": 65536,
+    "measuredRuns": 3,
+    "memorySampleMs": 10,
+    "rows": 500000,
+    "warmupRuns": 1,
+    "scenarios": [
+      {
+        "id": "fast-sink",
+        "throttleBytes": 0,
+        "throttleMs": 0
+      },
+      {
+        "id": "32-mib-s-sink",
+        "throttleBytes": 65536,
+        "throttleMs": 2
+      }
+    ]
+  },
+  "environment": {
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "node": "v26.4.0",
+    "platform": "darwin"
+  },
+  "libraries": [
+    {
+      "name": "Exstream",
+      "version": "0.25.0"
+    },
+    {
+      "name": "Node CSV",
+      "version": "7.0.2 / 6.8.3"
+    },
+    {
+      "name": "Fast-CSV",
+      "version": "5.0.7"
+    }
+  ],
+  "results": [
+    {
+      "library": "Exstream",
+      "scenario": "fast-sink",
+      "median": {
+        "elapsedMs": 244.28,
+        "firstByteMs": 2.69,
+        "heapDeltaMiB": 11.16,
+        "inputBytes": 19972807,
+        "inputMiBPerSecond": 77.97,
+        "outputBytes": 19972807,
+        "rssDeltaMiB": 30.5
+      },
+      "samples": [
+        {
+          "elapsedMs": 244.28,
+          "firstByteMs": 2.69,
+          "heapDeltaMiB": 11.46,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 77.97,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 30.5
+        },
+        {
+          "elapsedMs": 242.73,
+          "firstByteMs": 2.64,
+          "heapDeltaMiB": 11.16,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 78.47,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 30.2
+        },
+        {
+          "elapsedMs": 265.47,
+          "firstByteMs": 2.84,
+          "heapDeltaMiB": 11.15,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 71.75,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 39.03
+        }
+      ]
+    },
+    {
+      "library": "Node CSV",
+      "scenario": "fast-sink",
+      "median": {
+        "elapsedMs": 675.35,
+        "firstByteMs": 2.67,
+        "heapDeltaMiB": 13.59,
+        "inputBytes": 19972807,
+        "inputMiBPerSecond": 28.2,
+        "outputBytes": 19972807,
+        "rssDeltaMiB": 29.67
+      },
+      "samples": [
+        {
+          "elapsedMs": 634.13,
+          "firstByteMs": 2.67,
+          "heapDeltaMiB": 13.82,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 30.04,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 29.67
+        },
+        {
+          "elapsedMs": 680.52,
+          "firstByteMs": 2.5,
+          "heapDeltaMiB": 13.31,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 27.99,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 34.03
+        },
+        {
+          "elapsedMs": 675.35,
+          "firstByteMs": 3,
+          "heapDeltaMiB": 13.59,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 28.2,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 24.88
+        }
+      ]
+    },
+    {
+      "library": "Fast-CSV",
+      "scenario": "fast-sink",
+      "median": {
+        "elapsedMs": 916.49,
+        "firstByteMs": 5.48,
+        "heapDeltaMiB": 47.68,
+        "inputBytes": 19972807,
+        "inputMiBPerSecond": 20.78,
+        "outputBytes": 19972807,
+        "rssDeltaMiB": 46.41
+      },
+      "samples": [
+        {
+          "elapsedMs": 901.38,
+          "firstByteMs": 5.84,
+          "heapDeltaMiB": 46.11,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 21.13,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 45.28
+        },
+        {
+          "elapsedMs": 925.04,
+          "firstByteMs": 5.48,
+          "heapDeltaMiB": 50.04,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 20.59,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 51.36
+        },
+        {
+          "elapsedMs": 916.49,
+          "firstByteMs": 5.44,
+          "heapDeltaMiB": 47.68,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 20.78,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 46.41
+        }
+      ]
+    },
+    {
+      "library": "Exstream",
+      "scenario": "32-mib-s-sink",
+      "median": {
+        "elapsedMs": 749.92,
+        "firstByteMs": 2.84,
+        "heapDeltaMiB": 26.19,
+        "inputBytes": 19972807,
+        "inputMiBPerSecond": 25.4,
+        "outputBytes": 19972807,
+        "rssDeltaMiB": 20.53
+      },
+      "samples": [
+        {
+          "elapsedMs": 749.92,
+          "firstByteMs": 2.84,
+          "heapDeltaMiB": 26.19,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 25.4,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 21.22
+        },
+        {
+          "elapsedMs": 745.19,
+          "firstByteMs": 2.71,
+          "heapDeltaMiB": 27.04,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 25.56,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 20.16
+        },
+        {
+          "elapsedMs": 751.72,
+          "firstByteMs": 2.86,
+          "heapDeltaMiB": 25.93,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 25.34,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 20.53
+        }
+      ]
+    },
+    {
+      "library": "Node CSV",
+      "scenario": "32-mib-s-sink",
+      "median": {
+        "elapsedMs": 939.51,
+        "firstByteMs": 2.6,
+        "heapDeltaMiB": 28.1,
+        "inputBytes": 19972807,
+        "inputMiBPerSecond": 20.27,
+        "outputBytes": 19972807,
+        "rssDeltaMiB": 27.23
+      },
+      "samples": [
+        {
+          "elapsedMs": 939.51,
+          "firstByteMs": 2.55,
+          "heapDeltaMiB": 28.1,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 20.27,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 27.23
+        },
+        {
+          "elapsedMs": 930.18,
+          "firstByteMs": 2.6,
+          "heapDeltaMiB": 28.12,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 20.48,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 27.5
+        },
+        {
+          "elapsedMs": 941.61,
+          "firstByteMs": 2.64,
+          "heapDeltaMiB": 27.06,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 20.23,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 24.97
+        }
+      ]
+    },
+    {
+      "library": "Fast-CSV",
+      "scenario": "32-mib-s-sink",
+      "median": {
+        "elapsedMs": 957.5,
+        "firstByteMs": 5.23,
+        "heapDeltaMiB": 48.16,
+        "inputBytes": 19972807,
+        "inputMiBPerSecond": 19.89,
+        "outputBytes": 19972807,
+        "rssDeltaMiB": 53.19
+      },
+      "samples": [
+        {
+          "elapsedMs": 950.16,
+          "firstByteMs": 5.17,
+          "heapDeltaMiB": 50.76,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 20.05,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 51.53
+        },
+        {
+          "elapsedMs": 957.5,
+          "firstByteMs": 5.23,
+          "heapDeltaMiB": 44.01,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 19.89,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 53.23
+        },
+        {
+          "elapsedMs": 968.81,
+          "firstByteMs": 5.7,
+          "heapDeltaMiB": 48.16,
+          "inputBytes": 19972807,
+          "inputMiBPerSecond": 19.66,
+          "outputBytes": 19972807,
+          "rssDeltaMiB": 53.19
+        }
+      ]
+    }
+  ]
+}
