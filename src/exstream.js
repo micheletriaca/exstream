@@ -41,12 +41,15 @@ class Exstream extends EventEmitter {
   writable = true
   readable = true
 
+  #state = 'idle'
+  #startPromise = null
+  #abortReason = null
+
   #resumedAtLeastOnce = false
   paused = true
   pausedFromOutside = true
   pausedFromInside = false
 
-  ended = false
   #nilPushed = false
 
   #buffer = []
@@ -63,6 +66,18 @@ class Exstream extends EventEmitter {
   #synchronous = true
 
   #destroyers = []
+
+  get state() {
+    return this.#state
+  }
+
+  get ended() {
+    return this.#state === 'ended' || this.#state === 'destroyed' || this.#state === 'aborted'
+  }
+
+  get abortReason() {
+    return this.#abortReason
+  }
 
   constructor(xs) {
     super()
@@ -151,28 +166,41 @@ class Exstream extends EventEmitter {
   }
 
   start() {
+    if (this.ended || this.#state === 'ending') return Promise.resolve()
+    if (this.#startPromise) return this.#startPromise
     // setImmediate is needed to guarantee that .pipe() has resumed the source stream
-    return new Promise((resolve) =>
+    this.#startPromise = new Promise((resolve) =>
       setImmediate(() => {
+        if (this.ended || this.#state === 'ending') {
+          resolve()
+          return
+        }
+        this.#state = 'running'
         this.#autostart = true
         this.#checkBackPressure()
         resolve()
       }),
     )
+    return this.#startPromise
   }
 
-  // eslint-disable-next-line max-statements
-  end() {
-    if (this.ended) return
+  #terminate = (terminalState, discardBuffer = false) => {
+    if (this.ended || this.#state === 'ending') return
+    this.#state = 'ending'
+    if (discardBuffer) this.#buffer = []
     if (!this.#nilPushed) this._write(_.nil)
     if (this.paused) this.#flushBuffer(true)
-    this.ended = true
+    this.#state = terminalState
+    if (terminalState === 'aborted') this.emit('abort', this.#abortReason)
     if (this.readable) this.emit('end')
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
     const source = this.source
     if (source) {
       source.#removeConsumer(this)
-      if (source.#consumers.length === 0) source.destroy()
+      if (source.#consumers.length === 0) {
+        if (terminalState === 'aborted') source.abort(this.#abortReason)
+        else source.destroy()
+      }
     }
     this.#generator = null
     this.#sourceData = null
@@ -182,9 +210,22 @@ class Exstream extends EventEmitter {
     this.#observers = []
   }
 
+  end() {
+    this.#terminate('ended')
+  }
+
   destroy() {
-    if (this.paused) this.#buffer = [] // destroy brutally ends the stream discarding pending data
-    this.end()
+    this.#terminate('destroyed', true)
+  }
+
+  abort(reason) {
+    if (this.ended || this.#state === 'ending') return
+    if (reason === void 0) {
+      reason = Error('The operation was aborted')
+      reason.name = 'AbortError'
+    }
+    this.#abortReason = reason
+    this.#terminate('aborted', true)
   }
 
   #flushBuffer = (force = false) => {
@@ -262,8 +303,10 @@ class Exstream extends EventEmitter {
     else this.pausedFromOutside = false
     if (this.pausedFromInside || this.pausedFromOutside) return
     if (!this.#autostart || !this.#nextCalled || !this.#nextGenCalled || !this.paused) return
+    if (this.ended || this.#state === 'ending') return
 
     this.#resumedAtLeastOnce = true
+    this.#state = 'running'
     this.paused = false
     this.#flushBuffer() // This can pause the stream again if the consumers are slow
     if (this.paused) return
