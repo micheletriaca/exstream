@@ -55,6 +55,7 @@ class Exstream extends EventEmitter {
   #state = 'idle'
   #startPromise = null
   #abortReason = null
+  #failing = false
 
   #resumedAtLeastOnce = false
   paused = true
@@ -334,7 +335,7 @@ class Exstream extends EventEmitter {
     return this.#startPromise
   }
 
-  #terminate = (terminalState, discardBuffer = false) => {
+  #terminate = (terminalState, discardBuffer = false, propagateUpstream = true) => {
     if (this.ended || this.#state === 'ending') return
     this.#state = 'ending'
     if (discardBuffer) {
@@ -350,7 +351,7 @@ class Exstream extends EventEmitter {
     const source = this.source
     if (source) {
       source.#removeConsumer(this)
-      if (source.#consumers.length === 0) {
+      if (propagateUpstream && source.#consumers.length === 0) {
         if (terminalState === 'aborted') source.abort(this.#abortReason)
         else source.destroy()
       }
@@ -381,6 +382,38 @@ class Exstream extends EventEmitter {
     }
     this.#abortReason = reason
     this.#terminate('aborted', true)
+  }
+
+  fail(reason, input) {
+    const error = new ExstreamError(reason, input)
+    error.exstreamFatal = true
+    let root = this
+    while (root.source) root = root.source
+    return root.#failDownstream(error, input)
+  }
+
+  #failDownstream = (error, input) =>
+    this.ended ? void 0 : this.#failUnlessInProgress(error, input)
+
+  #failUnlessInProgress = (error, input) =>
+    this.#failing ? void 0 : this.#propagateFailure(error, input)
+
+  #emitErrorIfHandled = (error) => (this.listenerCount('error') ? this.emit('error', error) : false)
+
+  #propagateFailure = (error, input) => {
+    this.#failing = true
+    this.#emitErrorIfHandled(error)
+    this.emit('fatal', error, input)
+    const consumers = this.#consumers
+    const observers = this.#observers
+    for (let i = 0, len = consumers.length; i < len; i++) {
+      consumers[i].#failDownstream(error, input)
+    }
+    for (let i = 0, len = observers.length; i < len; i++) {
+      observers[i].#failDownstream(error, input)
+    }
+    this.#abortReason = error
+    this.#terminate('aborted', true, false)
   }
 
   #flushBuffer = (force = false) => {
@@ -682,7 +715,7 @@ class Exstream extends EventEmitter {
     this.#synchronous = false
 
     const merged = new Exstream()
-    merged.setMaxListeners(parallelism * 2)
+    merged.setMaxListeners(parallelism * 2 + 1)
     merged.#synchronous = false
 
     const pipeline = preserveOrder
@@ -694,6 +727,7 @@ class Exstream extends EventEmitter {
       if (preserveOrder) return subS.toPromise()
       return new Promise((resolve) => {
         let nextCallback
+        let fatalInProgress = false
         // eslint-disable-next-line sonarjs/no-identical-functions
         const drainCallback = () => {
           if (nextCallback) {
@@ -713,7 +747,13 @@ class Exstream extends EventEmitter {
             next()
           }
         })
-        const endListener = () => subS2.destroy()
+        subS2.once('fatal', (error, input) => {
+          fatalInProgress = true
+          merged.fail(error, input)
+        })
+        const endListener = () => {
+          if (!fatalInProgress) subS2.destroy()
+        }
         merged.on('drain', drainCallback)
         merged.once('end', endListener)
         subS2.resume()
@@ -721,7 +761,12 @@ class Exstream extends EventEmitter {
     }).through(pipeline)
 
     if (preserveOrder) return ss
-    ss.once('end', () => merged.end()).resume()
+    const stopCoordinator = () => ss.destroy()
+    merged.once('end', stopCoordinator)
+    ss.once('end', () => {
+      merged.off('end', stopCoordinator)
+      merged.end()
+    }).resume()
     return merged
   }
 

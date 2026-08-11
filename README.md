@@ -65,5 +65,10 @@ writable.writeData(new Error('another business value'))
 writable.end()
 ```
 
+Record errors remain recoverable through `.errors()`. Use
+`stream.fail(reason, input)` for an unrecoverable stream failure: it bypasses
+record-error handlers, rejects Promise sinks, and aborts every connected fork
+and observer with the normalized error as `abortReason`.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).

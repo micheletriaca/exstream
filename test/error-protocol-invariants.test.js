@@ -101,3 +101,38 @@ test('an error record is delivered to every fork without ending data flow', asyn
   expect(secondErrors).toEqual([reason])
   expect(source.state).toBe('ended')
 })
+
+test('a buffered error record retains its channel until consumption starts', async () => {
+  const reason = Error('buffered failure')
+  const errors = []
+  const source = _()
+  source.write(reason)
+  const result = source.errors((error) => errors.push(error)).toPromise()
+
+  source.end()
+
+  await expect(result).resolves.toEqual([])
+  expect(errors).toEqual([reason])
+})
+
+test('an error record overflowing an observer aborts only that observer', async () => {
+  const reason = Error('observed record failure')
+  const source = _()
+  const observer = source.observe({ bufferLimit: 0 })
+  const errors = []
+  const result = source.errors((error) => errors.push(error)).toPromise()
+
+  source.write(reason)
+  source.end()
+
+  await expect(result).resolves.toEqual([])
+  expect(errors).toEqual([reason])
+  expect(observer.state).toBe('aborted')
+  expect(observer.abortReason).toBeInstanceOf(_.BufferOverflowError)
+})
+
+test('merge rejects values that are not streams', async () => {
+  await expect(_([1]).merge().toPromise()).rejects.toThrow(
+    '.merge() can merge ONLY exstream instances',
+  )
+})

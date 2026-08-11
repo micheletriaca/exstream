@@ -409,8 +409,13 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   }
   const promises = []
   let ended = false
+  let result
 
   function handlePromiseResult(isError, res, resPointer, push, next) {
+    if (isError && res.exstreamFatal) {
+      result.fail(res, res.exstreamInput)
+      return
+    }
     resPointer.result = res
     resPointer.isError = isError
     const idx = promises.indexOf(resPointer)
@@ -431,7 +436,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
     else if (!preserveOrder || idx === 0) next()
   }
 
-  return s.consume((err, el, push, next) => {
+  result = s.consume((err, el, push, next) => {
     if (err) {
       push(err)
       next()
@@ -450,6 +455,7 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
       if (promises.length < parallelism) next()
     }
   })
+  return result
 })
 
 _m.errors = _.curry((fn, s) =>
