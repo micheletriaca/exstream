@@ -57,6 +57,13 @@ test('writeData writes an Error without routing it through the error channel', a
   expect(errors).toEqual([])
 })
 
+test('writeData rejects values after stream termination', () => {
+  const source = _()
+  source.end()
+
+  expect(() => source.writeData('late value')).toThrow('Cannot write to stream after nil')
+})
+
 test('an Error data value remains data across reliable forks', async () => {
   const reason = Error('forked value')
   const source = _([_.data(reason)])

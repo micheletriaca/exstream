@@ -1,82 +1,77 @@
-# Core portability audit
+# Portable runtime architecture
 
-This audit records the Node.js coupling that exists in Exstream 0.27. It does
-not claim browser compatibility. Its purpose is to define extraction boundaries
-for the portable core planned for 0.30 without changing the 0.27 public API.
+Exstream 0.30 separates the shared pipeline engine from Node.js and browser
+integration. The core has no third-party runtime dependencies and does not
+install global polyfills.
 
-## Runtime dependencies
+## Runtime boundaries
 
-Exstream has no third-party runtime dependencies. Its environment coupling is
-entirely through Node.js globals and built-in modules.
+| Area       | Shared core                                           | Node adapter                                 | Web adapter                                  |
+| ---------- | ----------------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| Events     | `EventHub` lifecycle facade                           | Native `EventEmitter` base for compatibility | Platform-neutral event base                  |
+| Sources    | Iterable, async iterable, Promise, Exstream generator | Node `Readable` and `Readable.from()`        | `ReadableStream`, fetch body, `EventTarget`  |
+| Sinks      | Exstream consumers and async iterator                 | Node writable streams and `Transform`        | `WritableStream` and `toWebReadable()`       |
+| Bytes      | Byte operations through the runtime interface         | `Buffer` and `StringDecoder`                 | `Uint8Array`, `TextEncoder`, `TextDecoder`   |
+| Scheduling | Internal microtask and next-turn operations           | Historical `setImmediate` next turn          | Timer fallback when `setImmediate` is absent |
 
-| Area           | Current locations                                   | Coupling                                                                   | Proposed boundary                                                                           |
-| -------------- | --------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Events         | `src/exstream.js`                                   | `Exstream` extends Node `EventEmitter`                                     | Internal lifecycle/events interface with Node and EventTarget adapters                      |
-| Node streams   | `src/exstream.js`, `src/methods.js`, `src/utils.js` | `Readable`, `Transform`, duck-typed source detection, `pipe` and `through` | Explicit Node readable/writable adapter and a protocol-based core source/sink               |
-| Scheduling     | `src/scheduler.js`                                  | Node uses `setImmediate` for next-turn compatibility                       | Internal microtask and next-turn operations with a browser timer fallback                   |
-| Monotonic time | `src/scheduler.js`                                  | None beyond the standard Performance API                                   | Internal clock backed by `performance.now()`                                                |
-| Bytes and text | `src/csv.js`, `src/methods.js`                      | CSV, base64 and encoding use `Buffer` and `StringDecoder`                  | `Uint8Array`, `TextEncoder` and `TextDecoder` byte layer; Buffer conversion in Node adapter |
+`src/runtime.js` defines the portable contract. `src/node-runtime.js` installs
+Node-specific operations; `src/web-runtime.js` selects the Web implementation.
+Conditional package exports choose `src/index.js` in Node and `src/browser.js`
+for browser-aware bundlers. Explicit `exstream.js/node` and `exstream.js/web`
+entry points are also published.
 
-## Findings
+## Node compatibility
 
-### Lifecycle and events
+The Node entry preserves the historical public shape: Exstream instances still
+inherit from `EventEmitter`, accept Node readable streams, pipe into Node
+writable streams, and expose `toNodeStream()`. Native `finished()` watches
+writable destinations with listener cleanup. Record errors remain distinct from
+fatal stream failures, so native `pipeline()` is not used to reinterpret them.
 
-`src/exstream.js` mixes the stream state machine with EventEmitter inheritance.
-Listener cleanup is characterized by `test/cleanup-invariants.test.js`, so a
-future event facade must preserve those end, error, drain, finish and close
-semantics before the inheritance can be removed.
+All direct imports of `events`, `stream`, `string_decoder`, uses of `Buffer`, and
+checks for `process.stdout` are confined to `src/node-runtime.js`. The browser
+bundle build fails if a Node built-in reaches its dependency graph.
 
-### Scheduler
+## Web Streams
 
-Startup, end propagation, generator resumption, piping and destruction now use
-the internal scheduler. Microtask and next-turn behavior remain distinct and
-are covered by ordering tests. Node keeps its historical `setImmediate`
-next-turn behavior, while environments without it use `setTimeout(0)`.
+`ReadableStream` sources are pulled only when the Exstream consumer requests the
+next record. Destruction cancels the reader and releases its lock.
+`toWebReadable()` exposes the inverse pull boundary and maps reader cancellation
+back to branch destruction or abort.
 
-### Stream adapters
+`pipe(WritableStream)` waits for `writer.ready` and each `writer.write()` before
+requesting another record. Completion closes the sink by default; failures and
+signals abort the graph and destination unless `preventClose` or `preventAbort`
+selects owner-managed lifecycle. Reliable forks therefore inherit the
+backpressure of the slowest Web sink.
 
-The constructor accepts Node readable streams and async iterables, while `pipe`,
-`through` and `toNodeStream` contain writable/transform integration. Iterable,
-async iterable and promise sources are the natural portable protocol. Node and
-Web Stream support should adapt to that protocol at the package boundary.
+Fetch response bodies need no special wrapper because they implement
+`ReadableStream`. The browser integration suite exercises
+`Response.body -> CSV -> transform -> WritableStream` directly.
 
-Writable destinations are watched with native `finished()` and automatic
-listener cleanup. Error watching is disabled there because Exstream errors are
-records in the pipeline rather than fatal Node stream errors. Native
-`pipeline()` is therefore not used internally: treating every record error as a
-fatal pipeline failure would change the existing public contract instead of
-simplifying the boundary.
+## Event sources
 
-### Fan-out and buffering
+`fromEvent()` accepts EventEmitter-like sources and `EventTarget`, with separate
+data, end, and error events. Listener removal is tied to the Exstream lifecycle
+and external `AbortSignal` cancellation.
 
-Reliable consumers and non-blocking observers now have separate ownership and
-cleanup paths. `fork()` consumers participate in source backpressure. Observer
-ingress has its own configurable buffer and explicit `error`, `drop-oldest`, or
-`drop-newest` overflow policy; an observer that ends early detaches without
-pausing or retaining its source. Current, peak, and dropped counts are exposed
-on each stream.
+Pausable producers use `pause()` when their bounded ingress buffer fills and
+`resume()` on drain. Non-pausable hot sources must use a finite
+`highWaterMark`; overflow is explicit as `error`, `drop-oldest`, or
+`drop-newest`. Sources expose `received`, `buffered`, `peakBuffered`, and
+`dropped` metrics.
 
-### Byte-oriented operators
+## Byte-oriented operators
 
-CSV parsing currently relies on Buffer indexing, slicing, concatenation and
-encoding-aware conversion. `encode`, `decode`, `split` and `splitBy` also use
-Buffer or StringDecoder. These operators should move onto a shared Uint8Array
-and text-codec layer before a browser entry point is published. The existing
-CSV chunk-boundary and multibyte-separator tests define part of that contract.
+CSV, base64, `encode`, `decode`, `split`, and `splitBy` use runtime byte and text
+codecs. The Web path produces `Uint8Array` and supports streaming UTF-8 decode,
+including multi-byte CSV separators split across chunks. Buffer conversion and
+Node-specific encodings stay in the Node adapter.
 
-### Timing operators
+## Verification
 
-`ratelimit` and `makeAsync` now use the scheduler's `performance.now()` clock.
-Wall-clock `Date` behavior in `throttle` remains separate and must be
-characterized before unification.
-
-## 0.30 extraction order
-
-1. Separate Node readable/writable detection and piping from `Exstream`.
-2. Replace internal Buffer assumptions with Uint8Array and codec helpers.
-3. Replace EventEmitter inheritance with an internal event facade.
-4. Add Web Streams and EventTarget adapters and run the shared transformation
-   suite in a browser and a Web Worker.
-
-Until those steps are complete, the package must continue to advertise Node.js
-as its supported runtime.
+The Node suite covers lifecycle, error protocol, cancellation, context,
+backpressure, fan-out, Web Stream adapters, event buffering, codecs, and the
+portable async-iterable fallback. A separate Vite build is executed in Chrome
+headless in both the main thread and a Web Worker. It also rejects Node built-in
+imports before the bundle can be emitted.

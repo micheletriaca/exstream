@@ -1,4 +1,5 @@
 const _ = (module.exports = {})
+const { runtime } = require('./runtime.js')
 _.nil = Symbol('exstream nil')
 _.isExstream = (x) => x && !!x.__exstream__
 _.isExstreamPipeline = (x) => !!x.__exstream_pipeline__
@@ -10,7 +11,7 @@ _.isAsyncIterable = (x) => _.isDefined(x) && typeof x[Symbol.asyncIterator] === 
 _.isFunction = (x) => typeof x === 'function'
 _.isString = (x) => typeof x === 'string'
 _.isError = (x) => x instanceof Error
-_.isNodeStream = (x) => x && _.isFunction(x.on) && _.isFunction(x.pipe)
+_.isNodeStream = (x) => runtime.isNodeStream(x)
 _.asPositiveInteger = (value, allowInfinity = false) => {
   let number
   try {

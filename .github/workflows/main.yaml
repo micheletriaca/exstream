@@ -29,6 +29,8 @@ jobs:
       - run: npm run lint
       - run: npm audit
       - run: npm run ci:test
+      - run: npm run test:browser
+        if: matrix.node-version == '24.x'
       - name: Coveralls
         uses: coverallsapp/github-action@v2.3.8
         if: matrix.node-version == '24.x'

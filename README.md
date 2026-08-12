@@ -195,5 +195,50 @@ asynchronous. The historical `values()` behavior is unchanged; it may return an
 array or a Promise. Prefer `valuesSync()` for known-synchronous pipelines and
 `toPromise()` for asynchronous ones.
 
+## Browser, Web Streams, and events
+
+The default package export selects a Node or browser runtime without global
+polyfills. Explicit entry points are also available as `exstream.js/node` and
+`exstream.js/web`. The browser runtime uses `Uint8Array`, `TextEncoder`, and
+`TextDecoder`; Node-only conversion remains available through `toNodeStream()`.
+
+`ReadableStream` and fetch response bodies can be used as sources, while
+`WritableStream` can be passed directly to `pipe()`:
+
+```javascript
+const output = new WritableStream({
+  async write(row) {
+    await save(row)
+  },
+})
+
+await exs(response.body)
+  .csv({ header: true })
+  .map((row) => ({ ...row, importedAt: Date.now() }))
+  .pipe(output, { signal })
+```
+
+Use `toWebReadable()` for the opposite boundary. Web Stream demand, cancel,
+abort, close, and reliable `fork()` backpressure are propagated through the
+Exstream graph.
+
+`fromEvent()` supports EventEmitter-like objects and `EventTarget`:
+
+```javascript
+const rows = exs.fromEvent(target, 'data', {
+  end: 'end',
+  error: 'error',
+  signal,
+  highWaterMark: 1024,
+  overflow: 'error',
+})
+```
+
+Pausable producers are paused when the buffer fills and resumed on drain. Hot,
+non-pausable producers cannot provide real backpressure, so their buffer must
+be finite and uses one of `error`, `drop-oldest`, or `drop-newest`. The source
+exposes `received`, `buffered`, `peakBuffered`, and `dropped` metrics and always
+unsubscribes on end, abort, failure, or destruction.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).

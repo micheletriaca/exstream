@@ -13,8 +13,7 @@ const {
   forkContext,
   setContextSignal,
 } = require('./context.js')
-const { Transform } = require('stream')
-const { StringDecoder } = require('string_decoder')
+const { runtime } = require('./runtime.js')
 
 const _m = (module.exports = {})
 const noCancel = () => undefined
@@ -22,7 +21,7 @@ const noCancel = () => undefined
 _m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
 
 _m.splitBy = _.curry((regexp, encoding, s) => {
-  const decoder = new StringDecoder(encoding)
+  const decoder = runtime.createStringDecoder(encoding)
   let buffer = ''
 
   return s.consumeSync((err, x, push) => {
@@ -43,12 +42,12 @@ _m.splitBy = _.curry((regexp, encoding, s) => {
 
 _m.encode = _.curry((encoding, s) => {
   if (encoding !== 'base64') throw Error('.encode() supports only base64 at the moment')
-  const decoder = new StringDecoder(encoding)
+  const decoder = runtime.createBase64Encoder()
   return s.consumeSync((err, x, push) => {
     if (err) return push(err)
     try {
       const isNil = x === _.nil
-      const str = isNil ? decoder.end() : decoder.write(Buffer.from(x))
+      const str = isNil ? decoder.end() : decoder.write(runtime.bytesFrom(x))
       push(null, str)
       if (isNil) push(null, _.nil)
     } catch (e) {
@@ -74,7 +73,7 @@ _m.decode = _.curry((encoding, s) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
-      if (buffer) push(null, Buffer.from(buffer, 'base64'))
+      if (buffer) push(null, runtime.decodeBase64(buffer))
       push(null, _.nil)
     } else {
       const toProcess = buffer + x
@@ -82,7 +81,7 @@ _m.decode = _.curry((encoding, s) => {
       const len = toProcess.length - remaining
       buffer = toProcess.slice(len)
       const validBase64 = toProcess.slice(0, len)
-      if (validBase64) push(null, Buffer.from(validBase64, 'base64'))
+      if (validBase64) push(null, runtime.decodeBase64(validBase64))
     }
   })
 })
@@ -1067,18 +1066,33 @@ _m.toPromise = (s) =>
     }),
   )
 
-_m.toNodeStream = _.curry((options, s) =>
-  s.pipe(
-    new Transform({
-      objectMode: true,
-      transform: function (chunk, enc, cb) {
-        this.push(chunk)
-        cb()
+_m.toNodeStream = _.curry((options, s) => s.pipe(runtime.createNodeTransform(options)))
+
+_m.toWebReadable = _.curry((options, s) => {
+  if (typeof globalThis.ReadableStream !== 'function') {
+    throw Error('toWebReadable() requires ReadableStream support')
+  }
+  if (options === null || options === void 0) options = {}
+  const iterator = s.toAsyncIterator({ signal: options.signal })
+  return new globalThis.ReadableStream(
+    {
+      async pull(controller) {
+        try {
+          const item = await iterator.next()
+          if (item.done) controller.close()
+          else controller.enqueue(item.value)
+        } catch (error) {
+          controller.error(error)
+        }
       },
-      ...options,
-    }),
-  ),
-)
+      async cancel(reason) {
+        if (reason === void 0) await iterator.return()
+        else await iterator.throw(reason).catch(() => {})
+      },
+    },
+    options.strategy,
+  )
+})
 
 _m.toAsyncIterator = _.curry((options, s) => {
   /* v8 ignore next -- Default and explicit options are both covered by iterator tests. */

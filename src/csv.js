@@ -7,6 +7,8 @@
 */
 
 const _ = require('./utils.js')
+const { runtime } = require('./runtime.js')
+const { bytesFrom, concatTextBytes } = runtime
 const _m = (module.exports = {})
 
 function replace(str, c, replacement) {
@@ -66,7 +68,7 @@ _m.csvStringify = (opts, s) => {
       else row[i] = processCell(cell)
     }
     const res = row.join(opts.separator) + opts.lineEnding
-    if (opts.encoding !== 'utf8') push(null, Buffer.from(res, opts.encoding))
+    if (opts.encoding !== 'utf8') push(null, bytesFrom(res, opts.encoding))
     else push(null, res)
   }
 
@@ -86,7 +88,7 @@ _m.csvStringify = (opts, s) => {
     } else {
       firstRow = injectedHeader ? opts.header : Object.keys(x)
       const rowToPush = firstRow.map(processCell).join(opts.separator) + opts.lineEnding
-      if (opts.encoding !== 'utf8') push(null, Buffer.from(rowToPush, opts.encoding))
+      if (opts.encoding !== 'utf8') push(null, bytesFrom(rowToPush, opts.encoding))
       else push(null, rowToPush)
       processRow(x, push)
     }
@@ -116,16 +118,16 @@ _m.csv = (opts, s) => {
     ...opts,
   }
 
-  const newLine = Buffer.from('\n', opts.encoding)[0]
-  const carriage = Buffer.from('\r', opts.encoding)[0]
-  const quote = Buffer.from(opts.quote, opts.encoding)[0]
-  const escape = Buffer.from(opts.escape, opts.encoding)[0]
-  const separator = Buffer.from(opts.separator, opts.encoding)
+  const newLine = bytesFrom('\n', opts.encoding)[0]
+  const carriage = bytesFrom('\r', opts.encoding)[0]
+  const quote = bytesFrom(opts.quote, opts.encoding)[0]
+  const escape = bytesFrom(opts.escape, opts.encoding)[0]
+  const separator = bytesFrom(opts.separator, opts.encoding)
   const separatorStart = separator[0]
   const separatorLength = separator.length
   const escapedQuote = opts.escape + opts.quote
   let firstRow = Array.isArray(opts.header) ? opts.header : []
-  let currentBuffer = Buffer.alloc(0)
+  let currentBuffer = bytesFrom([])
 
   function getFirstRow(row) {
     if (_.isFunction(opts.header)) return opts.header(row)
@@ -143,9 +145,7 @@ _m.csv = (opts, s) => {
   function storeCell(row, col, colStart, colEnd, handleQuote) {
     const idx = firstRow.length ? firstRow[col] : col
     row[idx] = currentBuffer.toString(opts.encoding, colStart, colEnd)
-    if (handleQuote) {
-      row[idx] = replace(row[idx], escapedQuote, opts.quote)
-    }
+    if (handleQuote) row[idx] = replace(row[idx], escapedQuote, opts.quote)
     return false
   }
 
@@ -168,11 +168,11 @@ _m.csv = (opts, s) => {
         return
       }
       isEnding = true
-      x = Buffer.from('\n')
+      x = bytesFrom('\n')
     }
 
-    const bufx = Buffer.from(x)
-    currentBuffer = Buffer.concat([currentBuffer, bufx], currentBuffer.length + bufx.length)
+    const bufx = bytesFrom(x)
+    currentBuffer = concatTextBytes([currentBuffer, bufx], currentBuffer.length + bufx.length)
     let inQuote = false
     let prevIdx = 0
     let col = 0

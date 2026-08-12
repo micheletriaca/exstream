@@ -1,8 +1,10 @@
 /* eslint-disable max-len */
+require('./platform-runtime.js')
 const { BufferOverflowError, Exstream } = require('./exstream')
 const methods = require('./methods')
 const csv = require('./csv')
 const joins = require('./joins')
+const events = require('./events.js')
 const utils = require('./utils')
 const { dataValue } = require('./protocol')
 
@@ -12,6 +14,7 @@ const _ = (module.exports = Object.assign(
   utils,
   csv,
   joins,
+  events,
   methods,
 ))
 
@@ -171,6 +174,9 @@ _.extend('toPromise', function () {
 })
 _.extend('toNodeStream', function (options) {
   return _.toNodeStream(options, this)
+})
+_.extend('toWebReadable', function (options) {
+  return _.toWebReadable(options, this)
 })
 _.extend('toAsyncIterator', function (options) {
   return _.toAsyncIterator(options, this)

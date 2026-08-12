@@ -27,9 +27,23 @@
     "LICENSE"
   ],
   "main": "src/index.js",
+  "browser": {
+    "./src/platform-runtime.js": "./src/web-runtime.js",
+    "./src/node-runtime.js": "./src/web-runtime.js"
+  },
+  "exports": {
+    ".": {
+      "browser": "./src/browser.js",
+      "node": "./src/index.js",
+      "default": "./src/browser.js"
+    },
+    "./node": "./src/index.js",
+    "./web": "./src/browser.js"
+  },
   "scripts": {
     "test": "vitest run --coverage",
     "ci:test": "vitest run --coverage",
+    "test:browser": "node test/browser/run-browser-tests.mjs",
     "benchmark": "vitest bench --run test/benchmarks/performance-baseline.bench.mjs",
     "benchmark:csv:memory": "node test/benchmarks/streaming-csv.mjs --memory-scaling",
     "benchmark:csv:stream": "node test/benchmarks/streaming-csv.mjs",
@@ -47,6 +61,7 @@
     "highland": "2.13.5",
     "oxfmt": "0.63.0",
     "oxlint": "1.78.0",
+    "vite": "8.2.1",
     "vitest": "4.1.10"
   },
   "engines": {

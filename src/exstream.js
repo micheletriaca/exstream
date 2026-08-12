@@ -2,9 +2,9 @@
   eslint-disable max-lines, sonarjs/cognitive-complexity, complexity, no-sync
 */
 
-const EventEmitter = require('events').EventEmitter
-const { finished, Readable } = require('stream')
 const _ = require('./utils')
+const { EventHub } = require('./event-hub.js')
+const { runtime } = require('./runtime.js')
 const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
 const { createContext, forkContext } = require('./context')
@@ -50,7 +50,7 @@ class BufferOverflowError extends Error {
   }
 }
 
-class Exstream extends EventEmitter {
+class Exstream extends EventHub {
   __exstream__ = true
   writable = true
   readable = true
@@ -146,10 +146,14 @@ class Exstream extends EventEmitter {
       return xs
     } else if (_.isNodeStream(xs)) {
       this.#pipeReadable(xs)
+    } else if (runtime.isWebReadableStream(xs)) {
+      this.#pipeWebReadable(xs)
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
     } else if (_.isAsyncIterable(xs)) {
-      this.#pipeReadable(Readable.from(xs))
+      if (runtime.readableFromAsyncIterable)
+        this.#pipeReadable(runtime.readableFromAsyncIterable(xs))
+      else this.#pipeAsyncIterable(xs)
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
     } else if (_.isFunction(xs)) {
@@ -213,6 +217,64 @@ class Exstream extends EventEmitter {
       scheduleNextTurn(() => this.end())
     })
     this.once('end', () => xs.destroy())
+  }
+
+  #pipeAsyncIterable = (iterable) => {
+    this.#synchronous = false
+    const iterator = iterable[Symbol.asyncIterator]()
+    let cancelled = false
+    this.#generator = (write, next) => {
+      /* v8 ignore next -- Destruction removes the generator before it can be invoked again. */
+      if (cancelled) return
+      void (async () => {
+        try {
+          const item = await iterator.next()
+          if (cancelled) return
+          if (item.done) write(_.nil)
+          else {
+            write(item.value)
+            next()
+          }
+        } catch (error) {
+          write(new ExstreamError(error))
+          write(_.nil)
+        }
+      })()
+    }
+    this.#destroyers.push(() => {
+      cancelled = true
+      if (typeof iterator.return === 'function') Promise.resolve(iterator.return()).catch(() => {})
+    })
+  }
+
+  #pipeWebReadable = (readable) => {
+    this.#synchronous = false
+    const reader = readable.getReader()
+    let cancelled = false
+    this.#generator = (write, next) => {
+      /* v8 ignore next -- Destruction removes the generator before it can be invoked again. */
+      if (cancelled) return
+      void (async () => {
+        try {
+          const { done, value } = await reader.read()
+          if (cancelled) return
+          if (done) write(_.nil)
+          else {
+            write(value)
+            next()
+          }
+        } catch (error) {
+          write(new ExstreamError(error))
+          write(_.nil)
+        }
+      })()
+    }
+    this.#destroyers.push(() => {
+      cancelled = true
+      Promise.resolve(reader.cancel(this.signal.reason))
+        .catch(() => {})
+        .finally(() => reader.releaseLock())
+    })
   }
 
   #addOnceListener = (event, target, handler) => {
@@ -780,6 +842,7 @@ class Exstream extends EventEmitter {
   }
 
   pipe(dest, options = {}) {
+    if (runtime.isWebWritableStream(dest)) return this.#pipeWebWritable(dest, options)
     let nextCallback
     const drainCallback = () => {
       if (nextCallback) {
@@ -789,7 +852,7 @@ class Exstream extends EventEmitter {
     }
     this.#synchronous = false
     if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
-    const canClose = dest !== process.stdout && dest !== process.stderr && options.end !== false
+    const canClose = !runtime.isStandardOutput(dest) && options.end !== false
     const end = canClose ? dest.end : () => ({})
     const s = this.consume((err, x, push, next) => {
       if (x === _.nil) {
@@ -812,11 +875,47 @@ class Exstream extends EventEmitter {
     })
     dest.on('drain', drainCallback)
     s.#destroyers.push(() => dest.off('drain', drainCallback))
-    const stopWatching = finished(dest, { cleanup: true, error: false }, () => s.end())
+    const stopWatching = runtime.finished(dest, { cleanup: true, error: false }, () => s.end())
     s.#destroyers.push(stopWatching)
     dest.emit('pipe', this)
     scheduleNextTurn(() => s.resume())
     return dest
+  }
+
+  #pipeWebWritable = async (destination, options) => {
+    const writer = destination.getWriter()
+    const iterator = this.toAsyncIterator({ signal: options.signal })
+    let rejectAbort
+    const abortPromise =
+      options.signal === void 0
+        ? null
+        : new Promise((resolve, reject) => {
+            rejectAbort = reject
+          })
+    const abort = () => rejectAbort(options.signal.reason)
+    if (options.signal !== void 0) options.signal.addEventListener('abort', abort, { once: true })
+    const wait = (promise) => (abortPromise ? Promise.race([promise, abortPromise]) : promise)
+    try {
+      while (true) {
+        // Sequential awaits are the Web WritableStream backpressure boundary.
+        // eslint-disable-next-line no-await-in-loop
+        const item = await wait(iterator.next())
+        if (item.done) break
+        // eslint-disable-next-line no-await-in-loop
+        await wait(writer.ready)
+        // eslint-disable-next-line no-await-in-loop
+        await wait(writer.write(item.value))
+      }
+      if (options.end !== false && !options.preventClose) await wait(writer.close())
+      return destination
+    } catch (error) {
+      await iterator.throw(error).catch(() => {})
+      if (!options.preventAbort) writer.abort(error).catch(() => {})
+      throw error
+    } finally {
+      if (options.signal !== void 0) options.signal.removeEventListener('abort', abort)
+      writer.releaseLock()
+    }
   }
 
   fork(disableAutostart = false) {
