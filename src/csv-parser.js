@@ -111,7 +111,8 @@ const createParser = (options, push, fail) => {
       : (text, index) => text.startsWith(escapeEscape, index)
   let headers = Array.isArray(options.header) && options.header.length > 0 ? options.header : null
   let pending = ''
-  let cellParts = []
+  let cell = ''
+  let cellParts = null
   let row = []
   let inQuotes = false
   let afterQuote = false
@@ -163,10 +164,22 @@ const createParser = (options, push, fail) => {
     if (text.length > 0) recordHasContent = true
   }
 
-  const append = (text) => {
-    if (text.length === 0) return
-    cellParts.push(text)
-    consumeRaw(text)
+  const consumePlain = (text) => {
+    addRecordBytes(text)
+    offset += text.length
+    column += text.length
+    if (text.length > 0) recordHasContent = true
+  }
+
+  const quoteHasLineBreak = options.quote === '\r' || options.quote === '\n'
+  const escapeQuoteHasLineBreak =
+    options.escape === '\r' || options.escape === '\n' || quoteHasLineBreak
+  const escapeEscapeHasLineBreak = options.escape === '\r' || options.escape === '\n'
+
+  const appendCell = (text) => {
+    if (cell.length === 0 && cellParts === null) cell = text
+    else if (cellParts === null) cellParts = [cell, text]
+    else cellParts.push(text)
   }
 
   const emitCell = () => {
@@ -176,10 +189,10 @@ const createParser = (options, push, fail) => {
         'EXSTREAM_CSV_MAX_COLUMNS',
       )
     }
-    row.push(
-      cellParts.length === 0 ? '' : cellParts.length === 1 ? cellParts[0] : cellParts.join(''),
-    )
-    cellParts = []
+    const value = cellParts === null ? cell : cellParts.join('')
+    cell = ''
+    cellParts = null
+    row.push(value)
     quotedField = false
     afterQuote = false
   }
@@ -276,14 +289,40 @@ const createParser = (options, push, fail) => {
     )
   }
 
+  const bufferPartialToken = (text, index, flush) => {
+    const start = Math.max(index, text.length - partialTokenWindow + 1)
+    for (let candidate = start; candidate < text.length; candidate++) {
+      if (!partialTokenAt(text, candidate)) continue
+      flush(candidate)
+      pending = text.slice(candidate)
+      return true
+    }
+    return false
+  }
+
   const processText = (input, final = false) => {
     const text = pending.length === 0 ? input : pending + input
     pending = ''
     let index = 0
     let segmentStart = 0
+    const tokenOrEnd = (value) => (value < 0 ? text.length : value)
+    let nextSeparator = tokenOrEnd(text.indexOf(options.separator))
+    let nextCarriage = tokenOrEnd(text.indexOf('\r'))
+    let nextLineFeed = tokenOrEnd(text.indexOf('\n'))
 
     const flush = (end) => {
-      if (end > segmentStart) append(text.slice(segmentStart, end))
+      if (end > segmentStart) {
+        const part = text.slice(segmentStart, end)
+        appendCell(part)
+        if (inQuotes) {
+          if (nextCarriage < segmentStart)
+            nextCarriage = tokenOrEnd(text.indexOf('\r', segmentStart))
+          if (nextLineFeed < segmentStart)
+            nextLineFeed = tokenOrEnd(text.indexOf('\n', segmentStart))
+          if (nextCarriage < end || nextLineFeed < end) consumeRaw(part)
+          else consumePlain(part)
+        } else consumePlain(part)
+      }
       segmentStart = end
     }
 
@@ -295,41 +334,96 @@ const createParser = (options, push, fail) => {
       }
 
       if (inQuotes) {
+        let nextQuote = text.indexOf(options.quote, index)
+        let nextEscape = escapeDifferentFromQuote ? text.indexOf(options.escape, index) : -1
+        if (nextQuote < 0 || (nextEscape >= 0 && nextEscape < nextQuote)) nextQuote = nextEscape
+        if (nextQuote < 0) {
+          if (!final && bufferPartialToken(text, index, flush)) return
+          break
+        }
+        index = nextQuote
+        if (!final && text.length - index < partialTokenWindow && partialTokenAt(text, index)) {
+          flush(index)
+          pending = text.slice(index)
+          return
+        }
         if (escapeQuoteAt(text, index)) {
           flush(index)
-          cellParts.push(options.quote)
-          consumeRaw(escapeQuote)
+          appendCell(options.quote)
+          if (escapeQuoteHasLineBreak) consumeRaw(escapeQuote)
+          else consumePlain(escapeQuote)
           index += escapeQuote.length
           segmentStart = index
           continue
         }
         if (escapeDifferentFromQuote && escapeEscapeAt(text, index)) {
           flush(index)
-          cellParts.push(options.escape)
-          consumeRaw(escapeEscape)
+          appendCell(options.escape)
+          if (escapeEscapeHasLineBreak) consumeRaw(escapeEscape)
+          else consumePlain(escapeEscape)
           index += escapeEscape.length
           segmentStart = index
           continue
         }
         if (quoteAt(text, index)) {
           flush(index)
-          consumeRaw(options.quote)
+          if (quoteHasLineBreak) consumeRaw(options.quote)
+          else consumePlain(options.quote)
           index += options.quote.length
           segmentStart = index
           inQuotes = false
           afterQuote = true
           continue
         }
-        index++
+        index += options.escape.length
         continue
       }
 
+      if (afterQuote) {
+        if (separatorAt(text, index)) {
+          flush(index)
+          consumePlain(options.separator)
+          emitCell()
+          index += options.separator.length
+          segmentStart = index
+          continue
+        }
+        const character = text[index]
+        if (character === '\r' || character === '\n') {
+          flush(index)
+          const delimiter = character === '\r' && text[index + 1] === '\n' ? '\r\n' : character
+          consumeRecordDelimiter(delimiter)
+          index += delimiter.length
+          segmentStart = index
+          continue
+        }
+        throw parseError('Unexpected character after closing CSV quote')
+      }
+
+      const nextQuote = options.fastMode ? -1 : text.indexOf(options.quote, index)
+      if (nextSeparator < index) {
+        nextSeparator = tokenOrEnd(text.indexOf(options.separator, index))
+      }
+      if (nextCarriage < index) {
+        nextCarriage = tokenOrEnd(text.indexOf('\r', index))
+      }
+      if (nextLineFeed < index) {
+        nextLineFeed = tokenOrEnd(text.indexOf('\n', index))
+      }
+      const nextToken = Math.min(tokenOrEnd(nextQuote), nextSeparator, nextCarriage, nextLineFeed)
+      if (nextToken === text.length) {
+        if (!final && bufferPartialToken(text, index, flush)) return
+        break
+      }
+      index = nextToken
+
       if (!options.fastMode && quoteAt(text, index)) {
         flush(index)
-        if (cellParts.length > 0 || afterQuote) {
+        if (cell.length > 0 || cellParts !== null) {
           throw parseError('Unexpected quote in unquoted CSV field')
         }
-        consumeRaw(options.quote)
+        if (quoteHasLineBreak) consumeRaw(options.quote)
+        else consumePlain(options.quote)
         index += options.quote.length
         segmentStart = index
         inQuotes = true
@@ -339,7 +433,7 @@ const createParser = (options, push, fail) => {
 
       if (separatorAt(text, index)) {
         flush(index)
-        consumeRaw(options.separator)
+        consumePlain(options.separator)
         emitCell()
         index += options.separator.length
         segmentStart = index
@@ -347,19 +441,11 @@ const createParser = (options, push, fail) => {
       }
 
       const character = text[index]
-      if (character === '\r' || character === '\n') {
-        flush(index)
-        const delimiter = character === '\r' && text[index + 1] === '\n' ? '\r\n' : character
-        consumeRecordDelimiter(delimiter)
-        index += delimiter.length
-        segmentStart = index
-        continue
-      }
-
-      if (afterQuote) {
-        throw parseError('Unexpected character after closing CSV quote')
-      }
-      index++
+      flush(index)
+      const delimiter = character === '\r' && text[index + 1] === '\n' ? '\r\n' : character
+      consumeRecordDelimiter(delimiter)
+      index += delimiter.length
+      segmentStart = index
     }
 
     flush(text.length)
@@ -382,7 +468,15 @@ const createParser = (options, push, fail) => {
       if (inQuotes) {
         throw parseError('Unterminated quoted CSV field', 'EXSTREAM_CSV_UNTERMINATED_QUOTE')
       }
-      if (recordHasContent || cellParts.length > 0 || row.length > 0 || quotedField) emitRow()
+      if (
+        recordHasContent ||
+        cell.length > 0 ||
+        cellParts !== null ||
+        row.length > 0 ||
+        quotedField
+      ) {
+        emitRow()
+      }
       ended = true
       push(null, _.nil)
     } catch (error) {
@@ -391,15 +485,7 @@ const createParser = (options, push, fail) => {
     }
   }
 
-  const isCleanRecordStart = () =>
-    !inQuotes &&
-    !afterQuote &&
-    row.length === 0 &&
-    cellParts.length === 0 &&
-    !recordHasContent &&
-    pending.length === 0
-
-  return { directPlainRow, end, isCleanRecordStart, writeText }
+  return { directPlainRow, end, writeText }
 }
 
 const createByteRouter = (options, parser) => {
@@ -411,7 +497,7 @@ const createByteRouter = (options, parser) => {
   const lineParts = []
   let lineLength = 0
   let pendingCarriage = false
-  let complexRecord = false
+  let textRouting = false
 
   const decode = (bytes) => runtime.bytesToString(bytes, options.encoding, 0, bytes.length)
 
@@ -421,18 +507,7 @@ const createByteRouter = (options, parser) => {
     return runtime.concatTextBytes(parts, lineLength + part.length)
   }
 
-  const routeLine = (bytes, delimiter, hasQuoteHint) => {
-    if (!complexRecord) {
-      const hasQuote =
-        hasQuoteHint === void 0 ? runtime.indexOfByte(bytes, quote[0]) >= 0 : hasQuoteHint
-      if (options.fastMode || !hasQuote) {
-        parser.directPlainRow(decode(bytes), delimiter)
-        return
-      }
-    }
-    parser.writeText(decode(bytes) + delimiter)
-    complexRecord = !parser.isCleanRecordStart()
-  }
+  const routeLine = (bytes, delimiter) => parser.directPlainRow(decode(bytes), delimiter)
 
   const clearLine = () => {
     lineParts.length = 0
@@ -450,14 +525,19 @@ const createByteRouter = (options, parser) => {
     lineLength += part.length
   }
 
+  const routeText = (bytes) => {
+    const input = joinLine(bytes)
+    clearLine()
+    parser.writeText(decoder.write(input))
+    textRouting = true
+  }
+
   const routeLfOnly = (bytes, initialStart) => {
     let start = initialStart
     let end
-    const hasNoQuotes =
-      !complexRecord && (options.fastMode || runtime.indexOfByte(bytes, quote[0], initialStart) < 0)
     while ((end = runtime.indexOfByte(bytes, newline[0], start)) >= 0) {
       const part = bytes.subarray(start, end)
-      if (lineParts.length === 0) routeLine(part, '\n', hasNoQuotes ? false : void 0)
+      if (lineParts.length === 0) routeLine(part, '\n')
       else routeBufferedLine(part, '\n')
       start = end + 1
     }
@@ -502,6 +582,10 @@ const createByteRouter = (options, parser) => {
       parser.writeText(decoder.write(bytes))
       return
     }
+    if (textRouting) {
+      parser.writeText(decoder.write(bytes))
+      return
+    }
 
     let start = 0
     if (pendingCarriage) {
@@ -510,12 +594,21 @@ const createByteRouter = (options, parser) => {
       routeBufferedLine(runtime.bytesFrom([]), isCrLf ? '\r\n' : '\r')
       if (isCrLf) start = 1
     }
+    if (!options.fastMode && runtime.indexOfByte(bytes, quote[0], start) >= 0) {
+      routeText(bytes.subarray(start))
+      return
+    }
     if (runtime.indexOfByte(bytes, carriage[0], start) < 0) routeLfOnly(bytes, start)
     else routeWithCarriages(bytes, start)
   }
 
   const end = () => {
     if (!canRouteBytes) {
+      parser.writeText(decoder.end())
+      parser.end()
+      return
+    }
+    if (textRouting) {
       parser.writeText(decoder.end())
       parser.end()
       return
