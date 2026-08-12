@@ -172,5 +172,22 @@ const loaded = exs(rows).mapAsync(loadRow, {
 timeout. A retry receives a fresh signal and the same context; after success,
 the context signal again follows the record's lifetime in the graph.
 
+## Async iteration
+
+`toAsyncIterator()` exposes a pull-based async iterator without inserting a
+Node.js stream adapter:
+
+```javascript
+for await (const row of pipeline.toAsyncIterator({ signal })) {
+  await writeRow(row)
+}
+```
+
+Each `next()` requests one record and therefore preserves source backpressure.
+`return()`—including an early `break` from `for await`—releases that consumer
+branch, while `throw()` and an external signal abort it. Because async iterators
+cannot carry Exstream's separate error channel, a record error rejects the
+current `next()` and closes the iterator branch.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).

@@ -1080,6 +1080,111 @@ _m.toNodeStream = _.curry((options, s) =>
   ),
 )
 
+_m.toAsyncIterator = _.curry((options, s) => {
+  /* v8 ignore next -- Default and explicit options are both covered by iterator tests. */
+  if (options === null || options === void 0) options = {}
+  if (typeof options !== 'object' || Array.isArray(options)) {
+    throw Error('error in .toAsyncIterator(). options must be an object')
+  }
+  const signal = options.signal
+  if (
+    signal !== void 0 &&
+    (!signal ||
+      typeof signal.aborted !== 'boolean' ||
+      typeof signal.addEventListener !== 'function' ||
+      typeof signal.removeEventListener !== 'function')
+  ) {
+    throw Error('error in .toAsyncIterator(). signal must be an AbortSignal')
+  }
+
+  let closed = false
+  let pending
+  let sequence = Promise.resolve()
+  let sink
+  let terminalError
+
+  const cleanup = () => {
+    if (signal !== void 0) signal.removeEventListener('abort', abortFromSignal)
+  }
+  const finish = (error) => {
+    if (closed) return
+    closed = true
+    cleanup()
+    if (pending) {
+      const request = pending
+      pending = null
+      if (error) request.reject(error)
+      else request.resolve({ done: true, value: void 0 })
+    } else if (error) terminalError = error
+  }
+  const abortFromSignal = () => sink.abort(signal.reason)
+
+  sink = s.consumeSync((error, value) => {
+    if (closed) return
+    if (value === _.nil) {
+      finish()
+      return
+    }
+
+    sink.pause()
+    const request = pending
+    pending = null
+    if (error) {
+      closed = true
+      cleanup()
+      request.reject(error)
+      sink.destroy()
+    } else {
+      request.resolve({ done: false, value })
+    }
+  })
+  sink.once('error', finish)
+
+  if (signal !== void 0) {
+    if (signal.aborted) scheduleMicrotask(abortFromSignal)
+    else signal.addEventListener('abort', abortFromSignal, { once: true })
+  }
+
+  const readOne = () => {
+    if (closed) {
+      if (terminalError) {
+        const error = terminalError
+        terminalError = null
+        return Promise.reject(error)
+      }
+      return Promise.resolve({ done: true, value: void 0 })
+    }
+    return new Promise((resolve, reject) => {
+      pending = { reject, resolve }
+      sink.resume()
+    })
+  }
+
+  const iterator = {
+    next() {
+      const request = sequence.then(readOne)
+      sequence = request.then(noCancel, noCancel)
+      return request
+    },
+    return(value) {
+      terminalError = null
+      finish()
+      sink.destroy()
+      return Promise.resolve({ done: true, value })
+    },
+    throw(error) {
+      sink.abort(error)
+      terminalError = null
+      return Promise.reject(error)
+    },
+    [Symbol.asyncIterator]() {
+      return this
+    },
+  }
+
+  return iterator
+})
+
 _m.slice = _.curry((start, end, s) => {
   let index = 0
   start = parseFloat(start)

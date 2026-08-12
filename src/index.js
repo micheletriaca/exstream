@@ -173,7 +173,7 @@ _.extend('toNodeStream', function (options) {
   return _.toNodeStream(options, this)
 })
 _.extend('toAsyncIterator', function (options) {
-  return _.toNodeStream(options, this)
+  return _.toAsyncIterator(options, this)
 })
 _.extend('where', function (props) {
   return _.where(props, this)
