@@ -189,5 +189,11 @@ branch, while `throw()` and an external signal abort it. Because async iterators
 cannot carry Exstream's separate error channel, a record error rejects the
 current `next()` and closes the iterator branch.
 
+For eager consumption, `valuesSync()` makes the execution mode explicit: it
+always returns an array and throws immediately if any part of the pipeline is
+asynchronous. The historical `values()` behavior is unchanged; it may return an
+array or a Promise. Prefer `valuesSync()` for known-synchronous pipelines and
+`toPromise()` for asynchronous ones.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).

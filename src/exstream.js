@@ -992,6 +992,15 @@ class Exstream extends EventEmitter {
     }
   }
 
+  valuesSync() {
+    let current = this
+    while (current.#synchronous && current.source) current = current.source
+    if (!current.#synchronous) {
+      throw Error('this stream is asynchronous. use .toPromise() instead of .valuesSync()')
+    }
+    return this.values()
+  }
+
   values() {
     let curr = this
     let isSync = this.#synchronous

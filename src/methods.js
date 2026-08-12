@@ -235,7 +235,7 @@ _m.throttle = _.curry((ms, s) => {
   if (ms === null) throw Error('error in .throttle(). ms must be a non-negative finite number')
   let last = 0 - ms
   return s.consume((err, x, push, next) => {
-    const now = new Date().getTime()
+    const now = monotonicNow()
     if (err) {
       push(err)
       next()

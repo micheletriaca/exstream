@@ -28,3 +28,38 @@ test('generator slower than ratelimit', () =>
       expect(res.length).toBeLessThanOrEqual(5)
     }, 50)
   }))
+
+test('throttle is unaffected by wall-clock jumps', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const result = await _([1, 2])
+      .tap((value) => {
+        if (value === 2) vi.setSystemTime(new Date('2036-01-01T00:00:00Z'))
+      })
+      .throttle(1000)
+      .toPromise()
+
+    expect(result).toEqual([1])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('abort clears a pending ratelimit timer', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const reason = Error('abort rate limit')
+    const limited = _([1, 2]).ratelimit(1, 1000)
+    const result = limited.toPromise()
+
+    expect(vi.getTimerCount()).toBe(1)
+    limited.abort(reason)
+
+    await expect(result).rejects.toBe(reason)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(limited.state).toBe('aborted')
+  } finally {
+    vi.useRealTimers()
+  }
+})
