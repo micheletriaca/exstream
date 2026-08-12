@@ -11,33 +11,33 @@ machine and runtime, not a universal ranking.
 - Node CSV: `csv-parse` 7.0.2 / `csv-stringify` 6.8.3
 - Fast-CSV 5.0.7
 - one warmup and three measured fresh processes for the full preset
-- source digest: `d50b045f7ff74b30178799a7529bb2d0fcc7b1364745d2419feceaeaf6cdc78d`
+- source digest: `19372fc731e5ff3a446ae31eabb2906438df9a88de3cfce95b1637d5dc6574fc`
 
 ## Throughput
 
 Values are median input MiB/s across three measured runs. Bold marks the best
 result in each scenario on this machine.
 
-| Scenario                                   |    Exstream |  Node CSV | Fast-CSV |
-| ------------------------------------------ | ----------: | --------: | -------: |
-| Plain object parse, 500k rows              |  **144.41** |     38.72 |    28.14 |
-| Quoted/escaped/multiline array parse, 100k |       41.00 | **59.11** |    29.61 |
-| Quoted object parse, 7-byte chunks         |       12.97 | **13.60** |     2.03 |
-| Wide 64-column array parse                 |  **267.76** |     54.85 |    32.56 |
-| Plain object stringify, 500k               |  **109.11** |     76.36 |    76.85 |
-| Quoted array stringify, 100k               |  **110.38** |     85.43 |    82.96 |
-| Plain object pipeline, throttled writer    |        6.76 |      7.29 | **7.35** |
-| Plain array parse, 1m rows                 |  **168.64** |     58.47 |    29.30 |
-| Narrow object parse, 5m rows               |   **37.15** |     19.00 |    10.70 |
-| Quoted array parse, 3-byte chunks          |       11.47 | **12.71** |     1.60 |
-| 8 records with 1 MiB fields                | **1077.19** |     37.36 |     0.89 |
-| Wide 64-column object stringify            |  **162.90** |     81.25 |   106.38 |
-| Quoted object end-to-end pipeline          |   **33.54** |     30.87 |    23.59 |
+| Scenario                                   |    Exstream | Node CSV | Fast-CSV |
+| ------------------------------------------ | ----------: | -------: | -------: |
+| Plain object parse, 500k rows              |  **143.85** |    37.62 |    26.87 |
+| Quoted/escaped/multiline array parse, 100k |   **60.55** |    57.97 |    28.35 |
+| Quoted object parse, 7-byte chunks         |   **15.09** |    13.95 |     2.02 |
+| Wide 64-column array parse                 |  **269.77** |    54.09 |    31.68 |
+| Plain object stringify, 500k               |  **108.26** |    77.72 |    76.85 |
+| Quoted array stringify, 100k               |  **109.67** |    85.11 |    82.18 |
+| Plain object pipeline, throttled writer    |        7.11 |     7.26 | **7.34** |
+| Plain array parse, 1m rows                 |  **166.96** |    57.06 |    28.44 |
+| Narrow object parse, 5m rows               |   **36.76** |    18.74 |    10.44 |
+| Quoted array parse, 3-byte chunks          |   **12.77** |    12.42 |     1.55 |
+| 8 records with 1 MiB fields                | **1071.38** |    36.65 |     0.88 |
+| Wide 64-column object stringify            |  **159.11** |    81.99 |   104.88 |
+| Quoted object end-to-end pipeline          |   **44.66** |    30.72 |    22.75 |
 
-Exstream has the highest median throughput in 9 of the 13 full-preset
-scenarios. Node CSV leads the general quoted/escaped/multiline parse and is
-slightly ahead under three- and seven-byte fragmentation; Fast-CSV slows
-substantially in those cases. The throttled pipeline deliberately makes the
+Exstream has the highest median throughput in 12 of the 13 full-preset
+scenarios, including the general quoted/escaped/multiline parse and both
+heavily fragmented quoted cases. Fast-CSV slows substantially under three- and
+seven-byte fragmentation. The throttled pipeline deliberately makes the
 writer, rather than parsing speed, the bottleneck: all three implementations
 converge around 7 MiB/s there, while their memory use remains distinguishable.
 
@@ -55,9 +55,9 @@ while the source-to-parser-to-serializer-to-throttled-sink pipeline runs.
 
 |      Rows |  Exstream | Node CSV | Fast-CSV |
 | --------: | --------: | -------: | -------: |
-|    50,000 | **21.05** |    50.56 |    51.92 |
-|   500,000 | **78.38** |   110.88 |   109.75 |
-| 5,000,000 | **81.81** |   130.39 |   131.41 |
+|    50,000 | **20.70** |    51.41 |    51.63 |
+|   500,000 | **79.64** |   110.80 |   133.92 |
+| 5,000,000 | **81.61** |   133.23 |   131.64 |
 
 Exstream's measured working-memory delta rises while the workload warms from
 50k to 500k records, then remains close between 500k and 5m records instead of

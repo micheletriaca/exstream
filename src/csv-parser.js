@@ -82,6 +82,33 @@ const createParser = (options, push, fail) => {
   const escapeQuote = options.escape + options.quote
   const escapeEscape = options.escape + options.escape
   const escapeDifferentFromQuote = options.escape !== options.quote
+  const partialTokenWindow = Math.max(
+    2,
+    options.separator.length,
+    escapeQuote.length,
+    escapeDifferentFromQuote ? escapeEscape.length : 0,
+  )
+  const quoteCode = options.quote.length === 1 ? options.quote.charCodeAt(0) : -1
+  const escapeCode = options.escape.length === 1 ? options.escape.charCodeAt(0) : -1
+  const separatorCode = options.separator.length === 1 ? options.separator.charCodeAt(0) : -1
+  const quoteAt =
+    quoteCode >= 0
+      ? (text, index) => text.charCodeAt(index) === quoteCode
+      : (text, index) => text.startsWith(options.quote, index)
+  const separatorAt =
+    separatorCode >= 0
+      ? (text, index) => text.charCodeAt(index) === separatorCode
+      : (text, index) => text.startsWith(options.separator, index)
+  const escapeQuoteAt =
+    escapeCode >= 0 && quoteCode >= 0
+      ? (text, index) =>
+          text.charCodeAt(index) === escapeCode && text.charCodeAt(index + 1) === quoteCode
+      : (text, index) => text.startsWith(escapeQuote, index)
+  const escapeEscapeAt =
+    escapeCode >= 0
+      ? (text, index) =>
+          text.charCodeAt(index) === escapeCode && text.charCodeAt(index + 1) === escapeCode
+      : (text, index) => text.startsWith(escapeEscape, index)
   let headers = Array.isArray(options.header) && options.header.length > 0 ? options.header : null
   let pending = ''
   let cellParts = []
@@ -114,6 +141,10 @@ const createParser = (options, push, fail) => {
 
   const advance = (text) => {
     offset += text.length
+    if (text.indexOf('\r') < 0 && text.indexOf('\n') < 0) {
+      column += text.length
+      return
+    }
     let start = 0
     for (let index = 0; index < text.length; index++) {
       const character = text[index]
@@ -145,7 +176,9 @@ const createParser = (options, push, fail) => {
         'EXSTREAM_CSV_MAX_COLUMNS',
       )
     }
-    row.push(cellParts.length === 0 ? '' : cellParts.join(''))
+    row.push(
+      cellParts.length === 0 ? '' : cellParts.length === 1 ? cellParts[0] : cellParts.join(''),
+    )
     cellParts = []
     quotedField = false
     afterQuote = false
@@ -223,45 +256,46 @@ const createParser = (options, push, fail) => {
     column = 1
   }
 
-  const partialTokenAt = (text, index) => {
-    const suffix = text.slice(index)
-    if (suffix === '\r') return true
-    if (
-      !inQuotes &&
-      options.separator.startsWith(suffix) &&
-      suffix.length < options.separator.length
-    ) {
-      return true
+  const isPartialTokenAt = (text, index, token) => {
+    const remaining = text.length - index
+    if (remaining >= token.length) return false
+    for (let offset = 0; offset < remaining; offset++) {
+      if (text.charCodeAt(index + offset) !== token.charCodeAt(offset)) return false
     }
+    return true
+  }
+
+  const partialTokenAt = (text, index) => {
+    const remaining = text.length - index
+    if (remaining === 1 && text.charCodeAt(index) === 13) return true
+    if (!inQuotes && isPartialTokenAt(text, index, options.separator)) return true
     return (
       inQuotes &&
-      ((escapeQuote.startsWith(suffix) && suffix.length < escapeQuote.length) ||
-        (escapeDifferentFromQuote &&
-          escapeEscape.startsWith(suffix) &&
-          suffix.length < escapeEscape.length))
+      (isPartialTokenAt(text, index, escapeQuote) ||
+        (escapeDifferentFromQuote && isPartialTokenAt(text, index, escapeEscape)))
     )
   }
 
   const processText = (input, final = false) => {
-    const text = pending + input
+    const text = pending.length === 0 ? input : pending + input
     pending = ''
     let index = 0
     let segmentStart = 0
 
     const flush = (end) => {
-      append(text.slice(segmentStart, end))
+      if (end > segmentStart) append(text.slice(segmentStart, end))
       segmentStart = end
     }
 
     while (index < text.length) {
-      if (!final && partialTokenAt(text, index)) {
+      if (!final && text.length - index < partialTokenWindow && partialTokenAt(text, index)) {
         flush(index)
         pending = text.slice(index)
         return
       }
 
       if (inQuotes) {
-        if (text.startsWith(escapeQuote, index)) {
+        if (escapeQuoteAt(text, index)) {
           flush(index)
           cellParts.push(options.quote)
           consumeRaw(escapeQuote)
@@ -269,7 +303,7 @@ const createParser = (options, push, fail) => {
           segmentStart = index
           continue
         }
-        if (escapeDifferentFromQuote && text.startsWith(escapeEscape, index)) {
+        if (escapeDifferentFromQuote && escapeEscapeAt(text, index)) {
           flush(index)
           cellParts.push(options.escape)
           consumeRaw(escapeEscape)
@@ -277,7 +311,7 @@ const createParser = (options, push, fail) => {
           segmentStart = index
           continue
         }
-        if (text.startsWith(options.quote, index)) {
+        if (quoteAt(text, index)) {
           flush(index)
           consumeRaw(options.quote)
           index += options.quote.length
@@ -290,7 +324,7 @@ const createParser = (options, push, fail) => {
         continue
       }
 
-      if (!options.fastMode && text.startsWith(options.quote, index)) {
+      if (!options.fastMode && quoteAt(text, index)) {
         flush(index)
         if (cellParts.length > 0 || afterQuote) {
           throw parseError('Unexpected quote in unquoted CSV field')
@@ -303,7 +337,7 @@ const createParser = (options, push, fail) => {
         continue
       }
 
-      if (text.startsWith(options.separator, index)) {
+      if (separatorAt(text, index)) {
         flush(index)
         consumeRaw(options.separator)
         emitCell()
