@@ -130,5 +130,26 @@ and whose `contexts` array is aligned with the contributing records.
 Concurrent `resolve()` and both ordered and unordered `merge()` retain each
 record's context.
 
+## Asynchronous mapping
+
+`mapAsync()` invokes the mapping function only when a concurrency slot is
+available. Results preserve input order by default; set `ordered: false` to emit
+them in completion order:
+
+```javascript
+const enriched = exs(rows).mapAsync(
+  async (row, context) => {
+    const customer = await loadCustomer(row.customerId, { signal: context.signal })
+    return { ...row, customer }
+  },
+  { concurrency: 10, ordered: true },
+)
+```
+
+The default is `{ concurrency: 1, ordered: true }`. An optional external
+`signal` aborts the operator and its active record contexts. The existing
+`map(fn).resolve(concurrency, ordered)` composition remains supported and uses
+the same internal concurrency coordinator.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).

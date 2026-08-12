@@ -4,7 +4,7 @@
 
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
-const { monotonicNow, scheduleNextTurn } = require('./scheduler.js')
+const { monotonicNow, scheduleMicrotask, scheduleNextTurn } = require('./scheduler.js')
 const {
   aggregateContexts,
   appendContext,
@@ -525,64 +525,147 @@ _m.massCatch = _.curry((fn, s) =>
     : s.map((x) => x.catch(fn)),
 )
 
+const emitConcurrentResult = (task, error, value) => {
+  if (task.context === void 0) task.push(error, value)
+  else task.push(error, value, task.context)
+}
+
+const validateMapAsyncSignal = (signal) => {
+  if (signal === void 0) return
+  if (
+    !signal ||
+    typeof signal.aborted !== 'boolean' ||
+    typeof signal.addEventListener !== 'function' ||
+    typeof signal.removeEventListener !== 'function'
+  ) {
+    throw Error('error in .mapAsync(). signal must be an AbortSignal')
+  }
+}
+
+const linkAbortSignal = (result, signal) => {
+  if (signal === void 0) return
+  const abort = () => result.abort(signal.reason)
+  const cleanup = () => signal.removeEventListener('abort', abort)
+  result.once('end', cleanup)
+  if (signal.aborted) {
+    result.pause(true)
+    scheduleMicrotask(abort)
+  } else {
+    signal.addEventListener('abort', abort, { once: true })
+  }
+}
+
+const concurrentTransform = (s, options) => {
+  const { concurrency, createTask, ordered, requirePromise, signal } = options
+  const tasks = []
+  let sourceEnded = false
+  let result
+
+  const handleTaskResult = (isError, value, task) => {
+    const index = tasks.indexOf(task)
+    if (result.ended) {
+      if (index !== -1) tasks.splice(index, 1)
+      return
+    }
+    if (isError && value.exstreamFatal) {
+      result.fail(value, value.exstreamInput)
+      return
+    }
+    task.error = isError ? value : null
+    task.result = value
+    task.settled = true
+
+    if (ordered) {
+      while (tasks[0] && tasks[0].settled) {
+        const ready = tasks.shift()
+        emitConcurrentResult(ready, ready.error, ready.result)
+      }
+    } else {
+      tasks.splice(index, 1)
+      emitConcurrentResult(task, task.error, task.result)
+    }
+
+    if (sourceEnded && tasks.length === 0) task.push(null, _.nil)
+    else if (!ordered || index === 0) task.next()
+  }
+
+  result = s.consume((error, value, push, next) => {
+    if (error) {
+      push(error)
+      next()
+    } else if (value === _.nil) {
+      if (tasks.length === 0) push(null, _.nil)
+      else sourceEnded = true
+    } else {
+      let context = result._recordContext
+      const taskResult = createTask(value, context, result)
+      context = taskResult.context
+      const promise = taskResult.value
+
+      if (requirePromise && !_.isPromise(promise)) {
+        push(new ExstreamError(Error('error in .resolve(). item must be a promise'), value))
+        next()
+        return
+      }
+
+      const task = { context, next, push, settled: false }
+      tasks.push(task)
+      Promise.resolve(promise)
+        .then((resolved) => handleTaskResult(false, resolved, task))
+        .catch((reason) => handleTaskResult(true, new ExstreamError(reason, value), task))
+      if (tasks.length < concurrency) next()
+    }
+  })
+  linkAbortSignal(result, signal)
+  return result
+}
+
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   parallelism = _.asPositiveInteger(parallelism, true)
   if (parallelism === null) {
     throw Error('error in .resolve(). parallelism must be a positive integer or Infinity')
   }
-  const promises = []
-  let ended = false
-  let result
-
-  function handlePromiseResult(isError, res, resPointer, push, next) {
-    if (result.ended) {
-      promises.splice(promises.indexOf(resPointer), 1)
-      return
-    }
-    if (isError && res.exstreamFatal) {
-      result.fail(res, res.exstreamInput)
-      return
-    }
-    resPointer.result = res
-    resPointer.isError = isError
-    const idx = promises.indexOf(resPointer)
-
-    if (preserveOrder) {
-      while (_.has(promises[0], 'result')) {
-        const item = promises.shift()
-        if (item.isError) item.push(item.result)
-        else item.push(null, item.result)
-      }
-    } else {
-      promises.splice(idx, 1)
-      if (isError) push(res)
-      else push(null, res)
-    }
-
-    if (ended && promises.length === 0) push(null, _.nil)
-    else if (!preserveOrder || idx === 0) next()
-  }
-
-  result = s.consume((err, el, push, next) => {
-    if (err) {
-      push(err)
-      next()
-    } else if (el === _.nil) {
-      if (promises.length === 0) push(null, _.nil)
-      else ended = true
-    } else if (!_.isPromise(el)) {
-      push(new ExstreamError(Error('error in .resolve(). item must be a promise'), el))
-      next()
-    } else {
-      const resPointer = { push }
-      promises.push(resPointer)
-      el.then((res) => handlePromiseResult(false, res, resPointer, push, next)).catch((res) => {
-        handlePromiseResult(true, new ExstreamError(res, el), resPointer, push, next)
-      })
-      if (promises.length < parallelism) next()
-    }
+  return concurrentTransform(s, {
+    concurrency: parallelism,
+    createTask: (value, context) => ({ context, value }),
+    ordered: preserveOrder,
+    requirePromise: true,
   })
-  return result
+})
+
+_m.mapAsync = _.curry((fn, options, s) => {
+  if (!_.isFunction(fn)) throw Error('error in .mapAsync(). fn must be a function')
+  if (options === null || options === void 0) options = {}
+  if (typeof options !== 'object' || Array.isArray(options)) {
+    throw Error('error in .mapAsync(). options must be an object')
+  }
+  const concurrency = _.asPositiveInteger(
+    options.concurrency === void 0 ? 1 : options.concurrency,
+    true,
+  )
+  if (concurrency === null) {
+    throw Error('error in .mapAsync(). concurrency must be a positive integer or Infinity')
+  }
+  const ordered = options.ordered === void 0 ? true : options.ordered
+  if (typeof ordered !== 'boolean') {
+    throw Error('error in .mapAsync(). ordered must be a boolean')
+  }
+  validateMapAsyncSignal(options.signal)
+  const usesContext = fn.length >= 2
+  return concurrentTransform(s, {
+    concurrency,
+    createTask: (value, context, result) => {
+      if (usesContext && context === void 0) context = createContext(value, result.signal)
+      try {
+        return { context, value: usesContext ? fn(value, context) : fn(value) }
+      } catch (reason) {
+        return { context, value: Promise.reject(new ExstreamError(reason, value)) }
+      }
+    },
+    ordered,
+    requirePromise: false,
+    signal: options.signal,
+  })
 })
 
 _m.errors = _.curry((fn, s) => {

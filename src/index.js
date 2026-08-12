@@ -100,6 +100,9 @@ _.extend('massCatch', function (fn) {
 _.extend('resolve', function (parallelism = 1, preserveOrder = true) {
   return _.resolve(parallelism, preserveOrder, this)
 })
+_.extend('mapAsync', function (fn, options = null) {
+  return _.mapAsync(fn, options, this)
+})
 _.extend('csv', function (opts) {
   return _.csv(opts, this)
 })
