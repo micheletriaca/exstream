@@ -54,3 +54,64 @@ test('CSV benchmark smoke preset produces a self-describing report', async () =>
     reason: expect.any(String),
   })
 })
+
+test('CSV benchmark only runs libraries in scenarios supported by their streaming APIs', async () => {
+  const script = path.resolve(__dirname, 'benchmarks/streaming-csv.mjs')
+  const stdout = await new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [script, '--preset=smoke', '--no-write', '--json'],
+      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
+      (error, output) => {
+        if (error) reject(error)
+        else resolve(output)
+      },
+    )
+  })
+  const report = JSON.parse(stdout)
+  const librariesByCase = Object.groupBy(report.results, (result) => result.case)
+
+  expect(report.libraries.map(({ name }) => name)).toEqual([
+    'Exstream',
+    'Node CSV',
+    'Fast-CSV',
+    'CSV Parser',
+    'Papa Parse',
+  ])
+  expect(report.libraryCapabilities).toEqual(
+    expect.arrayContaining([
+      {
+        id: 'csv-parser',
+        modes: ['object'],
+        name: 'CSV Parser',
+        operations: ['parse'],
+      },
+      {
+        id: 'papaparse',
+        modes: ['array', 'object'],
+        name: 'Papa Parse',
+        operations: ['parse'],
+      },
+    ]),
+  )
+  expect(librariesByCase['parse-plain-object'].map(({ library }) => library)).toEqual([
+    'Exstream',
+    'Node CSV',
+    'Fast-CSV',
+    'CSV Parser',
+    'Papa Parse',
+  ])
+  expect(librariesByCase['stringify-quoted-array'].map(({ library }) => library)).toEqual([
+    'Exstream',
+    'Node CSV',
+    'Fast-CSV',
+  ])
+  expect(librariesByCase['pipeline-slow-object'].map(({ library }) => library)).toEqual([
+    'Exstream',
+    'Node CSV',
+    'Fast-CSV',
+  ])
+  for (const result of report.results) {
+    expect(result.samples[0].processedRecords).toBe(1_000)
+  }
+})

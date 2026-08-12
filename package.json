@@ -59,11 +59,13 @@
   "devDependencies": {
     "@vitest/coverage-v8": "4.1.10",
     "csv-parse": "7.0.2",
+    "csv-parser": "3.2.1",
     "csv-stringify": "6.8.3",
     "fast-csv": "5.0.7",
     "highland": "2.13.5",
     "oxfmt": "0.63.0",
     "oxlint": "1.78.0",
+    "papaparse": "5.5.4",
     "vite": "8.2.1",
     "vitest": "4.1.10"
   },

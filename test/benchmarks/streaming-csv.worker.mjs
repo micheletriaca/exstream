@@ -7,7 +7,7 @@ import { chunkBuffer, createDataset } from './csv-benchmark-data.mjs'
 if (!global.gc) throw Error('CSV benchmark workers require --expose-gc')
 
 const config = JSON.parse(process.argv[2])
-const libraries = ['exstream', 'node-csv', 'fast-csv']
+const libraries = ['exstream', 'node-csv', 'fast-csv', 'csv-parser', 'papaparse']
 if (!libraries.includes(config.library)) throw Error(`unknown CSV library: ${config.library}`)
 
 const setupStartedAt = performance.now()
@@ -161,10 +161,40 @@ const prepareFastCsvPipeline = async () => {
   }
 }
 
+const prepareCsvParserPipeline = () => {
+  if (config.scenario.operation !== 'parse' || !objectMode) {
+    throw Error('CSV Parser only supports object-mode parse benchmarks')
+  }
+  const csvParser = require('csv-parser')
+  return async () => {
+    const parser = csvParser()
+    parser.on('data', markRecord)
+    const objectSink = new ObjectSink()
+    await pipeline(inputSource(), parser, objectSink)
+    return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
+  }
+}
+
+const preparePapaParsePipeline = () => {
+  if (config.scenario.operation !== 'parse') {
+    throw Error('Papa Parse only supports parse benchmarks')
+  }
+  const Papa = require('papaparse')
+  return async () => {
+    const parser = Papa.parse(Papa.NODE_STREAM_INPUT, { header: objectMode })
+    parser.on('data', markRecord)
+    const objectSink = new ObjectSink()
+    await pipeline(inputSource(), parser, objectSink)
+    return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
+  }
+}
+
 const prepareRunners = {
+  'csv-parser': prepareCsvParserPipeline,
   exstream: prepareExstreamPipeline,
   'fast-csv': prepareFastCsvPipeline,
   'node-csv': prepareNodeCsvPipeline,
+  papaparse: preparePapaParsePipeline,
 }
 
 const librarySetupStartedAt = performance.now()

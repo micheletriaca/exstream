@@ -63,24 +63,63 @@ if (![measuredRuns, warmupRuns].every(Number.isInteger) || measuredRuns <= 0 || 
   throw Error('CSV benchmark runs must be positive and warmups must be non-negative integers')
 }
 
-const libraries = [
-  { id: 'exstream', name: 'Exstream', version: packageJson.version },
+const allLibraries = [
+  {
+    id: 'exstream',
+    modes: ['array', 'object'],
+    name: 'Exstream',
+    operations: ['parse', 'pipeline', 'stringify'],
+    version: packageJson.version,
+  },
   {
     id: 'node-csv',
+    modes: ['array', 'object'],
     name: 'Node CSV',
+    operations: ['parse', 'pipeline', 'stringify'],
     version:
       `${packageLock.packages['node_modules/csv-parse'].version} / ` +
       packageLock.packages['node_modules/csv-stringify'].version,
   },
   {
     id: 'fast-csv',
+    modes: ['array', 'object'],
     name: 'Fast-CSV',
+    operations: ['parse', 'pipeline', 'stringify'],
     version: packageLock.packages['node_modules/fast-csv'].version,
   },
-].filter((library) => !libraryFilter || library.id === libraryFilter)
+  {
+    id: 'csv-parser',
+    modes: ['object'],
+    name: 'CSV Parser',
+    operations: ['parse'],
+    version: packageLock.packages['node_modules/csv-parser'].version,
+  },
+  {
+    id: 'papaparse',
+    modes: ['array', 'object'],
+    name: 'Papa Parse',
+    operations: ['parse'],
+    version: packageLock.packages['node_modules/papaparse'].version,
+  },
+]
+const libraries = allLibraries.filter((library) => !libraryFilter || library.id === libraryFilter)
 const scenarios = presets[preset].filter((scenario) => !caseFilter || scenario.id === caseFilter)
 if (libraries.length === 0) throw Error(`unknown CSV benchmark library: ${libraryFilter}`)
 if (scenarios.length === 0) throw Error(`unknown CSV benchmark case: ${caseFilter}`)
+const supports = (library, scenario) =>
+  library.modes.includes(scenario.mode) && library.operations.includes(scenario.operation)
+const scenarioPlans = scenarios
+  .map((scenario) => ({
+    libraries: libraries.filter((library) => supports(library, scenario)),
+    scenario,
+  }))
+  .filter(({ libraries: scenarioLibraries }) => scenarioLibraries.length > 0)
+if (scenarioPlans.length === 0) {
+  throw Error(`CSV benchmark library and case filters select no compatible scenarios`)
+}
+const activeLibraries = libraries.filter((library) =>
+  scenarioPlans.some(({ libraries: scenarioLibraries }) => scenarioLibraries.includes(library)),
+)
 
 const round = (value, digits = 2) =>
   value === null || value === void 0 ? null : Number(value.toFixed(digits))
@@ -172,15 +211,17 @@ const runWorker = async (library, scenario) => {
 }
 
 const results = []
-for (const scenario of scenarios) {
-  const samplesByLibrary = new Map(libraries.map((library) => [library.id, []]))
+for (const { libraries: scenarioLibraries, scenario } of scenarioPlans) {
+  const samplesByLibrary = new Map(scenarioLibraries.map((library) => [library.id, []]))
   if (!jsonOnly) {
     process.stderr.write(
       `\n${scenario.id}: ${scenario.description} (${scenario.rows.toLocaleString('en-US')} rows)\n`,
     )
   }
   for (let roundIndex = 0; roundIndex < warmupRuns + measuredRuns; roundIndex++) {
-    const rotated = libraries.map((_, index) => libraries[(index + roundIndex) % libraries.length])
+    const rotated = scenarioLibraries.map(
+      (_, index) => scenarioLibraries[(index + roundIndex) % scenarioLibraries.length],
+    )
     for (const library of rotated) {
       // Sequential fresh processes avoid CPU, heap, and module-cache cross-contamination.
       // eslint-disable-next-line no-await-in-loop
@@ -196,7 +237,7 @@ for (const scenario of scenarios) {
       if (!warmup) samplesByLibrary.get(library.id).push(sample)
     }
   }
-  for (const library of libraries) {
+  for (const library of scenarioLibraries) {
     const samples = samplesByLibrary.get(library.id)
     results.push({
       case: scenario.id,
@@ -233,7 +274,7 @@ const report = {
     measuredRuns,
     memorySampleMs: defaults.memorySampleMs,
     preset,
-    scenarios,
+    scenarios: scenarioPlans.map(({ scenario }) => scenario),
     warmupRuns,
   },
   environment: {
@@ -245,7 +286,13 @@ const report = {
     osRelease: release(),
     platform: process.platform,
   },
-  libraries: libraries.map(({ name, version }) => ({ name, version })),
+  libraries: activeLibraries.map(({ name, version }) => ({ name, version })),
+  libraryCapabilities: activeLibraries.map(({ id, modes, name, operations }) => ({
+    id,
+    modes,
+    name,
+    operations,
+  })),
   results,
 }
 

@@ -16,12 +16,12 @@ npm run benchmark:update
 
 ## Reproducible CSV comparison
 
-The CSV harness compares Exstream with the exact Node CSV and Fast-CSV versions
-pinned in `package-lock.json`. Every sample runs sequentially in a fresh process
-with `--expose-gc`; library order rotates between rounds. Dataset construction,
-module loading, and two explicit collections happen before the memory baseline
-and before timing. The measured interval covers source, parser and/or serializer,
-stream plumbing, and the final sink.
+The CSV harness compares Exstream with the exact Node CSV, Fast-CSV, CSV Parser,
+and Papa Parse versions pinned in `package-lock.json`. Every sample runs
+sequentially in a fresh process with `--expose-gc`; library order rotates between
+rounds. Dataset construction, module loading, and two explicit collections happen
+before the memory baseline and before timing. The measured interval covers source,
+parser and/or serializer, stream plumbing, and the final sink.
 
 Run the default comparison and write `csv-benchmark-quick.json`:
 
@@ -63,8 +63,8 @@ node test/benchmarks/streaming-csv.mjs \
   --no-write
 ```
 
-Available library ids are `exstream`, `node-csv`, and `fast-csv`. Use
-`--output=path/to/report.json` to choose the report path.
+Available library ids are `exstream`, `node-csv`, `fast-csv`, `csv-parser`, and
+`papaparse`. Use `--output=path/to/report.json` to choose the report path.
 
 ### Datasets and fairness
 
@@ -75,6 +75,22 @@ Every worker verifies the exact processed record count and requires at least one
 output chunk. Parse and pipeline scenarios receive identical bytes and chunk
 sizes; serializer scenarios receive the same values and headers.
 
+Each library only enters scenarios supported directly by its Node streaming API:
+
+| Library    | Array parse | Object parse | Stringify | Pipeline |
+| ---------- | :---------: | :----------: | :-------: | :------: |
+| Exstream   |      ✓      |      ✓       |     ✓     |    ✓     |
+| Node CSV   |      ✓      |      ✓       |     ✓     |    ✓     |
+| Fast-CSV   |      ✓      |      ✓       |     ✓     |    ✓     |
+| CSV Parser |      —      |      ✓       |     —     |    —     |
+| Papa Parse |      ✓      |      ✓       |     —     |    —     |
+
+CSV Parser always emits objects using the first row as headers. Papa Parse has a
+Node streaming parser but no corresponding streaming `unparse` transform. The
+harness does not add compatibility adapters that would make those libraries do
+work outside their native contract. Capabilities are recorded in every JSON
+report.
+
 The report contains:
 
 - elapsed time, records/s, input and output MiB/s;
@@ -84,7 +100,8 @@ The report contains:
 - observed GC count and duration;
 - dataset and library setup time outside the measured interval;
 - CPU, core count, total memory, OS, architecture, and Node version;
-- pinned library versions, complete scenarios, command, and run configuration.
+- pinned library versions and capabilities, complete scenarios, command, and run
+  configuration;
 - a SHA-256 digest and list of the source, harness, manifest, and lock files used.
 
 Node.js has no stable public API for exact per-pipeline allocation count or
