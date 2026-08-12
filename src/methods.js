@@ -91,45 +91,19 @@ _m.decode = _.curry((encoding, s) => {
 })
 
 _m.map = _.curry((fn, options, s) => {
-  if (fn.length < 2)
-    return s.consumeSync((err, x, push) => {
-      if (err) {
-        push(err)
-      } else if (x === _.nil) {
-        push(err, x)
-      } else {
-        try {
-          let res = fn(x)
-          const probablyPromise = res && res.then && res.catch
-          if (probablyPromise)
-            res = res.catch((e) => {
-              throw new ExstreamError(e, x)
-            })
-          if (!options || !options.wrap) {
-            return push(null, res)
-          } else if (probablyPromise) {
-            push(
-              null,
-              res.then((y) => ({ input: x, output: y })),
-            )
-          } else {
-            push(null, { input: x, output: res })
-          }
-        } catch (e) {
-          push(new ExstreamError(e, x))
-        }
-      }
-    })
+  const usesContext = fn.length >= 2
   let result
-  result = s.consumeSync((err, x, push, context) => {
+  const consumer = (err, x, push) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
     } else {
-      const nextContext = context === void 0 ? createContext(x, result.signal) : context
+      const context = usesContext ? result._recordContext : void 0
+      const nextContext =
+        usesContext && context === void 0 ? createContext(x, result.signal) : context
       try {
-        let res = fn(x, nextContext)
+        let res = usesContext ? fn(x, nextContext) : fn(x)
         const probablyPromise = res && res.then && res.catch
         if (probablyPromise)
           res = res.catch((e) => {
@@ -150,7 +124,8 @@ _m.map = _.curry((fn, options, s) => {
         push(new ExstreamError(e, x), null, nextContext)
       }
     }
-  })
+  }
+  result = s.consumeSync(consumer)
   return result
 })
 
@@ -328,37 +303,26 @@ _m.toArray = _.curry((fn, s) =>
 )
 
 _m.filter = _.curry((fn, s) => {
-  if (fn.length < 2)
-    return s.consumeSync((err, x, push) => {
-      if (err) {
-        push(err)
-      } else if (x === _.nil) {
-        push(err, x)
-      } else {
-        try {
-          const res = fn(x)
-          if (res) push(null, x)
-        } catch (e) {
-          push(new ExstreamError(e, x))
-        }
-      }
-    })
+  const usesContext = fn.length >= 2
   let result
-  result = s.consumeSync((err, x, push, context) => {
+  const consumer = (err, x, push) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
     } else {
-      const nextContext = context === void 0 ? createContext(x, result.signal) : context
+      const context = usesContext ? result._recordContext : void 0
+      const nextContext =
+        usesContext && context === void 0 ? createContext(x, result.signal) : context
       try {
-        const res = fn(x, nextContext)
+        const res = usesContext ? fn(x, nextContext) : fn(x)
         if (res) push(null, x, nextContext)
       } catch (e) {
         push(new ExstreamError(e, x), null, nextContext)
       }
     }
-  })
+  }
+  result = s.consumeSync(consumer)
   return result
 })
 

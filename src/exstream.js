@@ -681,6 +681,10 @@ class Exstream extends EventEmitter {
     return res
   }
 
+  get _recordContext() {
+    return this.#activeContext
+  }
+
   pull(fn) {
     const _pull = (fn) => {
       const s2 = this.consumeSync((err, x) => {
