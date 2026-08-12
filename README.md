@@ -195,6 +195,51 @@ asynchronous. The historical `values()` behavior is unchanged; it may return an
 array or a Promise. Prefer `valuesSync()` for known-synchronous pipelines and
 `toPromise()` for asynchronous ones.
 
+## CSV parsing and serialization
+
+`csv()` parses string or byte chunks incrementally. It preserves quoted fields,
+escaped quotes, multiline values, and tokens split across arbitrary chunk
+boundaries. Separators may be one or more characters, including multibyte
+Unicode strings. Records may end with LF, CRLF, or CR.
+
+```javascript
+const rows = await exs(byteSource)
+  .csv({
+    header: true,
+    separator: ',',
+    maxColumns: 100,
+    maxRecordBytes: 8 * 1024 * 1024,
+  })
+  .toPromise()
+```
+
+The parser defaults to `encoding: 'utf8'`, `quote: '"'`, `escape: '"'`, and
+`skipEmptyLines: true`. Set `skipEmptyLines: false` when a physically empty line
+must produce `['']`. `header` accepts `false`, `true`, an array, or a function
+that maps the first row to an array of names. `fastMode: true` treats quotes as
+ordinary characters and is intended only for known-unquoted input.
+
+`maxRecordBytes` counts the encoded record, including separators and CSV quote
+syntax but excluding the record delimiter. `maxColumns` limits the emitted
+fields. A violation or malformed quoting produces `CsvParseError` with `code`,
+`record`, `line`, `column`, and `offset`; `offset` is measured in decoded
+JavaScript string code units.
+
+`csvStringify()` uses the same separator, quote, escape, and encoding defaults.
+It also supports `header`, `quoted`, `quotedEmpty`, `lineEnding`, `maxColumns`,
+and `maxRecordBytes`. Its byte limit includes the emitted line ending and throws
+`CsvStringifyError` with the output record and column when available.
+
+The browser entry point supports UTF-8 CSV through `Uint8Array`, `TextEncoder`,
+and `TextDecoder`. The Node entry point additionally accepts encodings supported
+by `Buffer` and `StringDecoder`, including incrementally decoded UTF-16LE input.
+Unsupported runtime encodings fail explicitly.
+
+Deterministic property tests compare Exstream with Node CSV across generated
+records and chunk boundaries. Run the focused suite with `npm run test:csv:fuzz`;
+`CSV_FUZZ_SEED` and `CSV_FUZZ_CASES` select a reproducible malformed-input fuzz
+range.
+
 ## Browser, Web Streams, and events
 
 The default package export selects a Node or browser runtime without global

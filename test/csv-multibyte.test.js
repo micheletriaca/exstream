@@ -37,3 +37,24 @@ test('csv completes a multibyte-delimited final row without a trailing newline',
       .values(),
   ).toEqual([{ first: 'left', second: 'right' }])
 })
+
+test('csv round-trips a UTF-16LE dialect with Unicode quotes and fragmented tokens', async () => {
+  const rows = [
+    { first: 'left||right', second: 'say «hello»' },
+    { first: 'multiline\r\nvalue', second: 'plain' },
+  ]
+  const serialized = Buffer.concat(
+    _(rows)
+      .csvStringify({ encoding: 'utf16le', header: true, quote: '«', separator: '||' })
+      .values(),
+  )
+  const chunks = Array.from({ length: Math.ceil(serialized.length / 3) }, (_, index) =>
+    serialized.subarray(index * 3, index * 3 + 3),
+  )
+
+  await expect(
+    _(Readable.from(chunks))
+      .csv({ encoding: 'utf16le', header: true, quote: '«', separator: '||' })
+      .toPromise(),
+  ).resolves.toEqual(rows)
+})

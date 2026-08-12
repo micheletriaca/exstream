@@ -48,6 +48,10 @@ test('toArray exposes aligned parent contexts when the input is already contextu
 
 test('predicate and key callbacks receive a lazy per-record context', () => {
   const seen = []
+  const filtered = _([1, 2]).filter((value, context) => {
+    seen.push(['filter', value, context.input])
+    return value === 2
+  })
   const stopped = _([1, 2, 3])
     .stopWhen((value, context) => {
       seen.push(['stopWhen', value, context.input])
@@ -72,6 +76,7 @@ test('predicate and key callbacks receive a lazy per-record context', () => {
     return context.input
   })
 
+  expect(filtered.values()).toEqual([2])
   expect(stopped).toEqual([1, 2])
   expect(unique).toEqual([1, 2])
   expect(grouped.value()).toEqual({ 0: [2], 1: [1, 3] })
@@ -151,6 +156,24 @@ test('sortedGroupBy exposes record contexts and emits aligned aggregate contexts
   ])
 })
 
+test('sortedGroupBy lazily establishes contexts for a contextual selector', () => {
+  const result = _([1, 1, 2])
+    .sortedGroupBy((value, context) => {
+      expect(context.input).toBe(value)
+      return value
+    })
+    .map((group, context) => ({
+      inputs: context.contexts.map((parent) => parent.input),
+      key: group.key,
+    }))
+    .values()
+
+  expect(result).toEqual([
+    { inputs: [1, 1], key: 1 },
+    { inputs: [2], key: 2 },
+  ])
+})
+
 test('sortedJoin key callbacks receive source contexts and outputs aggregate both parents', async () => {
   const left = _([{ id: 1 }]).withContext(() => ({ source: 'left' }))
   const right = _([{ parentId: 1 }]).withContext(() => ({ source: 'right' }))
@@ -187,6 +210,36 @@ test('sortedJoin key callbacks receive source contexts and outputs aggregate bot
       value: { a: { id: 1 }, b: { parentId: 1 }, key: 1 },
     },
   ])
+})
+
+test('sortedJoin supports a contextual ordering predicate without pre-existing contexts', async () => {
+  const comparisons = []
+  const left = _([{ id: 1 }, { id: 2 }])
+  const right = _([{ parentId: 2 }])
+
+  const result = await _([left, right])
+    .sortedJoin(
+      (value) => value.id,
+      (value) => value.parentId,
+      'inner',
+      (leftKey, rightKey, leftContext, rightContext) => {
+        comparisons.push({
+          leftInput: leftContext.input,
+          leftKey,
+          rightInput: rightContext.input,
+          rightKey,
+        })
+        return leftKey > rightKey
+      },
+    )
+    .toPromise()
+
+  expect(result).toEqual([{ a: { id: 2 }, b: { parentId: 2 }, key: 2 }])
+  expect(comparisons.length).toBeGreaterThan(0)
+  expect(comparisons.every(({ leftInput, leftKey }) => leftInput.key === leftKey)).toBe(true)
+  expect(comparisons.every(({ rightInput, rightKey }) => rightInput.parentId === rightKey)).toBe(
+    true,
+  )
 })
 
 test('right sortedJoin keeps output parent contexts aligned, including unmatched records', async () => {

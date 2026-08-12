@@ -41,6 +41,15 @@ test('web text bytes expose the parser byte interface without Buffer', () => {
   expect(bytes.equals(new Uint8Array([65, 66, 67, 69]))).toBe(false)
 })
 
+test('web text bytes preserve a contiguous backing store without copying', () => {
+  const input = new Uint8Array([65, 66, 67, 68])
+  const bytes = codecs.concatTextBytes([input.subarray(0, 2), input.subarray(2)], 4)
+
+  expect(bytes.buffer).toBe(input.buffer)
+  expect([...bytes]).toEqual([...input])
+  expect([...codecs.concatTextBytes([], 0)]).toEqual([])
+})
+
 test('web streaming text decoder preserves split UTF-8 code points', () => {
   const decoder = codecs.createStringDecoder('utf8')
 

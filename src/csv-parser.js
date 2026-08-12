@@ -1,0 +1,525 @@
+const _ = require('./utils.js')
+const { runtime } = require('./runtime.js')
+
+class CsvParseError extends Error {
+  constructor(message, { code = 'EXSTREAM_CSV_PARSE', column, line, offset, record } = {}) {
+    super(`${message} at line ${line}, column ${column}`)
+    this.name = 'CsvParseError'
+    this.code = code
+    this.column = column
+    this.line = line
+    this.offset = offset
+    this.record = record
+  }
+}
+
+const asLimit = (value, name) => {
+  if (value === void 0 || value === Infinity) return Infinity
+  let number
+  try {
+    number = Number(value)
+  } catch {
+    number = NaN
+  }
+  if (!Number.isInteger(number) || number <= 0) {
+    throw Error(`${name} must be a positive integer or Infinity`)
+  }
+  return number
+}
+
+const isSingleCharacter = (value) =>
+  typeof value === 'string' && value.length > 0 && [...value].length === 1
+
+const normalizeOptions = (options) => {
+  if (options === null || options === void 0) options = {}
+  if (typeof options !== 'object' || Array.isArray(options)) {
+    throw Error('csv options must be an object')
+  }
+  const normalized = {
+    encoding: 'utf8',
+    escape: '"',
+    fastMode: false,
+    header: false,
+    maxColumns: Infinity,
+    maxRecordBytes: Infinity,
+    quote: '"',
+    separator: ',',
+    skipEmptyLines: true,
+    ...options,
+  }
+  if (typeof normalized.encoding !== 'string' || normalized.encoding.length === 0) {
+    throw Error('csv encoding must be a non-empty string')
+  }
+  if (typeof normalized.separator !== 'string' || normalized.separator.length === 0) {
+    throw Error('csv separator must be a non-empty string')
+  }
+  if (normalized.separator.includes('\r') || normalized.separator.includes('\n')) {
+    throw Error('csv separator cannot contain a newline')
+  }
+  if (!isSingleCharacter(normalized.quote)) {
+    throw Error('csv quote must be a single character')
+  }
+  if (!isSingleCharacter(normalized.escape)) {
+    throw Error('csv escape must be a single character')
+  }
+  if (typeof normalized.fastMode !== 'boolean') throw Error('csv fastMode must be a boolean')
+  if (typeof normalized.skipEmptyLines !== 'boolean') {
+    throw Error('csv skipEmptyLines must be a boolean')
+  }
+  if (
+    typeof normalized.header !== 'boolean' &&
+    !Array.isArray(normalized.header) &&
+    typeof normalized.header !== 'function'
+  ) {
+    throw Error('csv header must be a boolean, an array, or a function')
+  }
+  normalized.maxColumns = asLimit(normalized.maxColumns, 'csv maxColumns')
+  normalized.maxRecordBytes = asLimit(normalized.maxRecordBytes, 'csv maxRecordBytes')
+  return normalized
+}
+
+const createParser = (options, push, fail) => {
+  const escapeQuote = options.escape + options.quote
+  const escapeEscape = options.escape + options.escape
+  const escapeDifferentFromQuote = options.escape !== options.quote
+  let headers = Array.isArray(options.header) && options.header.length > 0 ? options.header : null
+  let pending = ''
+  let cellParts = []
+  let row = []
+  let inQuotes = false
+  let afterQuote = false
+  let quotedField = false
+  let recordHasContent = false
+  let recordBytes = 0
+  let line = 1
+  let column = 1
+  let offset = 0
+  let record = 1
+  let ended = false
+
+  const location = (code) => ({ code, column, line, offset, record })
+
+  const parseError = (message, code) => new CsvParseError(message, location(code))
+
+  const addRecordBytes = (text) => {
+    if (options.maxRecordBytes === Infinity || text.length === 0) return
+    recordBytes += runtime.byteLength(text, options.encoding)
+    if (recordBytes > options.maxRecordBytes) {
+      throw parseError(
+        `CSV record exceeds maxRecordBytes (${options.maxRecordBytes})`,
+        'EXSTREAM_CSV_MAX_RECORD_BYTES',
+      )
+    }
+  }
+
+  const advance = (text) => {
+    offset += text.length
+    let start = 0
+    for (let index = 0; index < text.length; index++) {
+      const character = text[index]
+      if (character !== '\r' && character !== '\n') continue
+      if (character === '\r' && text[index + 1] === '\n') index++
+      line++
+      column = 1
+      start = index + 1
+    }
+    column += text.length - start
+  }
+
+  const consumeRaw = (text) => {
+    addRecordBytes(text)
+    advance(text)
+    if (text.length > 0) recordHasContent = true
+  }
+
+  const append = (text) => {
+    if (text.length === 0) return
+    cellParts.push(text)
+    consumeRaw(text)
+  }
+
+  const emitCell = () => {
+    if (row.length >= options.maxColumns) {
+      throw parseError(
+        `CSV record exceeds maxColumns (${options.maxColumns})`,
+        'EXSTREAM_CSV_MAX_COLUMNS',
+      )
+    }
+    row.push(cellParts.length === 0 ? '' : cellParts.join(''))
+    cellParts = []
+    quotedField = false
+    afterQuote = false
+  }
+
+  const pushRow = (completedRow, hasContent) => {
+    const skip =
+      options.skipEmptyLines && !hasContent && completedRow.length === 1 && completedRow[0] === ''
+    if (!skip) {
+      if (options.header && headers === null) {
+        headers = typeof options.header === 'function' ? options.header(completedRow) : completedRow
+        if (!Array.isArray(headers)) throw parseError('CSV header function must return an array')
+      } else if (headers === null) {
+        push(null, completedRow)
+      } else {
+        const value = {}
+        for (let index = 0; index < completedRow.length; index++) {
+          value[headers[index]] = completedRow[index]
+        }
+        push(null, value)
+      }
+    }
+  }
+
+  const emitRow = () => {
+    emitCell()
+    pushRow(row, recordHasContent)
+    row = []
+    recordHasContent = false
+    recordBytes = 0
+    record++
+  }
+
+  const firstColumnBeyondBytes = (text, limit) => {
+    let low = 1
+    let high = text.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (runtime.byteLength(text.slice(0, middle), options.encoding) > limit) high = middle
+      else low = middle + 1
+    }
+    return low
+  }
+
+  const directPlainRow = (text, delimiter) => {
+    if (options.maxRecordBytes !== Infinity) {
+      const length = runtime.byteLength(text, options.encoding)
+      if (length > options.maxRecordBytes) {
+        column = firstColumnBeyondBytes(text, options.maxRecordBytes)
+        throw parseError(
+          `CSV record exceeds maxRecordBytes (${options.maxRecordBytes})`,
+          'EXSTREAM_CSV_MAX_RECORD_BYTES',
+        )
+      }
+    }
+    const completedRow = text.split(options.separator)
+    if (completedRow.length > options.maxColumns) {
+      column = text.length + 1
+      throw parseError(
+        `CSV record exceeds maxColumns (${options.maxColumns})`,
+        'EXSTREAM_CSV_MAX_COLUMNS',
+      )
+    }
+    pushRow(completedRow, text.length > 0)
+    offset += text.length + delimiter.length
+    line++
+    column = 1
+    record++
+  }
+
+  const consumeRecordDelimiter = (text) => {
+    emitRow()
+    offset += text.length
+    line++
+    column = 1
+  }
+
+  const partialTokenAt = (text, index) => {
+    const suffix = text.slice(index)
+    if (suffix === '\r') return true
+    if (
+      !inQuotes &&
+      options.separator.startsWith(suffix) &&
+      suffix.length < options.separator.length
+    ) {
+      return true
+    }
+    return (
+      inQuotes &&
+      ((escapeQuote.startsWith(suffix) && suffix.length < escapeQuote.length) ||
+        (escapeDifferentFromQuote &&
+          escapeEscape.startsWith(suffix) &&
+          suffix.length < escapeEscape.length))
+    )
+  }
+
+  const processText = (input, final = false) => {
+    const text = pending + input
+    pending = ''
+    let index = 0
+    let segmentStart = 0
+
+    const flush = (end) => {
+      append(text.slice(segmentStart, end))
+      segmentStart = end
+    }
+
+    while (index < text.length) {
+      if (!final && partialTokenAt(text, index)) {
+        flush(index)
+        pending = text.slice(index)
+        return
+      }
+
+      if (inQuotes) {
+        if (text.startsWith(escapeQuote, index)) {
+          flush(index)
+          cellParts.push(options.quote)
+          consumeRaw(escapeQuote)
+          index += escapeQuote.length
+          segmentStart = index
+          continue
+        }
+        if (escapeDifferentFromQuote && text.startsWith(escapeEscape, index)) {
+          flush(index)
+          cellParts.push(options.escape)
+          consumeRaw(escapeEscape)
+          index += escapeEscape.length
+          segmentStart = index
+          continue
+        }
+        if (text.startsWith(options.quote, index)) {
+          flush(index)
+          consumeRaw(options.quote)
+          index += options.quote.length
+          segmentStart = index
+          inQuotes = false
+          afterQuote = true
+          continue
+        }
+        index++
+        continue
+      }
+
+      if (!options.fastMode && text.startsWith(options.quote, index)) {
+        flush(index)
+        if (cellParts.length > 0 || afterQuote) {
+          throw parseError('Unexpected quote in unquoted CSV field')
+        }
+        consumeRaw(options.quote)
+        index += options.quote.length
+        segmentStart = index
+        inQuotes = true
+        quotedField = true
+        continue
+      }
+
+      if (text.startsWith(options.separator, index)) {
+        flush(index)
+        consumeRaw(options.separator)
+        emitCell()
+        index += options.separator.length
+        segmentStart = index
+        continue
+      }
+
+      const character = text[index]
+      if (character === '\r' || character === '\n') {
+        flush(index)
+        const delimiter = character === '\r' && text[index + 1] === '\n' ? '\r\n' : character
+        consumeRecordDelimiter(delimiter)
+        index += delimiter.length
+        segmentStart = index
+        continue
+      }
+
+      if (afterQuote) {
+        throw parseError('Unexpected character after closing CSV quote')
+      }
+      index++
+    }
+
+    flush(text.length)
+  }
+
+  const writeText = (text) => {
+    if (ended) return
+    try {
+      processText(text)
+    } catch (error) {
+      ended = true
+      fail(error)
+    }
+  }
+
+  const end = () => {
+    if (ended) return
+    try {
+      processText('', true)
+      if (inQuotes) {
+        throw parseError('Unterminated quoted CSV field', 'EXSTREAM_CSV_UNTERMINATED_QUOTE')
+      }
+      if (recordHasContent || cellParts.length > 0 || row.length > 0 || quotedField) emitRow()
+      ended = true
+      push(null, _.nil)
+    } catch (error) {
+      ended = true
+      fail(error)
+    }
+  }
+
+  const isCleanRecordStart = () =>
+    !inQuotes &&
+    !afterQuote &&
+    row.length === 0 &&
+    cellParts.length === 0 &&
+    !recordHasContent &&
+    pending.length === 0
+
+  return { directPlainRow, end, isCleanRecordStart, writeText }
+}
+
+const createByteRouter = (options, parser) => {
+  const decoder = runtime.createStringDecoder(options.encoding)
+  const newline = runtime.bytesFrom('\n', options.encoding)
+  const carriage = runtime.bytesFrom('\r', options.encoding)
+  const quote = runtime.bytesFrom(options.quote, options.encoding)
+  const canRouteBytes = newline.length === 1 && carriage.length === 1 && quote.length === 1
+  const lineParts = []
+  let lineLength = 0
+  let pendingCarriage = false
+  let complexRecord = false
+
+  const decode = (bytes) => runtime.bytesToString(bytes, options.encoding, 0, bytes.length)
+
+  const joinLine = (part) => {
+    if (lineParts.length === 0) return part
+    const parts = part.length === 0 ? lineParts : [...lineParts, part]
+    return runtime.concatTextBytes(parts, lineLength + part.length)
+  }
+
+  const routeLine = (bytes, delimiter, hasQuoteHint) => {
+    if (!complexRecord) {
+      const hasQuote =
+        hasQuoteHint === void 0 ? runtime.indexOfByte(bytes, quote[0]) >= 0 : hasQuoteHint
+      if (options.fastMode || !hasQuote) {
+        parser.directPlainRow(decode(bytes), delimiter)
+        return
+      }
+    }
+    parser.writeText(decode(bytes) + delimiter)
+    complexRecord = !parser.isCleanRecordStart()
+  }
+
+  const clearLine = () => {
+    lineParts.length = 0
+    lineLength = 0
+  }
+
+  const routeBufferedLine = (part, delimiter) => {
+    routeLine(joinLine(part), delimiter)
+    clearLine()
+  }
+
+  const appendLinePart = (part) => {
+    if (part.length === 0) return
+    lineParts.push(part)
+    lineLength += part.length
+  }
+
+  const routeLfOnly = (bytes, initialStart) => {
+    let start = initialStart
+    let end
+    const hasNoQuotes =
+      !complexRecord && (options.fastMode || runtime.indexOfByte(bytes, quote[0], initialStart) < 0)
+    while ((end = runtime.indexOfByte(bytes, newline[0], start)) >= 0) {
+      const part = bytes.subarray(start, end)
+      if (lineParts.length === 0) routeLine(part, '\n', hasNoQuotes ? false : void 0)
+      else routeBufferedLine(part, '\n')
+      start = end + 1
+    }
+    appendLinePart(bytes.subarray(start))
+  }
+
+  const routeWithCarriages = (bytes, initialStart) => {
+    let start = initialStart
+    while (start < bytes.length) {
+      const nextLineFeed = runtime.indexOfByte(bytes, newline[0], start)
+      const nextCarriage = runtime.indexOfByte(bytes, carriage[0], start)
+      let end
+      if (nextLineFeed < 0) end = nextCarriage
+      else if (nextCarriage < 0) end = nextLineFeed
+      else end = Math.min(nextLineFeed, nextCarriage)
+
+      if (end < 0) {
+        appendLinePart(bytes.subarray(start))
+        return
+      }
+      const part = bytes.subarray(start, end)
+      if (bytes[end] === newline[0]) {
+        routeBufferedLine(part, '\n')
+        start = end + 1
+      } else if (end + 1 === bytes.length) {
+        appendLinePart(part)
+        pendingCarriage = true
+        return
+      } else if (bytes[end + 1] === newline[0]) {
+        routeBufferedLine(part, '\r\n')
+        start = end + 2
+      } else {
+        routeBufferedLine(part, '\r')
+        start = end + 1
+      }
+    }
+  }
+
+  const write = (value) => {
+    const bytes = runtime.asBytes(value, options.encoding)
+    if (!canRouteBytes) {
+      parser.writeText(decoder.write(bytes))
+      return
+    }
+
+    let start = 0
+    if (pendingCarriage) {
+      pendingCarriage = false
+      const isCrLf = bytes[0] === newline[0]
+      routeBufferedLine(runtime.bytesFrom([]), isCrLf ? '\r\n' : '\r')
+      if (isCrLf) start = 1
+    }
+    if (runtime.indexOfByte(bytes, carriage[0], start) < 0) routeLfOnly(bytes, start)
+    else routeWithCarriages(bytes, start)
+  }
+
+  const end = () => {
+    if (!canRouteBytes) {
+      parser.writeText(decoder.end())
+      parser.end()
+      return
+    }
+    if (pendingCarriage) {
+      pendingCarriage = false
+      routeBufferedLine(runtime.bytesFrom([]), '\r')
+    }
+    if (lineLength > 0) parser.writeText(decode(joinLine(runtime.bytesFrom([]))))
+    parser.end()
+  }
+
+  return { end, write }
+}
+
+const parseCsv = (options, source) => {
+  options = normalizeOptions(options)
+  let parser
+  let result
+  let failed = false
+  result = source.consumeSync((error, value, push) => {
+    if (failed) return
+    if (error) {
+      push(error)
+      return
+    }
+    if (!parser) {
+      parser = createParser(options, push, (reason) => {
+        failed = true
+        push(reason)
+        push(null, _.nil)
+      })
+      parser = createByteRouter(options, parser)
+    }
+    if (value === _.nil) parser.end()
+    else parser.write(value)
+  })
+  return result
+}
+
+module.exports = { asLimit, CsvParseError, isSingleCharacter, normalizeOptions, parseCsv }

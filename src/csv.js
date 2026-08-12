@@ -7,9 +7,21 @@
 */
 
 const _ = require('./utils.js')
+const { asLimit, CsvParseError, isSingleCharacter, parseCsv } = require('./csv-parser.js')
 const { runtime } = require('./runtime.js')
-const { bytesFrom, concatTextBytes } = runtime
-const _m = (module.exports = {})
+const { bytesFrom } = runtime
+
+class CsvStringifyError extends Error {
+  constructor(message, { code = 'EXSTREAM_CSV_STRINGIFY', column, record } = {}) {
+    super(`${message} at record ${record}${column === void 0 ? '' : `, column ${column}`}`)
+    this.name = 'CsvStringifyError'
+    this.code = code
+    this.column = column
+    this.record = record
+  }
+}
+
+const _m = (module.exports = { CsvParseError, CsvStringifyError })
 
 function replace(str, c, replacement) {
   let outstr = ''
@@ -24,6 +36,10 @@ function replace(str, c, replacement) {
 }
 
 _m.csvStringify = (opts, s) => {
+  if (opts === null || opts === void 0) opts = {}
+  if (typeof opts !== 'object' || Array.isArray(opts)) {
+    throw Error('csvStringify options must be an object')
+  }
   opts = {
     quote: '"',
     escape: '"',
@@ -33,9 +49,38 @@ _m.csvStringify = (opts, s) => {
     header: false,
     quoted: false,
     quotedEmpty: false,
+    maxColumns: Infinity,
+    maxRecordBytes: Infinity,
     // TODO -> FINAL NEWLINE
     ...opts,
   }
+  if (typeof opts.separator !== 'string' || opts.separator.length === 0) {
+    throw Error('csvStringify separator must be a non-empty string')
+  }
+  if (opts.separator.includes('\r') || opts.separator.includes('\n')) {
+    throw Error('csvStringify separator cannot contain a newline')
+  }
+  if (!isSingleCharacter(opts.quote)) {
+    throw Error('csvStringify quote must be a single character')
+  }
+  if (!isSingleCharacter(opts.escape)) {
+    throw Error('csvStringify escape must be a single character')
+  }
+  if (typeof opts.lineEnding !== 'string' || opts.lineEnding.length === 0) {
+    throw Error('csvStringify lineEnding must be a non-empty string')
+  }
+  if (typeof opts.encoding !== 'string' || opts.encoding.length === 0) {
+    throw Error('csvStringify encoding must be a non-empty string')
+  }
+  if (typeof opts.header !== 'boolean' && !Array.isArray(opts.header)) {
+    throw Error('csvStringify header must be a boolean or an array')
+  }
+  if (typeof opts.quoted !== 'boolean') throw Error('csvStringify quoted must be a boolean')
+  if (typeof opts.quotedEmpty !== 'boolean') {
+    throw Error('csvStringify quotedEmpty must be a boolean')
+  }
+  opts.maxColumns = asLimit(opts.maxColumns, 'csvStringify maxColumns')
+  opts.maxRecordBytes = asLimit(opts.maxRecordBytes, 'csvStringify maxRecordBytes')
 
   const escapedQuote = opts.escape + opts.quote
   const escapedEscape = opts.escape + opts.escape
@@ -47,15 +92,43 @@ _m.csvStringify = (opts, s) => {
       typeof x === 'string' &&
       (x.indexOf(opts.separator) > -1 ||
         x.indexOf(opts.quote) > -1 ||
-        x.indexOf(opts.lineEnding) > -1 ||
+        x.indexOf('\r') > -1 ||
+        x.indexOf('\n') > -1 ||
         (escapeDifferentFromQuote && x.indexOf(opts.escape) > -1))
     )
   }
 
   let firstRow = false
+  let record = 0
+
+  const pushRecord = (value, push) => {
+    if (opts.maxRecordBytes !== Infinity) {
+      record++
+      const bytes = runtime.byteLength(value, opts.encoding)
+      if (bytes > opts.maxRecordBytes) {
+        throw new CsvStringifyError(`CSV record exceeds maxRecordBytes (${opts.maxRecordBytes})`, {
+          code: 'EXSTREAM_CSV_MAX_RECORD_BYTES',
+          record,
+        })
+      }
+    }
+    if (opts.encoding !== 'utf8') push(null, bytesFrom(value, opts.encoding))
+    else push(null, value)
+  }
+
+  const validateColumns = () => {
+    if (firstRow.length > opts.maxColumns) {
+      throw new CsvStringifyError(`CSV record exceeds maxColumns (${opts.maxColumns})`, {
+        code: 'EXSTREAM_CSV_MAX_COLUMNS',
+        column: opts.maxColumns + 1,
+        record: record + 1,
+      })
+    }
+  }
 
   function processCell(x) {
     if (!opts.quoted && !checkQuote(x)) return x
+    x = String(x)
     if (escapeDifferentFromQuote) x = replace(x, opts.escape, escapedEscape)
     return opts.quote + replace(x, opts.quote, escapedQuote) + opts.quote
   }
@@ -68,8 +141,7 @@ _m.csvStringify = (opts, s) => {
       else row[i] = processCell(cell)
     }
     const res = row.join(opts.separator) + opts.lineEnding
-    if (opts.encoding !== 'utf8') push(null, bytesFrom(res, opts.encoding))
-    else push(null, res)
+    pushRecord(res, push)
   }
 
   function processFirstRow(x, push) {
@@ -79,17 +151,19 @@ _m.csvStringify = (opts, s) => {
     if (!opts.header) {
       firstRow = Object.keys(x)
       if (arrayMode) firstRow = firstRow.map((x) => parseInt(x))
+      validateColumns()
       processRow(x, push)
     } else if (arrayMode) {
       if (!injectedHeader) throw Error('.csvStringify() called with an invalid header option')
       firstRow = opts.header.map((y, i) => (_.isDefined(y) ? i : null)).filter(_.isDefined)
+      validateColumns()
       processRow(opts.header, push)
       processRow(x, push)
     } else {
       firstRow = injectedHeader ? opts.header : Object.keys(x)
+      validateColumns()
       const rowToPush = firstRow.map(processCell).join(opts.separator) + opts.lineEnding
-      if (opts.encoding !== 'utf8') push(null, bytesFrom(rowToPush, opts.encoding))
-      else push(null, rowToPush)
+      pushRecord(rowToPush, push)
       processRow(x, push)
     }
   }
@@ -107,133 +181,4 @@ _m.csvStringify = (opts, s) => {
   })
 }
 
-_m.csv = (opts, s) => {
-  opts = {
-    fastMode: false,
-    quote: '"',
-    escape: '"',
-    separator: ',',
-    encoding: 'utf8',
-    header: false,
-    ...opts,
-  }
-
-  const newLine = bytesFrom('\n', opts.encoding)[0]
-  const carriage = bytesFrom('\r', opts.encoding)[0]
-  const quote = bytesFrom(opts.quote, opts.encoding)[0]
-  const escape = bytesFrom(opts.escape, opts.encoding)[0]
-  const separator = bytesFrom(opts.separator, opts.encoding)
-  const separatorStart = separator[0]
-  const separatorLength = separator.length
-  const escapedQuote = opts.escape + opts.quote
-  let firstRow = Array.isArray(opts.header) ? opts.header : []
-  let currentBuffer = bytesFrom([])
-
-  function getFirstRow(row) {
-    if (_.isFunction(opts.header)) return opts.header(row)
-    return row
-  }
-
-  function convertObj(row) {
-    const res = {}
-    for (let i = 0; i < row.length; i++) {
-      res[firstRow[i]] = row[i]
-    }
-    return res
-  }
-
-  function storeCell(row, col, colStart, colEnd, handleQuote) {
-    const idx = firstRow.length ? firstRow[col] : col
-    row[idx] = currentBuffer.toString(opts.encoding, colStart, colEnd)
-    if (handleQuote) row[idx] = replace(row[idx], escapedQuote, opts.quote)
-    return false
-  }
-
-  function isSeparatorAt(index) {
-    return (
-      separatorLength === 1 ||
-      currentBuffer.subarray(index, index + separatorLength).equals(separator)
-    )
-  }
-  let row = firstRow.length ? {} : []
-  let isEnding = false
-  // eslint-disable-next-line max-statements
-  return s.consumeSync((err, x, push) => {
-    if (err) {
-      push(err)
-      return
-    } else if (x === _.nil) {
-      if (currentBuffer.length === 0) {
-        push(null, _.nil)
-        return
-      }
-      isEnding = true
-      x = bytesFrom('\n')
-    }
-
-    const bufx = bytesFrom(x)
-    currentBuffer = concatTextBytes([currentBuffer, bufx], currentBuffer.length + bufx.length)
-    let inQuote = false
-    let prevIdx = 0
-    let col = 0
-    let colStart = 0
-    let endOffset = 0
-    let handleQuote = false
-    if (opts.fastMode) {
-      let i = 0
-      while ((i = currentBuffer.indexOf(newLine, prevIdx)) >= 0) {
-        const row = currentBuffer.toString(opts.encoding, prevIdx, i).split(opts.separator)
-        if (opts.header) {
-          if (!firstRow.length) firstRow = row
-          else push(null, convertObj(row))
-        } else push(null, row)
-        prevIdx = i + 1
-      }
-    } else {
-      for (let i = 0; i < currentBuffer.length; i++) {
-        if (!inQuote) {
-          switch (currentBuffer[i]) {
-            case quote:
-              inQuote = true
-              colStart = i + 1
-              continue
-            case separatorStart:
-              if (!isSeparatorAt(i)) continue
-              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-              ++col
-              endOffset = 0
-              i += separatorLength - 1
-              colStart = i + 1
-              continue
-            case newLine:
-            case carriage:
-              while (currentBuffer[i + 1] === newLine || currentBuffer[i + 1] === carriage) {
-                i++
-                endOffset++
-              }
-              handleQuote = storeCell(row, col, colStart, i - endOffset, handleQuote)
-              if (opts.header) {
-                if (!firstRow.length) firstRow = getFirstRow(row)
-                else push(null, row)
-                row = {}
-              } else {
-                push(null, row)
-                row = []
-              }
-              col = endOffset = 0
-              colStart = prevIdx = i + 1
-              continue
-          }
-        } else if (currentBuffer[i] === escape && currentBuffer[i + 1] === quote) {
-          handleQuote = true
-          ++i
-        } else if (currentBuffer[i] === quote) {
-          inQuote = false
-          endOffset = 1
-        }
-      }
-    }
-    currentBuffer = currentBuffer.slice(prevIdx)
-    if (isEnding) push(null, _.nil)
-  })
-}
+_m.csv = (opts, s) => parseCsv(opts, s)
