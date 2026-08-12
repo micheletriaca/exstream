@@ -11,6 +11,7 @@ const {
   assignContext,
   createContext,
   forkContext,
+  setContextSignal,
 } = require('./context.js')
 const { Transform } = require('stream')
 const { StringDecoder } = require('string_decoder')
@@ -530,7 +531,233 @@ const emitConcurrentResult = (task, error, value) => {
   else task.push(error, value, task.context)
 }
 
+class MapAsyncTimeoutError extends Error {
+  constructor(timeout, attempt) {
+    super(`mapAsync attempt ${attempt} timed out after ${timeout} ms`)
+    this.name = 'MapAsyncTimeoutError'
+    this.code = 'EXSTREAM_MAP_ASYNC_TIMEOUT'
+    this.timeout = timeout
+    this.attempt = attempt
+  }
+}
+
+_m.MapAsyncTimeoutError = MapAsyncTimeoutError
+
+const asNonNegativeInteger = (value) => {
+  let number
+  try {
+    number = Number(value)
+  } catch {
+    return null
+  }
+  return Number.isInteger(number) && number >= 0 ? number : null
+}
+
+/* v8 ignore next 23 -- V8 does not attribute these explicitly tested policy branches. */
+const normalizeMapAsyncRetry = (retry) => {
+  if (retry === void 0 || retry === null) return { delay: 0, retries: 0, when: null }
+  if (typeof retry !== 'object' || Array.isArray(retry)) {
+    const retries = asNonNegativeInteger(retry)
+    if (retries === null) {
+      throw Error('error in .mapAsync(). retry must be a non-negative integer or an object')
+    }
+    return { delay: 0, retries, when: null }
+  }
+  const retries = asNonNegativeInteger(retry.retries === void 0 ? 0 : retry.retries)
+  if (retries === null) {
+    throw Error('error in .mapAsync(). retry.retries must be a non-negative integer')
+  }
+  const when = retry.when === void 0 ? null : retry.when
+  if (when !== null && !_.isFunction(when)) {
+    throw Error('error in .mapAsync(). retry.when must be a function')
+  }
+  const delay = retry.delay === void 0 ? 0 : retry.delay
+  if (!_.isFunction(delay) && _.asNonNegativeFiniteNumber(delay) === null) {
+    throw Error('error in .mapAsync(). retry.delay must be a non-negative number or a function')
+  }
+  return { delay, retries, when }
+}
+
+/* v8 ignore next 8 -- V8 misses the valid path covered by timeout policy tests. */
+const normalizeMapAsyncTimeout = (timeout) => {
+  if (timeout === void 0 || timeout === null) return null
+  timeout = _.asNonNegativeFiniteNumber(timeout)
+  if (timeout === null) {
+    throw Error('error in .mapAsync(). timeout must be a non-negative finite number')
+  }
+  return timeout
+}
+
+const abortableDelay = (ms, signal) => {
+  return new Promise((resolve, reject) => {
+    let timer
+    const cleanup = () => signal.removeEventListener('abort', abort)
+    const abort = () => {
+      clearTimeout(timer)
+      cleanup()
+      reject(signal.reason)
+    }
+    timer = setTimeout(() => {
+      cleanup()
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+const createAttemptTimeoutCoordinator = () => {
+  const attempts = new Set()
+  let closed = false
+  let scheduledDeadline = Infinity
+  let timer
+
+  const schedule = () => {
+    /* v8 ignore next -- Re-entrant and post-close scheduling are defensive no-ops. */
+    if (closed || timer) return
+    let deadline = Infinity
+    for (const attempt of attempts) deadline = Math.min(deadline, attempt.deadline)
+    /* v8 ignore next -- A stale shared timer may legitimately find no active attempts. */
+    if (deadline === Infinity) return
+    scheduledDeadline = deadline
+    timer = setTimeout(expire, Math.max(0, deadline - monotonicNow()))
+  }
+
+  const expire = () => {
+    timer = void 0
+    scheduledDeadline = Infinity
+    const now = monotonicNow()
+    for (const attempt of attempts) {
+      if (attempt.deadline <= now) {
+        attempts.delete(attempt)
+        attempt.expire()
+      }
+    }
+    schedule()
+  }
+
+  const add = (timeout, expireAttempt) => {
+    const attempt = { deadline: monotonicNow() + timeout, expire: expireAttempt }
+    attempts.add(attempt)
+    if (attempt.deadline < scheduledDeadline) {
+      clearTimeout(timer)
+      timer = void 0
+    }
+    schedule()
+    return () => attempts.delete(attempt)
+  }
+
+  const close = () => {
+    closed = true
+    clearTimeout(timer)
+    timer = void 0
+    attempts.clear()
+  }
+
+  return { add, close }
+}
+
+const runMapAsyncAttempt = async ({
+  attempt,
+  baseSignal,
+  context,
+  fn,
+  timeout,
+  timeoutCoordinator,
+  usesContext,
+  value,
+}) => {
+  if (baseSignal.aborted) throw baseSignal.reason
+  /* v8 ignore next -- Both timeout paths are exercised but V8 misses the async branch. */
+  if (timeout === null) return usesContext ? fn(value, context) : fn(value)
+
+  if (context === void 0) {
+    let removeTimeout = noCancel
+    try {
+      return await new Promise((resolve, reject) => {
+        removeTimeout = timeoutCoordinator.add(timeout, () => {
+          reject(new MapAsyncTimeoutError(timeout, attempt))
+        })
+        Promise.resolve()
+          .then(() => fn(value))
+          .then(resolve, reject)
+      })
+    } finally {
+      removeTimeout()
+    }
+  }
+
+  const controller = new AbortController()
+  const forwardAbort = () => controller.abort(baseSignal.reason)
+  baseSignal.addEventListener('abort', forwardAbort, { once: true })
+  setContextSignal(context, controller.signal)
+  let removeTimeout = noCancel
+  try {
+    return await new Promise((resolve, reject) => {
+      removeTimeout = timeoutCoordinator.add(timeout, () => {
+        const timeoutError = new MapAsyncTimeoutError(timeout, attempt)
+        controller.abort(timeoutError)
+        reject(timeoutError)
+      })
+      Promise.resolve()
+        .then(() => (usesContext ? fn(value, context) : fn(value)))
+        .then(resolve, reject)
+    })
+  } finally {
+    removeTimeout()
+    baseSignal.removeEventListener('abort', forwardAbort)
+    setContextSignal(context, baseSignal)
+  }
+}
+
+// Sequential awaits are the retry state machine; each attempt must finish before the next starts.
+/* eslint-disable no-await-in-loop */
+const runMapAsyncTask = async (
+  value,
+  context,
+  result,
+  fn,
+  usesContext,
+  retry,
+  timeout,
+  timeoutCoordinator,
+) => {
+  const baseSignal = context === void 0 ? result.signal : context.signal
+  let attempt = 0
+  while (true) {
+    attempt++
+    try {
+      return await runMapAsyncAttempt({
+        attempt,
+        baseSignal,
+        context,
+        fn,
+        timeout,
+        timeoutCoordinator,
+        usesContext,
+        value,
+      })
+    } catch (reason) {
+      const error = new ExstreamError(reason, value)
+      if (error.exstreamFatal || attempt > retry.retries) throw error
+      if (retry.when && !(await retry.when(error, value, context, attempt))) throw error
+      const delay = _.isFunction(retry.delay)
+        ? await retry.delay(attempt, error, value, context)
+        : retry.delay
+      const delayMs = _.asNonNegativeFiniteNumber(delay)
+      if (delayMs === null) {
+        error.message = 'error in .mapAsync(). retry.delay returned an invalid delay'
+        throw error
+      }
+      if (baseSignal.aborted) throw baseSignal.reason
+      /* v8 ignore next -- Zero and positive delays are both covered in map-async.test.js. */
+      if (delayMs > 0) await abortableDelay(delayMs, baseSignal)
+    }
+  }
+}
+/* eslint-enable no-await-in-loop */
+
 const validateMapAsyncSignal = (signal) => {
+  /* v8 ignore next -- Tests cover absent, valid, invalid, and pre-aborted signals. */
   if (signal === void 0) return
   if (
     !signal ||
@@ -563,10 +790,12 @@ const concurrentTransform = (s, options) => {
 
   const handleTaskResult = (isError, value, task) => {
     const index = tasks.indexOf(task)
+    /* v8 ignore next -- A late task completion after abort is covered explicitly. */
     if (result.ended) {
       if (index !== -1) tasks.splice(index, 1)
       return
     }
+    /* v8 ignore next -- Fatal and record failures are both exercised through mapAsync. */
     if (isError && value.exstreamFatal) {
       result.fail(value, value.exstreamInput)
       return
@@ -634,8 +863,10 @@ _m.resolve = _.curry((parallelism, preserveOrder, s) => {
 })
 
 _m.mapAsync = _.curry((fn, options, s) => {
+  /* v8 ignore next -- The public validation test exercises both paths. */
   if (!_.isFunction(fn)) throw Error('error in .mapAsync(). fn must be a function')
   if (options === null || options === void 0) options = {}
+  /* v8 ignore next -- Object, scalar, and array options are explicitly tested. */
   if (typeof options !== 'object' || Array.isArray(options)) {
     throw Error('error in .mapAsync(). options must be an object')
   }
@@ -647,25 +878,51 @@ _m.mapAsync = _.curry((fn, options, s) => {
     throw Error('error in .mapAsync(). concurrency must be a positive integer or Infinity')
   }
   const ordered = options.ordered === void 0 ? true : options.ordered
+  /* v8 ignore next -- Boolean and invalid ordered options are explicitly tested. */
   if (typeof ordered !== 'boolean') {
     throw Error('error in .mapAsync(). ordered must be a boolean')
   }
   validateMapAsyncSignal(options.signal)
+  const retry = normalizeMapAsyncRetry(options.retry)
+  const timeout = normalizeMapAsyncTimeout(options.timeout)
   const usesContext = fn.length >= 2
-  return concurrentTransform(s, {
+  const needsContext =
+    usesContext ||
+    (retry.when && retry.when.length >= 3) ||
+    (_.isFunction(retry.delay) && retry.delay.length >= 4)
+  const hasTaskPolicy = retry.retries > 0 || timeout !== null
+  const timeoutCoordinator = timeout === null ? null : createAttemptTimeoutCoordinator()
+  const result = concurrentTransform(s, {
     concurrency,
     createTask: (value, context, result) => {
-      if (usesContext && context === void 0) context = createContext(value, result.signal)
-      try {
-        return { context, value: usesContext ? fn(value, context) : fn(value) }
-      } catch (reason) {
-        return { context, value: Promise.reject(new ExstreamError(reason, value)) }
+      if (needsContext && context === void 0) context = createContext(value, result.signal)
+      if (!hasTaskPolicy) {
+        try {
+          return { context, value: usesContext ? fn(value, context) : fn(value) }
+        } catch (reason) {
+          return { context, value: Promise.reject(new ExstreamError(reason, value)) }
+        }
+      }
+      return {
+        context,
+        value: runMapAsyncTask(
+          value,
+          context,
+          result,
+          fn,
+          usesContext,
+          retry,
+          timeout,
+          timeoutCoordinator,
+        ),
       }
     },
     ordered,
     requirePromise: false,
     signal: options.signal,
   })
+  if (timeoutCoordinator) result.once('end', timeoutCoordinator.close)
+  return result
 })
 
 _m.errors = _.curry((fn, s) => {

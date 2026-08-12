@@ -166,6 +166,29 @@ test('mapAsync aborts active contexts and does not schedule more work', async ()
   expect(resultStream.state).toBe('aborted')
 })
 
+test('mapAsync ignores a task that completes after the graph was aborted', async () => {
+  const gate = deferred()
+  const reason = Error('abort before completion')
+  const started = deferred()
+  const resultStream = _([1]).mapAsync(async (value) => {
+    started.resolve()
+    await gate.promise
+    return value * 10
+  })
+  const result = resultStream.toPromise()
+
+  await started.promise
+  resultStream.abort(reason)
+  await expect(result).rejects.toBe(reason)
+
+  gate.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+
+  expect(resultStream.state).toBe('aborted')
+  expect(resultStream.abortReason).toBe(reason)
+})
+
 test('mapAsync does not start work when its external signal is already aborted', async () => {
   const controller = new AbortController()
   const reason = Error('already cancelled')
@@ -195,4 +218,322 @@ test.each(['invalid', [], 1])('mapAsync rejects a non-object options value: %j',
 
 test('mapAsync requires a mapping function', () => {
   expect(() => _([1]).mapAsync(null)).toThrow('fn must be a function')
+})
+
+test('mapAsync retries the same input and context without releasing its concurrency slot', async () => {
+  const retryDelay = deferred()
+  const attempts = new Map()
+  const contexts = new Map()
+  const started = []
+
+  const resultPromise = _([1, 2])
+    .mapAsync(
+      async (value, context) => {
+        started.push(value)
+        const attempt = (attempts.get(value) || 0) + 1
+        attempts.set(value, attempt)
+        const previousContext = contexts.get(value)
+        if (previousContext) expect(context).toBe(previousContext)
+        else contexts.set(value, context)
+        if (value === 1 && attempt === 1) throw Error('retry first input')
+        return value * 10
+      },
+      {
+        concurrency: 1,
+        retry: {
+          retries: 1,
+          delay: async (attempt, error, input, context) => {
+            expect({ attempt, input, message: error.message }).toEqual({
+              attempt: 1,
+              input: 1,
+              message: 'retry first input',
+            })
+            expect(context).toBe(contexts.get(1))
+            await retryDelay.promise
+            return 0
+          },
+        },
+      },
+    )
+    .toPromise()
+
+  await waitFor(() => attempts.get(1) === 1, 'first attempt did not start')
+  await Promise.resolve()
+  expect(started).toEqual([1])
+
+  retryDelay.resolve()
+
+  await expect(resultPromise).resolves.toEqual([10, 20])
+  expect(started).toEqual([1, 1, 2])
+  expect(attempts).toEqual(
+    new Map([
+      [1, 2],
+      [2, 1],
+    ]),
+  )
+})
+
+test('mapAsync retry.when selects retryable failures', async () => {
+  const attempts = new Map()
+  const failures = []
+
+  const result = await _([1, 2])
+    .mapAsync(
+      async (value) => {
+        const attempt = (attempts.get(value) || 0) + 1
+        attempts.set(value, attempt)
+        if (value === 1 && attempt === 1) {
+          const error = Error('transient')
+          error.code = 'TRANSIENT'
+          throw error
+        }
+        if (value === 2) {
+          const error = Error('permanent')
+          error.code = 'PERMANENT'
+          throw error
+        }
+        return value * 10
+      },
+      {
+        retry: {
+          retries: 3,
+          when: async (error, input, context, attempt) => {
+            expect(input).toBe(error.exstreamInput)
+            expect(context.input).toBe(input)
+            expect(context.signal).toBeInstanceOf(AbortSignal)
+            expect(attempt).toBe(1)
+            return error.code === 'TRANSIENT'
+          },
+        },
+      },
+    )
+    .errors((error) => failures.push(error))
+    .toPromise()
+
+  expect(result).toEqual([10])
+  expect(attempts).toEqual(
+    new Map([
+      [1, 2],
+      [2, 1],
+    ]),
+  )
+  expect(failures.map(({ code, exstreamInput }) => ({ code, exstreamInput }))).toEqual([
+    { code: 'PERMANENT', exstreamInput: 2 },
+  ])
+})
+
+test('mapAsync never retries a fatal failure', async () => {
+  const reason = Error('fatal async operation')
+  reason.exstreamFatal = true
+  const operation = vi.fn(async () => Promise.reject(reason))
+
+  const result = _([1]).mapAsync(operation, { retry: 10 }).toPromise()
+
+  await expect(result).rejects.toBe(reason)
+  expect(operation).toHaveBeenCalledOnce()
+})
+
+test('mapAsync surfaces failures from retry policy callbacks with the original input', async () => {
+  const failures = []
+
+  const result = await _([7])
+    .mapAsync(async () => Promise.reject(Error('operation failure')), {
+      retry: {
+        retries: 1,
+        when: async () => {
+          throw Error('policy failure')
+        },
+      },
+    })
+    .errors((error) => failures.push(error))
+    .toPromise()
+
+  expect(result).toEqual([])
+  expect(failures).toHaveLength(1)
+  expect(failures[0].message).toBe('policy failure')
+  expect(failures[0].exstreamInput).toBe(7)
+})
+
+test('mapAsync supports a fixed retry delay', async () => {
+  let attempts = 0
+
+  const result = await _([1])
+    .mapAsync(
+      async (value) => {
+        attempts++
+        if (attempts === 1) throw Error('retry once')
+        return value * 10
+      },
+      { retry: { retries: 1, delay: 1 } },
+    )
+    .toPromise()
+
+  expect(result).toEqual([10])
+  expect(attempts).toBe(2)
+})
+
+test('mapAsync timeout aborts an attempt signal and retries with the same context', async () => {
+  const contexts = []
+  const signals = []
+  let attempts = 0
+
+  const result = await _([1])
+    .mapAsync(
+      (value, context) => {
+        attempts++
+        contexts.push(context)
+        signals.push(context.signal)
+        if (attempts === 2) return value * 10
+        return new Promise((resolve, reject) => {
+          context.signal.addEventListener('abort', () => reject(context.signal.reason), {
+            once: true,
+          })
+        })
+      },
+      { retry: 1, timeout: 5 },
+    )
+    .toPromise()
+
+  expect(result).toEqual([10])
+  expect(attempts).toBe(2)
+  expect(contexts[1]).toBe(contexts[0])
+  expect(signals[1]).not.toBe(signals[0])
+  expect(signals[0].aborted).toBe(true)
+  expect(signals[0].reason).toBeInstanceOf(_.MapAsyncTimeoutError)
+  expect(contexts[0].signal.aborted).toBe(false)
+})
+
+test('mapAsync emits a descriptive timeout error after retries are exhausted', async () => {
+  const failures = []
+
+  const result = await _([42, 43])
+    .mapAsync(() => new Promise(() => {}), { concurrency: 2, timeout: 5 })
+    .errors((error) => failures.push(error))
+    .toPromise()
+
+  expect(result).toEqual([])
+  expect(failures).toHaveLength(2)
+  for (const [index, failure] of failures.entries()) {
+    expect(failure).toBeInstanceOf(_.MapAsyncTimeoutError)
+    expect(failure).toMatchObject({
+      attempt: 1,
+      code: 'EXSTREAM_MAP_ASYNC_TIMEOUT',
+      exstreamInput: 42 + index,
+      timeout: 5,
+    })
+  }
+})
+
+test('mapAsync releases its shared timeout timer after successful completion', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const result = await _([1, 2, 3])
+      .mapAsync(async (value) => value * 10, { concurrency: 3, timeout: 10_000 })
+      .toPromise()
+
+    expect(result).toEqual([10, 20, 30])
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('aborting mapAsync during retry delay prevents another attempt', async () => {
+  const controller = new AbortController()
+  const reason = Error('cancel retry delay')
+  const delayStarted = deferred()
+  let attempts = 0
+
+  const result = _([1])
+    .mapAsync(
+      async () => {
+        attempts++
+        throw Error('retry me')
+      },
+      {
+        retry: {
+          retries: 2,
+          delay: async () => {
+            delayStarted.resolve()
+            return 10_000
+          },
+        },
+        signal: controller.signal,
+      },
+    )
+    .toPromise()
+
+  await delayStarted.promise
+  controller.abort(reason)
+
+  await expect(result).rejects.toBe(reason)
+  expect(attempts).toBe(1)
+})
+
+test('mapAsync observes an abort raised before retry delay starts', async () => {
+  const controller = new AbortController()
+  const reason = Error('abort between attempts')
+  let attempts = 0
+
+  const result = _([1])
+    .mapAsync(
+      async () => {
+        attempts++
+        controller.abort(reason)
+        throw Error('failed attempt')
+      },
+      { retry: 1, signal: controller.signal },
+    )
+    .toPromise()
+
+  await expect(result).rejects.toBe(reason)
+  expect(attempts).toBe(1)
+})
+
+test.each([
+  [{ retry: -1 }, 'retry must be a non-negative integer or an object'],
+  [{ retry: 1.5 }, 'retry must be a non-negative integer or an object'],
+  [{ retry: { retries: -1 } }, 'retry.retries must be a non-negative integer'],
+  [{ retry: { when: true } }, 'retry.when must be a function'],
+  [{ retry: { delay: -1 } }, 'retry.delay must be a non-negative number or a function'],
+  [{ timeout: -1 }, 'timeout must be a non-negative finite number'],
+  [{ timeout: Infinity }, 'timeout must be a non-negative finite number'],
+  [{ retry: Symbol('retries') }, 'retry must be a non-negative integer or an object'],
+  [{ retry: { retries: Symbol('retries') } }, 'retry.retries must be a non-negative integer'],
+  [
+    { retry: { retries: 1, delay: Symbol('delay') } },
+    'retry.delay must be a non-negative number or a function',
+  ],
+  [{ timeout: Symbol('timeout') }, 'timeout must be a non-negative finite number'],
+])('mapAsync validates task policy options: %j', (options, message) => {
+  expect(() => _([1]).mapAsync(async (value) => value, options)).toThrow(message)
+})
+
+test('mapAsync reports an invalid dynamic retry delay as a record error', async () => {
+  const failures = []
+
+  const result = await _([1])
+    .mapAsync(async () => Promise.reject(Error('retry me')), {
+      retry: { retries: 1, delay: () => -1 },
+    })
+    .errors((error) => failures.push(error))
+    .toPromise()
+
+  expect(result).toEqual([])
+  expect(failures).toHaveLength(1)
+  expect(failures[0].message).toBe('error in .mapAsync(). retry.delay returned an invalid delay')
+  expect(failures[0].exstreamInput).toBe(1)
+})
+
+test('mapAsync treats an empty retry policy as no retries', async () => {
+  const operation = vi.fn(async () => Promise.reject(Error('do not retry')))
+  const failures = []
+
+  await _([1])
+    .mapAsync(operation, { retry: {} })
+    .errors((error) => failures.push(error))
+    .toPromise()
+
+  expect(operation).toHaveBeenCalledOnce()
+  expect(failures).toHaveLength(1)
 })

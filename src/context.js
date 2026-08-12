@@ -13,6 +13,11 @@ class RecordContext {
 
 const createContext = (input, signal) => new RecordContext(input, signal)
 
+const setContextSignal = (context, signal) => {
+  context[contextSignal] = signal
+  return context
+}
+
 const appendContext = (contexts, context, previousCount) => {
   if (context === void 0) {
     if (contexts) contexts.push(void 0)
@@ -50,4 +55,5 @@ module.exports = {
   assignContext,
   createContext,
   forkContext,
+  setContextSignal,
 }

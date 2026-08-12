@@ -151,5 +151,26 @@ The default is `{ concurrency: 1, ordered: true }`. An optional external
 `map(fn).resolve(concurrency, ordered)` composition remains supported and uses
 the same internal concurrency coordinator.
 
+Retry keeps the same input, mutable context, and concurrency slot. A numeric
+value is the number of additional attempts; an object can select failures and
+calculate a delay:
+
+```javascript
+const loaded = exs(rows).mapAsync(loadRow, {
+  concurrency: 8,
+  timeout: 5_000,
+  retry: {
+    retries: 3,
+    when: (error) => ['ETIMEDOUT', 'EXSTREAM_MAP_ASYNC_TIMEOUT'].includes(error.code),
+    delay: (attempt) => attempt * 100,
+  },
+})
+```
+
+`timeout` applies to each attempt. While an attempt is running,
+`context.signal` is attempt-specific and aborts with `MapAsyncTimeoutError` on
+timeout. A retry receives a fresh signal and the same context; after success,
+the context signal again follows the record's lifetime in the graph.
+
 Look at the [documentation](https://exstream-js.github.io/) or
 see more examples in the [test folder](./test).
