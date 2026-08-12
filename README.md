@@ -70,6 +70,28 @@ Record errors remain recoverable through `.errors()`. Use
 record-error handlers, rejects Promise sinks, and aborts every connected fork
 and observer with the normalized error as `abortReason`.
 
+Three operators make the record-error policy explicit:
+
+```javascript
+const clean = exs(rows).skipErrors() // discard every record error
+
+const selected = exs(rows).skipErrors((error, input, context) => {
+  return error.code === 'INVALID_ROW' // true discards; false keeps the error record
+})
+
+const strict = exs(rows).failOnError() // promote the first record error to a fatal failure
+
+const { output, deadLetters } = exs(rows).routeErrors()
+const result = output.toPromise()
+const rejected = deadLetters.toPromise()
+```
+
+`routeErrors()` returns two reliable branches. `output` contains ordinary data;
+`deadLetters` contains `{ error, input }` values and preserves each record's
+context separately. Attach consumers to both branches together: either branch
+can apply backpressure to the source. Context is created lazily for error-policy
+callbacks that declare a third parameter.
+
 ## Record context and cancellation
 
 Context is opt-in and belongs to a record as it moves through a branch. Use

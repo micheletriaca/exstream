@@ -547,6 +547,7 @@ class Exstream extends EventEmitter {
 
   #propagateFailure = (error, input) => {
     this.#failing = true
+    this.pause(true)
     this.#emitErrorIfHandled(error)
     this.emit('fatal', error, input)
     const consumers = this.#consumers

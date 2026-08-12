@@ -22,6 +22,15 @@ _.extend = (name, fn) => {
 _.extend('errors', function (fn) {
   return _.errors(fn, this)
 })
+_.extend('skipErrors', function (predicate = null) {
+  return _.skipErrors(predicate, this)
+})
+_.extend('failOnError', function () {
+  return _.failOnError(this)
+})
+_.extend('routeErrors', function () {
+  return _.routeErrors(this)
+})
 _.extend('stopOnError', function (fn) {
   return _.stopOnError(fn, this)
 })

@@ -592,14 +592,86 @@ _m.errors = _.curry((fn, s) => {
     if (x === _.nil) {
       push(null, _.nil)
     } else if (err) {
-      if (usesContext) fn(err, push, result._recordContext)
-      else fn(err, push)
+      if (!usesContext) {
+        fn(err, push)
+      } else {
+        const context = result._recordContext
+        if (context !== void 0) {
+          fn(err, push, context)
+        } else {
+          const nextContext = createContext(err.exstreamInput, result.signal)
+          const contextualPush = (error, value, outputContext = nextContext) =>
+            push(error, value, outputContext)
+          fn(err, contextualPush, nextContext)
+        }
+      }
     } else {
       push(null, x)
     }
   })
   return result
 })
+
+_m.skipErrors = _.curry((predicate, s) => {
+  const usesInput = predicate && predicate.length >= 2
+  const usesContext = predicate && predicate.length >= 3
+  let result
+  result = s.consumeSync((err, x, push) => {
+    if (x === _.nil) {
+      push(null, _.nil)
+    } else if (!err) {
+      push(null, x)
+    } else if (!predicate) {
+      return
+    } else {
+      const input = err.exstreamInput
+      let context = usesContext ? result._recordContext : void 0
+      if (usesContext && context === void 0) context = createContext(input, result.signal)
+      try {
+        const skip = usesContext
+          ? predicate(err, input, context)
+          : usesInput
+            ? predicate(err, input)
+            : predicate(err)
+        if (!skip) push(err, null, context)
+      } catch (error) {
+        push(new ExstreamError(error, input), null, context)
+      }
+    }
+  })
+  return result
+})
+
+_m.failOnError = (s) => {
+  let result
+  result = s.consumeSync((err, x, push) => {
+    if (x === _.nil) {
+      push(null, _.nil)
+    } else if (err) {
+      result.fail(err, err.exstreamInput)
+    } else {
+      push(null, x)
+    }
+  })
+  return result
+}
+
+_m.routeErrors = (s) => {
+  const output = s.fork().skipErrors()
+  let deadLetters
+  deadLetters = s.fork().consumeSync((error, value, push) => {
+    if (value === _.nil) {
+      push(null, _.nil)
+    } else if (error) {
+      const input = error.exstreamInput
+      const currentContext = deadLetters._recordContext
+      const context =
+        currentContext === void 0 ? createContext(input, deadLetters.signal) : currentContext
+      push(null, { error, input }, context)
+    }
+  })
+  return { deadLetters, output }
+}
 
 _m.stopOnError = _.curry((fn, s) => {
   const usesContext = fn.length >= 3
@@ -608,8 +680,19 @@ _m.stopOnError = _.curry((fn, s) => {
     if (x === _.nil) {
       push(null, _.nil)
     } else if (err) {
-      if (usesContext) fn(err, push, s1._recordContext)
-      else fn(err, push)
+      if (!usesContext) {
+        fn(err, push)
+      } else {
+        const context = s1._recordContext
+        if (context !== void 0) {
+          fn(err, push, context)
+        } else {
+          const nextContext = createContext(err.exstreamInput, s1.signal)
+          const contextualPush = (error, value, outputContext = nextContext) =>
+            push(error, value, outputContext)
+          fn(err, contextualPush, nextContext)
+        }
+      }
       s1.destroy()
     } else {
       push(null, x)
