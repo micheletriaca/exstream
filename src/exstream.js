@@ -7,7 +7,7 @@ const { finished, Readable } = require('stream')
 const _ = require('./utils')
 const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
-const { forkContext } = require('./context')
+const { createContext, forkContext } = require('./context')
 
 const signalActive = Symbol('exstream signal active')
 
@@ -276,6 +276,17 @@ class Exstream extends EventEmitter {
     return !this.paused || skipBackPressure
   }
 
+  _writeError(error, context, skipBackPressure = false) {
+    return this.#writeControlRecord(
+      ERROR,
+      error,
+      error.exstreamInput,
+      false,
+      context,
+      skipBackPressure,
+    )
+  }
+
   #writeControlRecord = (type, value, input, fatal, context, skipBackPressure = false) => {
     if (type === END) this.#nilPushed = true
     const err = type === ERROR ? value : void 0
@@ -310,9 +321,17 @@ class Exstream extends EventEmitter {
       if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
     }
     const push = context === void 0 ? this.#push : this.#contextualPush(context)
-    if (context !== void 0 && this.#consumeFn.length >= 5)
-      this.#consumeFn(err, x, push, next, context)
-    else this.#consumeFn(err, x, push, next)
+    if (context === void 0) {
+      this.#consumeFn(err, x, push, next)
+    } else {
+      this.#activeContext = context
+      try {
+        if (this.#consumeFn.length >= 5) this.#consumeFn(err, x, push, next, context)
+        else this.#consumeFn(err, x, push, next)
+      } finally {
+        this.#activeContext = void 0
+      }
+    }
     syncNext = false
     if (!this.#nextCalled) this.pause(true)
   }
@@ -687,9 +706,17 @@ class Exstream extends EventEmitter {
 
   pull(fn) {
     const _pull = (fn) => {
-      const s2 = this.consumeSync((err, x) => {
+      const usesContext = fn.length >= 3
+      let s2
+      s2 = this.consumeSync((err, x) => {
         this.#removeConsumer(s2)
-        fn(err, x)
+        if (usesContext) {
+          let context = s2._recordContext
+          if (context === void 0 && !err && x !== _.nil) context = createContext(x, s2.signal)
+          fn(err, x, context)
+        } else {
+          fn(err, x)
+        }
       })
       s2.resume()
     }
@@ -706,13 +733,21 @@ class Exstream extends EventEmitter {
   }
 
   each(fn) {
-    const s2 = this.consumeSync((err, x, push) => {
+    let s2
+    const onValue =
+      fn.length >= 2
+        ? (value) => {
+            const context = s2._recordContext
+            fn(value, context === void 0 ? createContext(value, s2.signal) : context)
+          }
+        : fn
+    s2 = this.consumeSync((err, x, push) => {
       if (err) {
         ;(this.endOfChain || this).emit('error', err)
       } else if (x === _.nil) {
         push(null, _.nil)
       } else {
-        fn(x)
+        onValue(x)
       }
     })
     s2.resume()
@@ -875,22 +910,26 @@ class Exstream extends EventEmitter {
             nextCallback = null
           }
         }
-        const subS2 = subS.consume((err, x, push, next, context) => {
+        let subS2
+        subS2 = subS.consume((err, x, push, next) => {
           if (x === _.nil) {
             // eslint-disable-next-line no-use-before-define
             merged.off('end', endListener)
             merged.off('drain', drainCallback)
             resolve()
-          } else if (
-            !(err
-              ? merged.#writeControlRecord(ERROR, err, err.exstreamInput, false, context)
-              : context === void 0
-                ? merged._writeData(x)
-                : merged._writeData(x, false, context))
-          ) {
-            nextCallback = next
           } else {
-            next()
+            const context = subS2._recordContext
+            if (
+              !(err
+                ? merged.#writeControlRecord(ERROR, err, err.exstreamInput, false, context)
+                : context === void 0
+                  ? merged._writeData(x)
+                  : merged._writeData(x, false, context))
+            ) {
+              nextCallback = next
+            } else {
+              next()
+            }
           }
         })
         subS2.once('fatal', (error, input) => {
@@ -924,12 +963,13 @@ class Exstream extends EventEmitter {
   #toRecordArray = () => {
     const records = []
     return new Promise((resolve, reject) => {
-      const sink = this.consumeSync((err, x, push, context) => {
+      let sink
+      sink = this.consumeSync((err, x) => {
         if (err) reject(err)
         else if (x === _.nil) {
           if (sink.source) sink.source.#removeConsumer(sink)
           resolve(records)
-        } else records.push(dataFrame(x, context))
+        } else records.push(dataFrame(x, sink._recordContext))
       })
       sink.once('error', reject)
       sink.resume()

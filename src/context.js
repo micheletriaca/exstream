@@ -13,6 +13,16 @@ class RecordContext {
 
 const createContext = (input, signal) => new RecordContext(input, signal)
 
+const appendContext = (contexts, context, previousCount) => {
+  if (context === void 0) {
+    if (contexts) contexts.push(void 0)
+    return contexts
+  }
+  if (!contexts) contexts = Array(previousCount)
+  contexts.push(context)
+  return contexts
+}
+
 const aggregateContexts = (input, contexts, signal) => {
   const aggregate = createContext(input, signal)
   aggregate.contexts = contexts
@@ -36,6 +46,7 @@ const assignContext = (context, additions) => {
 
 module.exports = {
   aggregateContexts,
+  appendContext,
   assignContext,
   createContext,
   forkContext,
