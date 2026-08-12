@@ -3,11 +3,7 @@
     "chunkBytes": 65536,
     "measuredRuns": 3,
     "memorySampleMs": 10,
-    "rows": [
-      50000,
-      500000,
-      5000000
-    ],
+    "rows": [50000, 500000, 5000000],
     "warmupRuns": 0,
     "scenarios": [
       {
