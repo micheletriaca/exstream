@@ -1,9 +1,11 @@
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
+const core = require('exstream.js/core')
 const web = require('exstream.js/web')
 
 const run = async () => {
   const source = web([1])
+  assert.equal(core, web)
   assert.equal(source instanceof EventEmitter, false)
   assert.equal(source.emit('unobserved'), false)
   assert.throws(
@@ -48,7 +50,7 @@ const run = async () => {
 
   assert.throws(() => web([1]).toNodeStream(), /toNodeStream\(\) is not available in this runtime/)
 
-  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=6')
+  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=7')
 }
 
 run().catch((error) => {

@@ -13,6 +13,13 @@ npm install exstream.js
 
 Exstream requires Node.js 22 or newer.
 
+TypeScript declarations are included. Value and record-context types evolve
+through chained operators without additional configuration. See
+[`MIGRATION.md`](MIGRATION.md) for CommonJS/ESM imports and typing examples,
+[`SUPPORT.md`](SUPPORT.md) for the support policy, and generate the API reference
+with `npm run docs:api`. Packaging and tree-shaking measurements are recorded in
+[`docs/packaging.md`](docs/packaging.md).
+
 ## How to use it
 
 Here is a sync example:
