@@ -31,6 +31,7 @@ class ObjectSink extends Writable {
   firstOutputMs = null
 
   _write(value, encoding, callback) {
+    markRecord()
     if (this.firstOutputMs === null) this.firstOutputMs = performance.now() - startedAt
     callback()
   }
@@ -82,7 +83,7 @@ const prepareExstreamPipeline = () => {
     const byteSink = new ByteSink()
     const objectSink = new ObjectSink()
     if (config.scenario.operation === 'parse') {
-      exstream(inputSource()).csv({ header: objectMode }).tap(markRecord).pipe(objectSink)
+      exstream(inputSource()).csv({ header: objectMode }).pipe(objectSink)
       await finished(objectSink)
       return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
     }
@@ -107,14 +108,18 @@ const prepareNodeCsvPipeline = async () => {
     import('csv-stringify'),
   ])
   return async () => {
-    const parser = () =>
-      parse({
-        columns: objectMode,
-        on_record(value) {
-          markRecord()
-          return value
-        },
-      })
+    const parser = (countRecords = false) =>
+      parse(
+        countRecords
+          ? {
+              columns: objectMode,
+              on_record(value) {
+                markRecord()
+                return value
+              },
+            }
+          : { columns: objectMode },
+      )
     const serializer = () =>
       stringify({ columns: objectMode ? dataset.headers : void 0, header: objectMode })
     const byteSink = new ByteSink()
@@ -127,7 +132,7 @@ const prepareNodeCsvPipeline = async () => {
       await pipeline(rowSource(), serializer(), byteSink)
       return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
     }
-    await pipeline(inputSource(), parser(), serializer(), byteSink)
+    await pipeline(inputSource(), parser(true), serializer(), byteSink)
     return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
   }
 }
@@ -135,11 +140,15 @@ const prepareNodeCsvPipeline = async () => {
 const prepareFastCsvPipeline = async () => {
   const { format, parse } = await import('fast-csv')
   return async () => {
-    const parser = () =>
-      parse({ headers: objectMode }).transform((value) => {
-        markRecord()
-        return value
-      })
+    const parser = (countRecords = false) => {
+      const stream = parse({ headers: objectMode })
+      return countRecords
+        ? stream.transform((value) => {
+            markRecord()
+            return value
+          })
+        : stream
+    }
     const serializer = () =>
       format({
         headers: objectMode ? dataset.headers : false,
@@ -156,7 +165,7 @@ const prepareFastCsvPipeline = async () => {
       await pipeline(rowSource(), serializer(), byteSink)
       return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
     }
-    await pipeline(inputSource(), parser(), serializer(), byteSink)
+    await pipeline(inputSource(), parser(true), serializer(), byteSink)
     return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
   }
 }
@@ -168,7 +177,6 @@ const prepareCsvParserPipeline = () => {
   const csvParser = require('csv-parser')
   return async () => {
     const parser = csvParser()
-    parser.on('data', markRecord)
     const objectSink = new ObjectSink()
     await pipeline(inputSource(), parser, objectSink)
     return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
@@ -182,7 +190,6 @@ const preparePapaParsePipeline = () => {
   const Papa = require('papaparse')
   return async () => {
     const parser = Papa.parse(Papa.NODE_STREAM_INPUT, { header: objectMode })
-    parser.on('data', markRecord)
     const objectSink = new ObjectSink()
     await pipeline(inputSource(), parser, objectSink)
     return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }

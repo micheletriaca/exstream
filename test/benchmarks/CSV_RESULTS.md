@@ -13,7 +13,7 @@ machine and runtime, not a universal ranking.
 - CSV Parser 3.2.1 (object-mode parsing only)
 - Papa Parse 5.5.4 (parsing only)
 - one warmup and three measured fresh processes for the full preset
-- source digest: `c6488c5cfaeae68a4515649f54dbe5366b79fadab80238361a07d316f0211a3b`
+- source digest: `cbcdbe9e8a6f6ff1958d62e1e33adb192ebbb7fb7bcd60cf8128768bb4fb203d`
 
 ## Throughput
 
@@ -22,38 +22,44 @@ result in each scenario on this machine.
 
 | Scenario                                   |    Exstream | Node CSV | Fast-CSV | CSV Parser | Papa Parse |
 | ------------------------------------------ | ----------: | -------: | -------: | ---------: | ---------: |
-| Plain object parse, 500k rows              |  **142.62** |    38.53 |    27.99 |      88.81 |     112.96 |
-| Quoted/escaped/multiline array parse, 100k |       90.82 |    58.67 |    29.15 |          — | **110.62** |
-| Quoted object parse, 7-byte chunks         |       17.86 |    13.67 |     2.02 |  **18.33** |       7.76 |
-| Wide 64-column array parse                 |  **271.75** |    54.99 |    32.66 |          — |     257.91 |
-| Plain object stringify, 500k               |  **108.86** |    78.24 |    76.86 |          — |          — |
-| Quoted array stringify, 100k               |  **111.43** |    84.62 |    83.70 |          — |          — |
-| Plain object pipeline, throttled writer    |        6.81 |     6.90 | **7.03** |          — |          — |
-| Plain array parse, 1m rows                 |      166.45 |    57.68 |    28.77 |          — | **201.38** |
-| Narrow object parse, 5m rows               |       36.90 |    19.16 |    10.77 |  **42.76** |      35.42 |
-| Quoted array parse, 3-byte chunks          |   **15.44** |    12.52 |     1.54 |          — |       5.00 |
-| 8 records with 1 MiB fields                | **1054.16** |    37.48 |     0.90 |          — |      78.88 |
-| Wide 64-column object stringify            |  **162.93** |    82.29 |   106.08 |          — |          — |
-| Quoted object end-to-end pipeline          |   **66.70** |    30.88 |    23.72 |          — |          — |
+| Plain object parse, 500k rows              |  **148.63** |    37.72 |    26.15 |      88.00 |      76.55 |
+| Quoted/escaped/multiline array parse, 100k |   **97.25** |    54.60 |    26.56 |          — |      92.81 |
+| Quoted object parse, 7-byte chunks         |       18.14 |    13.29 |     1.92 |  **18.96** |       6.86 |
+| Wide 64-column array parse                 |  **263.48** |    50.60 |    29.11 |          — |     247.03 |
+| Plain object stringify, 500k               |  **102.52** |    70.68 |    71.54 |          — |          — |
+| Quoted array stringify, 100k               |  **105.88** |    76.40 |    75.09 |          — |          — |
+| Plain object pipeline, throttled writer    |        7.17 |     7.34 | **7.38** |          — |          — |
+| Plain array parse, 1m rows                 |  **181.26** |    60.70 |    27.62 |          — |     155.21 |
+| Narrow object parse, 5m rows               |       40.03 |    20.32 |    10.21 |  **42.83** |      13.16 |
+| Quoted array parse, 3-byte chunks          |   **16.11** |    12.47 |     1.55 |          — |       4.69 |
+| 8 records with 1 MiB fields                | **1079.37** |    36.62 |     0.85 |          — |      74.52 |
+| Wide 64-column object stringify            |  **156.82** |    78.25 |   101.84 |          — |          — |
+| Quoted object end-to-end pipeline          |   **68.68** |    29.39 |    21.87 |          — |          — |
 
-Exstream has the highest median throughput in 8 of the 13 full-preset
-scenarios. Among the eight parse scenarios, Exstream leads four, Papa Parse two,
-and CSV Parser two. Papa Parse is about 22% faster than Exstream on the general
-quoted/escaped/multiline array case and 21% faster on plain arrays; Exstream is
-about 5% faster on wide arrays. That advantage reverses under three-byte
-fragmentation, where Exstream is about 3.1 times as fast as Papa Parse. CSV Parser
-is about 3% faster than Exstream on quoted object parsing with seven-byte chunks
-and 16% faster on five million narrow objects, while Exstream is about 60% faster
+Exstream has the highest median throughput in 10 of the 13 full-preset
+scenarios. Among the eight parse scenarios, Exstream leads six and CSV Parser
+two. Exstream is about 5% faster than Papa Parse on the general
+quoted/escaped/multiline array case, 17% faster on plain arrays, 7% faster on
+wide arrays, and 3.4 times as fast under three-byte fragmentation. CSV Parser is
+about 5% faster than Exstream on quoted object parsing with seven-byte chunks
+and 7% faster on five million narrow objects, while Exstream is about 69% faster
 on the general plain-object case.
 
 Compared with the preceding checked-in snapshot on the same machine and runtime,
-the indexed, stateful quoted scanner raises Exstream from 62.56 to 90.82 MiB/s on
-the general quoted parse, from 15.70 to 17.86 MiB/s with seven-byte chunks, from
-12.68 to 15.44 MiB/s with three-byte chunks, and from 45.02 to 66.70 MiB/s in the
-quoted end-to-end pipeline. The larger decoded blocks trade memory for that
-throughput: median peak RSS delta rises from 11.69 to 17.30 MiB in the quoted
-parse and from 12.36 to 25.59 MiB in the quoted pipeline. The latter remains below
-Node CSV at 29.41 MiB and Fast-CSV at 77.17 MiB.
+the hybrid cell accumulator and indexed newline tracking raise Exstream from
+90.82 to 97.25 MiB/s on the general quoted parse, from 17.86 to 18.14 MiB/s with
+seven-byte chunks, from 15.44 to 16.11 MiB/s with three-byte chunks, and from
+66.70 to 68.68 MiB/s in the quoted end-to-end pipeline. The quoted parse remains
+close to Papa Parse, so a separate seven-run check was also made: its medians were
+110.65 MiB/s for Exstream and 105.79 MiB/s for Papa Parse. Both measurements put
+Exstream about 5% ahead on this machine.
+
+Parse records are now observed in one common final object-mode sink instead of
+through library-specific hooks. This removes a methodological asymmetry, but it
+also means deltas against older parse snapshots include the observation change
+and should not be read as isolated parser-only speedups. Median peak RSS delta is
+17.77 MiB in the general quoted parse and 25.64 MiB in the quoted pipeline; the
+latter remains below Node CSV at 30.92 MiB and Fast-CSV at 77.59 MiB.
 
 CSV Parser is absent from array scenarios because its native API always emits
 objects from a header row. Both parse-only libraries are absent from stringify
@@ -76,14 +82,14 @@ while the source-to-parser-to-serializer-to-throttled-sink pipeline runs.
 
 |      Rows |  Exstream | Node CSV | Fast-CSV |
 | --------: | --------: | -------: | -------: |
-|    50,000 | **20.31** |    51.36 |    51.66 |
-|   500,000 | **79.72** |   110.52 |   107.89 |
-| 5,000,000 | **81.50** |   132.50 |   131.67 |
+|    50,000 | **20.64** |    51.16 |    52.31 |
+|   500,000 | **79.63** |   110.64 |   134.20 |
+| 5,000,000 | **81.98** |   134.02 |   131.53 |
 
 Exstream's measured working-memory delta rises while the workload warms from
 50k to 500k records, then remains close between 500k and 5m records instead of
 tracking the tenfold dataset growth. At 5m rows the three implementations are
-writer-limited to 6.5–7.0 MiB/s, while Exstream's median RSS delta is about
+writer-limited to 6.6–6.8 MiB/s, while Exstream's median RSS delta is about
 50 MiB lower.
 
 ## Reproduction and raw evidence

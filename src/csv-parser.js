@@ -30,6 +30,9 @@ const asLimit = (value, name) => {
 const isSingleCharacter = (value) =>
   typeof value === 'string' && value.length > 0 && [...value].length === 1
 
+const maxInlineCellParts = 8
+const maxInlineCellLength = 4 * 1024
+
 const normalizeOptions = (options) => {
   if (options === null || options === void 0) options = {}
   if (typeof options !== 'object' || Array.isArray(options)) {
@@ -113,6 +116,7 @@ const createParser = (options, push, fail) => {
   let pending = ''
   let cell = ''
   let cellParts = null
+  let cellPartCount = 0
   let row = []
   let inQuotes = false
   let afterQuote = false
@@ -140,17 +144,26 @@ const createParser = (options, push, fail) => {
     }
   }
 
-  const advance = (text) => {
+  const advance = (text, nextCarriage = text.indexOf('\r'), nextLineFeed = text.indexOf('\n')) => {
     offset += text.length
-    if (text.indexOf('\r') < 0 && text.indexOf('\n') < 0) {
+    if (nextCarriage < 0 && nextLineFeed < 0) {
       column += text.length
       return
     }
     let start = 0
-    for (let index = 0; index < text.length; index++) {
-      const character = text[index]
-      if (character !== '\r' && character !== '\n') continue
-      if (character === '\r' && text[index + 1] === '\n') index++
+    while (nextCarriage >= 0 || nextLineFeed >= 0) {
+      let index
+      if (nextCarriage >= 0 && (nextLineFeed < 0 || nextCarriage < nextLineFeed)) {
+        index = nextCarriage
+        nextCarriage = text.indexOf('\r', nextCarriage + 1)
+        if (nextLineFeed === index + 1) {
+          index = nextLineFeed
+          nextLineFeed = text.indexOf('\n', nextLineFeed + 1)
+        }
+      } else {
+        index = nextLineFeed
+        nextLineFeed = text.indexOf('\n', nextLineFeed + 1)
+      }
       line++
       column = 1
       start = index + 1
@@ -158,9 +171,9 @@ const createParser = (options, push, fail) => {
     column += text.length - start
   }
 
-  const consumeRaw = (text) => {
+  const consumeRaw = (text, nextCarriage, nextLineFeed) => {
     addRecordBytes(text)
-    advance(text)
+    advance(text, nextCarriage, nextLineFeed)
     if (text.length > 0) recordHasContent = true
   }
 
@@ -177,9 +190,23 @@ const createParser = (options, push, fail) => {
   const escapeEscapeHasLineBreak = options.escape === '\r' || options.escape === '\n'
 
   const appendCell = (text) => {
-    if (cell.length === 0 && cellParts === null) cell = text
-    else if (cellParts === null) cellParts = [cell, text]
-    else cellParts.push(text)
+    if (text.length === 0) return
+    if (cellParts !== null) {
+      cellParts.push(text)
+      return
+    }
+    if (cell.length === 0) {
+      cell = text
+      cellPartCount = 1
+      return
+    }
+    if (cellPartCount < maxInlineCellParts && cell.length + text.length <= maxInlineCellLength) {
+      cell += text
+      cellPartCount++
+      return
+    }
+    cellParts = [cell, text]
+    cell = ''
   }
 
   const emitCell = () => {
@@ -192,6 +219,7 @@ const createParser = (options, push, fail) => {
     const value = cellParts === null ? cell : cellParts.join('')
     cell = ''
     cellParts = null
+    cellPartCount = 0
     row.push(value)
     quotedField = false
     afterQuote = false
@@ -319,8 +347,13 @@ const createParser = (options, push, fail) => {
             nextCarriage = tokenOrEnd(text.indexOf('\r', segmentStart))
           if (nextLineFeed < segmentStart)
             nextLineFeed = tokenOrEnd(text.indexOf('\n', segmentStart))
-          if (nextCarriage < end || nextLineFeed < end) consumeRaw(part)
-          else consumePlain(part)
+          if (nextCarriage < end || nextLineFeed < end) {
+            consumeRaw(
+              part,
+              nextCarriage < end ? nextCarriage - segmentStart : -1,
+              nextLineFeed < end ? nextLineFeed - segmentStart : -1,
+            )
+          } else consumePlain(part)
         } else consumePlain(part)
       }
       segmentStart = end

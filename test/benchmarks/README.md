@@ -75,6 +75,12 @@ Every worker verifies the exact processed record count and requires at least one
 output chunk. Parse and pipeline scenarios receive identical bytes and chunk
 sizes; serializer scenarios receive the same values and headers.
 
+Parse scenarios count records only when they enter the same final object-mode
+sink. They do not use library-specific observation hooks such as `tap`,
+`on_record`, `transform`, or an additional `data` listener. End-to-end pipelines
+instead count immediately after parsing because serialized byte chunks do not
+preserve record boundaries.
+
 Each library only enters scenarios supported directly by its Node streaming API:
 
 | Library    | Array parse | Object parse | Stringify | Pipeline |

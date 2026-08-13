@@ -28,6 +28,30 @@ test('CSV indexed scanning preserves distinct escapes split at every byte', asyn
   ).resolves.toEqual([['a\\b', 'c"d', 'e\\xb']])
 })
 
+test('CSV hybrid cell accumulation preserves heavily fragmented escaped fields', async () => {
+  const value = Array.from({ length: 32 }, (_, index) => `part-${index}`).join('"')
+  const input = `"${value.replaceAll('"', '""')}",tail\n`
+  const chunks = Array.from({ length: Math.ceil(input.length / 3) }, (_, index) =>
+    Buffer.from(input.slice(index * 3, index * 3 + 3)),
+  )
+
+  await expect(_(Readable.from(chunks)).csv().toPromise()).resolves.toEqual([[value, 'tail']])
+})
+
+test('CSV hybrid cell accumulation falls back by size and resets between records', async () => {
+  const value = `${'a'.repeat(4 * 1024)}"${'b'.repeat(32)}`
+  const input = `"${value.replaceAll('"', '""')}",""\nnext,row\n`
+
+  await expect(
+    _(Readable.from([Buffer.from(input)]))
+      .csv()
+      .toPromise(),
+  ).resolves.toEqual([
+    [value, ''],
+    ['next', 'row'],
+  ])
+})
+
 test('CSV tracks line positions when a distinct newline escape appears inside quotes', () => {
   const input = '"a\n\nb\n"c"'
 

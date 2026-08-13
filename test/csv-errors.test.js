@@ -49,6 +49,21 @@ test('CSV reports invalid characters after a closing quote', async () => {
   await expect(result).rejects.toThrow('Unexpected character after closing CSV quote')
 })
 
+test.each([
+  [['"first\r\nsecond\nthird\rfourth"x\n']],
+  [[...Buffer.from('"first\r\nsecond\nthird\rfourth"x\n')].map((byte) => Buffer.from([byte]))],
+])('CSV locates errors after mixed newlines inside a quoted field', async (chunks) => {
+  const result = _(chunks).csv().toPromise()
+
+  await expect(result).rejects.toMatchObject({
+    code: 'EXSTREAM_CSV_PARSE',
+    column: 8,
+    line: 4,
+    offset: 28,
+    record: 1,
+  })
+})
+
 test('CSV preserves its historical empty-line default and offers lossless empty records', () => {
   const input = 'a\n\n""\nb\n'
 
