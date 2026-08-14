@@ -1,11 +1,3 @@
-/*
-  eslint-disable max-lines,
-  sonarjs/cognitive-complexity,
-  complexity,
-  no-sync,
-  max-lines-per-function,
-*/
-
 const _ = require('./utils.js')
 const { asLimit, CsvParseError, isSingleCharacter, parseCsv } = require('./csv-parser.js')
 const { runtime } = require('./runtime.js')

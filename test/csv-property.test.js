@@ -69,7 +69,6 @@ test('CSV parsing is invariant across every single chunk boundary', async () => 
   for (let boundary = 1; boundary < bytes.length; boundary++) {
     const chunks = [bytes.subarray(0, boundary), bytes.subarray(boundary)]
     // Sequential checks make the failing byte boundary deterministic.
-    // eslint-disable-next-line no-await-in-loop
     await expect(
       _(chunks).csv({ skipEmptyLines: false }).toPromise(),
       `boundary ${boundary}`,
@@ -85,7 +84,6 @@ test('CSV parser matches the reference parser for deterministic generated record
     const chunks = chunkBySizes(input, [1, (seed % 7) + 1, 13, 2])
 
     // Sequential seeds keep failures reproducible and avoid hiding shared-state bugs.
-    // eslint-disable-next-line no-await-in-loop
     await expect(
       _(chunks).csv({ skipEmptyLines: false }).toPromise(),
       `seed ${seed}`,
@@ -112,7 +110,6 @@ test('object-mode CSV round-trips generated headers and values', async () => {
     const serialized = _(objects).csvStringify({ header: true }).values().join('')
     const chunks = chunkBySizes(serialized, [3, 1, 5, 2])
 
-    // eslint-disable-next-line no-await-in-loop
     await expect(
       _(chunks).csv({ header: true, skipEmptyLines: false }).toPromise(),
       `seed ${seed}`,
@@ -147,7 +144,6 @@ test('deterministic malformed-input fuzzing always returns rows or a located CSV
     )
     const chunks = chunkBySizes(input, [1 + Math.floor(next() * 7), 1, 3])
     try {
-      // eslint-disable-next-line no-await-in-loop
       const rows = await _(chunks).csv({ skipEmptyLines: false }).toPromise()
       expect(
         rows.every((row) => Array.isArray(row) && row.every((cell) => typeof cell === 'string')),

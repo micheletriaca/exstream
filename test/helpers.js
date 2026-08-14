@@ -22,7 +22,6 @@ const getSlowWritable = (res = [], writeDelay = 50, highWaterMark = 0) =>
 
 const randomStringGenerator = (iterations = 3, simulateErrorAtIndex = -1) => {
   const alphabet = 'abcdefghijklmnopqrstuvz'.split('')
-  // eslint-disable-next-line sonarjs/cognitive-complexity
   return (function* () {
     for (let i = 0; i < iterations; i++) {
       if (simulateErrorAtIndex === i) throw Error('an error')

@@ -1,7 +1,8 @@
 # TypeScript and module migration
 
-The 0.32 package keeps the existing CommonJS API and adds typed ESM, Node, core,
-and browser entry points. Runtime pipeline behavior is unchanged.
+The 0.33 package keeps the existing CommonJS API and adds typed ESM, Node, core,
+and browser entry points. The packaging changes do not alter runtime pipeline
+behavior.
 
 ## Imports
 

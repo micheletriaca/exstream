@@ -1,4 +1,3 @@
-/* eslint-disable max-len */
 require('./platform-runtime.js')
 const { BufferOverflowError, Exstream } = require('./exstream')
 const methods = require('./methods')
@@ -20,7 +19,6 @@ const _ = (module.exports = Object.assign(
   methods,
 ))
 
-/* eslint-disable max-statements-per-line */
 _.extend = (name, fn) => {
   Exstream.prototype[name] = fn
 }

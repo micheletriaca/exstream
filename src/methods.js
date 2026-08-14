@@ -1,7 +1,3 @@
-/*
-  eslint-disable sonarjs/cognitive-complexity, complexity
-*/
-
 const _ = require('./utils.js')
 const { Exstream, ExstreamError } = require('./exstream.js')
 const { monotonicNow, scheduleMicrotask, scheduleNextTurn } = require('./scheduler.js')
@@ -709,7 +705,7 @@ const runMapAsyncAttempt = async ({
 }
 
 // Sequential awaits are the retry state machine; each attempt must finish before the next starts.
-/* eslint-disable no-await-in-loop */
+/* oxlint-disable no-await-in-loop */
 const runMapAsyncTask = async (
   value,
   context,
@@ -753,7 +749,7 @@ const runMapAsyncTask = async (
     }
   }
 }
-/* eslint-enable no-await-in-loop */
+/* oxlint-enable no-await-in-loop */
 
 const validateMapAsyncSignal = (signal) => {
   /* v8 ignore next -- Tests cover absent, valid, invalid, and pre-aborted signals. */
@@ -1502,7 +1498,7 @@ _m.last = (s) => {
 _m.pipeline = () =>
   new Proxy(
     {
-      __exstream_pipeline__: true, // eslint-disable-line camelcase
+      __exstream_pipeline__: true,
       definitions: [],
       generateStream: function () {
         const s = new Exstream()

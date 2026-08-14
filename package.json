@@ -1,6 +1,6 @@
 {
   "name": "exstream.js",
-  "version": "0.27.0",
+  "version": "0.33.0",
   "description": "Composable streaming ETL pipelines for JavaScript",
   "keywords": [
     "async",
@@ -80,7 +80,7 @@
     "benchmark:csv:stream": "node test/benchmarks/streaming-csv.mjs --preset=quick",
     "benchmark:json": "node test/benchmarks/streaming-json.mjs",
     "benchmark:update": "node test/benchmarks/update-baseline.mjs",
-    "lint": "oxlint --deny-warnings .",
+    "lint": "oxlint --report-unused-disable-directives-severity=error --deny-warnings .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write --ignore-path .oxfmtignore .",
     "format:check": "oxfmt --check --ignore-path .oxfmtignore ."

@@ -1,7 +1,3 @@
-/*
-  eslint-disable max-lines, sonarjs/cognitive-complexity, complexity, no-sync
-*/
-
 const _ = require('./utils')
 const { EventHub } = require('./event-hub.js')
 const { runtime } = require('./runtime.js')
@@ -896,16 +892,15 @@ class Exstream extends EventHub {
     if (options.signal !== void 0) options.signal.addEventListener('abort', abort, { once: true })
     const wait = (promise) => (abortPromise ? Promise.race([promise, abortPromise]) : promise)
     try {
+      // Sequential awaits are the Web WritableStream backpressure boundary.
+      /* oxlint-disable no-await-in-loop */
       while (true) {
-        // Sequential awaits are the Web WritableStream backpressure boundary.
-        // eslint-disable-next-line no-await-in-loop
         const item = await wait(iterator.next())
         if (item.done) break
-        // eslint-disable-next-line no-await-in-loop
         await wait(writer.ready)
-        // eslint-disable-next-line no-await-in-loop
         await wait(writer.write(item.value))
       }
+      /* oxlint-enable no-await-in-loop */
       if (options.end !== false && !options.preventClose) await wait(writer.close())
       return destination
     } catch (error) {
@@ -938,7 +933,6 @@ class Exstream extends EventHub {
     return res
   }
 
-  // eslint-disable-next-line max-statements, max-lines-per-function
   through(target, { writable = false } = {}) {
     if (!target) return this
     else if (_.isExstream(target)) {
@@ -1003,7 +997,6 @@ class Exstream extends EventHub {
       return new Promise((resolve) => {
         let nextCallback
         let fatalInProgress = false
-        // eslint-disable-next-line sonarjs/no-identical-functions
         const drainCallback = () => {
           if (nextCallback) {
             nextCallback()
@@ -1013,7 +1006,6 @@ class Exstream extends EventHub {
         let subS2
         subS2 = subS.consume((err, x, push, next) => {
           if (x === _.nil) {
-            // eslint-disable-next-line no-use-before-define
             merged.off('end', endListener)
             merged.off('drain', drainCallback)
             resolve()

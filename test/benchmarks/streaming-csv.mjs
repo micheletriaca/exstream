@@ -224,7 +224,6 @@ for (const { libraries: scenarioLibraries, scenario } of scenarioPlans) {
     )
     for (const library of rotated) {
       // Sequential fresh processes avoid CPU, heap, and module-cache cross-contamination.
-      // eslint-disable-next-line no-await-in-loop
       const sample = await runWorker(library, scenario)
       const warmup = roundIndex < warmupRuns
       if (!jsonOnly) {

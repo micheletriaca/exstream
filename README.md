@@ -1,368 +1,153 @@
 # Exstream
 
-![test](https://github.com/micheletriaca/exstream/actions/workflows/main.yaml/badge.svg)
+[![test](https://github.com/micheletriaca/exstream/actions/workflows/main.yaml/badge.svg)](https://github.com/micheletriaca/exstream/actions/workflows/main.yaml)
 [![Coverage Status](https://coveralls.io/repos/github/micheletriaca/exstream/badge.svg?branch=master)](https://coveralls.io/github/micheletriaca/exstream?branch=master)
+[![npm](https://img.shields.io/npm/v/exstream.js.svg)](https://www.npmjs.com/package/exstream.js)
+
+**Composable streaming ETL for JavaScript.**
+
+Exstream connects data sources, synchronous and asynchronous transformations,
+and one or more destinations into a single backpressured pipeline. It is built
+for jobs where records may number in the millions, I/O must run concurrently
+without running wild, and the complete graph must stop cleanly when something
+fails or is cancelled.
 
 ```shell
-yarn add exstream.js
-
-# or
-
 npm install exstream.js
 ```
 
-Exstream requires Node.js 22 or newer.
+Exstream requires Node.js 22 or newer. It has no runtime dependencies and ships
+with TypeScript declarations, CommonJS and ESM entry points, and a portable core
+for modern browsers.
 
-TypeScript declarations are included. Value and record-context types evolve
-through chained operators without additional configuration. See
-[`MIGRATION.md`](MIGRATION.md) for CommonJS/ESM imports and typing examples,
-[`SUPPORT.md`](SUPPORT.md) for the support policy, and generate the API reference
-with `npm run docs:api`. Packaging and tree-shaking measurements are recorded in
-[`docs/packaging.md`](docs/packaging.md).
-
-## How to use it
-
-Here is a sync example:
+## A pipeline
 
 ```javascript
-const exs = require('exstream.js')
+import exstream from 'exstream.js'
 
-const res = exs([1, 2, 3])
-  .reduce((memo, x) => memo + x, 0)
-  .value()
+const orders = exstream(response.body)
+  .json({ path: '$.data.orders[*]' })
+  .mapAsync(
+    async (order, context) => ({
+      ...order,
+      customer: await loadCustomer(order.customerId, {
+        signal: context.signal,
+      }),
+    }),
+    { concurrency: 16, ordered: true, retry: 2, timeout: 5_000 },
+  )
+  .filter((order) => order.customer.active)
 
-// res is 6
-```
-
-## Lifecycle, fan-out, and buffering
-
-Streams expose an explicit `state` (`idle`, `running`, `ending`, `ended`,
-`aborted`, or `destroyed`). `start()`, `end()`, `destroy()`, and `abort()` are
-idempotent; `abortReason` retains the first abort reason.
-
-`fork()` is reliable fan-out: every fork participates in backpressure.
-`observe()` never slows the main flow, so a slow observer may need an explicit
-bounded best-effort policy:
-
-```javascript
-const source = exs(rows)
-const audit = source.observe({ bufferLimit: 1000, overflow: 'drop-oldest' })
-
-console.log(audit.buffered, audit.peakBuffered, audit.dropped)
-```
-
-The same `{ bufferLimit, overflow }` options can be passed as the second
-argument to `exs()`. The default limit is `Infinity` and the default overflow
-policy is `error`. `drop-oldest` and `drop-newest` require a finite limit.
-
-## Data and error records
-
-For compatibility, `stream.write(error)` and `push(error)` create an error
-record. The second argument of `push` is always data, so `push(null, error)`
-passes an `Error` object through the pipeline as an ordinary value.
-
-Use `exs.data(value)` to mark a value in an iterable source explicitly, or
-`stream.writeData(value)` when writing manually:
-
-```javascript
-const errorAsData = exs([exs.data(new Error('business value'))])
-const writable = exs()
-
-writable.writeData(new Error('another business value'))
-writable.end()
-```
-
-Record errors remain recoverable through `.errors()`. Use
-`stream.fail(reason, input)` for an unrecoverable stream failure: it bypasses
-record-error handlers, rejects Promise sinks, and aborts every connected fork
-and observer with the normalized error as `abortReason`.
-
-Three operators make the record-error policy explicit:
-
-```javascript
-const clean = exs(rows).skipErrors() // discard every record error
-
-const selected = exs(rows).skipErrors((error, input, context) => {
-  return error.code === 'INVALID_ROW' // true discards; false keeps the error record
-})
-
-const strict = exs(rows).failOnError() // promote the first record error to a fatal failure
-
-const { output, deadLetters } = exs(rows).routeErrors()
-const result = output.toPromise()
-const rejected = deadLetters.toPromise()
-```
-
-`routeErrors()` returns two reliable branches. `output` contains ordinary data;
-`deadLetters` contains `{ error, input }` values and preserves each record's
-context separately. Attach consumers to both branches together: either branch
-can apply backpressure to the source. Context is created lazily for error-policy
-callbacks that declare a third parameter.
-
-## Record context and cancellation
-
-Context is opt-in and belongs to a record as it moves through a branch. Use
-`withContext()` to establish it and `extendContext()` for asynchronous
-enrichment:
-
-```javascript
-const enriched = exs(rows)
-  .withContext((row) => ({ correlationId: row.id }))
-  .extendContext(async (row, context) => ({
-    customer: await loadCustomer(row.customerId, { signal: context.signal }),
-  }))
-  .map((row, context) => ({
-    correlationId: context.correlationId,
-    customer: context.customer,
-    row,
-  }))
-```
-
-The initializer may return an object or mutate the context directly. `input`
-is the value for which the context was established, while `signal` is managed
-by Exstream and is cancelled when that branch is aborted, destroyed, or fails.
-An external signal can cancel a source with `exs(source, { signal })`.
-
-Existing unary callbacks keep their historical argument list. Declare a
-second parameter to opt into context in `map`, `filter`, `reject`,
-`asyncFilter`, and `tap`; similarly, reducers receive it as their third
-parameter. Because callback arity is used for compatibility, a defaulted
-second parameter does not opt in.
-
-One-to-one operators preserve the same mutable context. `fork()` and
-`observe()` make shallow branch-local copies. `flatten()` makes one shallow
-copy per emitted child. Fan-in operators such as `batch()`, `collect()`, and
-the reducers create an aggregate context whose `input` is the aggregate value
-and whose `contexts` array is aligned with the contributing records.
-Concurrent `resolve()` and both ordered and unordered `merge()` retain each
-record's context.
-
-## Asynchronous mapping
-
-`mapAsync()` invokes the mapping function only when a concurrency slot is
-available. Results preserve input order by default; set `ordered: false` to emit
-them in completion order:
-
-```javascript
-const enriched = exs(rows).mapAsync(
-  async (row, context) => {
-    const customer = await loadCustomer(row.customerId, { signal: context.signal })
-    return { ...row, customer }
-  },
-  { concurrency: 10, ordered: true },
-)
-```
-
-The default is `{ concurrency: 1, ordered: true }`. An optional external
-`signal` aborts the operator and its active record contexts. The existing
-`map(fn).resolve(concurrency, ordered)` composition remains supported and uses
-the same internal concurrency coordinator.
-
-Retry keeps the same input, mutable context, and concurrency slot. A numeric
-value is the number of additional attempts; an object can select failures and
-calculate a delay:
-
-```javascript
-const loaded = exs(rows).mapAsync(loadRow, {
-  concurrency: 8,
-  timeout: 5_000,
-  retry: {
-    retries: 3,
-    when: (error) => ['ETIMEDOUT', 'EXSTREAM_MAP_ASYNC_TIMEOUT'].includes(error.code),
-    delay: (attempt) => attempt * 100,
-  },
-})
-```
-
-`timeout` applies to each attempt. While an attempt is running,
-`context.signal` is attempt-specific and aborts with `MapAsyncTimeoutError` on
-timeout. A retry receives a fresh signal and the same context; after success,
-the context signal again follows the record's lifetime in the graph.
-
-## Async iteration
-
-`toAsyncIterator()` exposes a pull-based async iterator without inserting a
-Node.js stream adapter:
-
-```javascript
-for await (const row of pipeline.toAsyncIterator({ signal })) {
-  await writeRow(row)
+for await (const order of orders.toAsyncIterator()) {
+  await writeOrder(order)
 }
 ```
 
-Each `next()` requests one record and therefore preserves source backpressure.
-`return()`—including an early `break` from `for await`—releases that consumer
-branch, while `throw()` and an external signal abort it. Because async iterators
-cannot carry Exstream's separate error channel, a record error rejects the
-current `next()` and closes the iterator branch.
+Input is pulled only as fast as the slowest reliable consumer can accept it.
+`mapAsync()` bounds active work and preserves order by default. The context
+signal is cancelled when work for that record and branch is no longer useful.
 
-For eager consumption, `valuesSync()` makes the execution mode explicit: it
-always returns an array and throws immediately if any part of the pipeline is
-asynchronous. The historical `values()` behavior is unchanged; it may return an
-array or a Promise. Prefer `valuesSync()` for known-synchronous pipelines and
-`toPromise()` for asynchronous ones.
+## Why Exstream
 
-## CSV parsing and serialization
+- **End-to-end backpressure.** Pressure propagates through transforms, forks,
+  merges, Node streams, Web Streams, iterables and async iterables.
+- **Controlled asynchronous work.** Concurrency, ordering, retries, timeouts,
+  throttling and cancellation are explicit rather than hidden in callbacks.
+- **Real pipeline graphs.** Reusable pipelines, reliable `fork()` branches,
+  best-effort `observe()` branches and ordered or unordered merges are built in.
+- **Streaming data formats.** CSV, JSON Lines and a forward-only JSONPath subset
+  process large inputs without first collecting the complete document.
+- **Predictable failures.** Recoverable record errors and fatal graph failures
+  have separate policies, cleanup and cancellation semantics.
+- **Types that follow the data.** Value and record-context types evolve through
+  chained operators, including asynchronous transformations.
+- **A fast synchronous path.** Ordinary `map()` and `filter()` pipelines do not
+  pay the cost of an asynchronous abstraction they are not using.
 
-`csv()` parses string or byte chunks incrementally. It preserves quoted fields,
-escaped quotes, multiline values, and tokens split across arbitrary chunk
-boundaries. Separators may be one or more characters, including multibyte
-Unicode strings. Records may end with LF, CRLF, or CR.
+## Formats
 
-```javascript
-const rows = await exs(byteSource)
-  .csv({
-    header: true,
-    separator: ',',
-    maxColumns: 100,
-    maxRecordBytes: 8 * 1024 * 1024,
-  })
-  .toPromise()
-```
-
-The parser defaults to `encoding: 'utf8'`, `quote: '"'`, `escape: '"'`, and
-`skipEmptyLines: true`. Set `skipEmptyLines: false` when a physically empty line
-must produce `['']`. `header` accepts `false`, `true`, an array, or a function
-that maps the first row to an array of names. `fastMode: true` treats quotes as
-ordinary characters and is intended only for known-unquoted input.
-
-`maxRecordBytes` counts the encoded record, including separators and CSV quote
-syntax but excluding the record delimiter. `maxColumns` limits the emitted
-fields. A violation or malformed quoting produces `CsvParseError` with `code`,
-`record`, `line`, `column`, and `offset`; `offset` is measured in decoded
-JavaScript string code units.
-
-`csvStringify()` uses the same separator, quote, escape, and encoding defaults.
-It also supports `header`, `quoted`, `quotedEmpty`, `lineEnding`, `maxColumns`,
-and `maxRecordBytes`. Its byte limit includes the emitted line ending and throws
-`CsvStringifyError` with the output record and column when available.
-
-The browser entry point supports UTF-8 CSV through `Uint8Array`, `TextEncoder`,
-and `TextDecoder`. The Node entry point additionally accepts encodings supported
-by `Buffer` and `StringDecoder`, including incrementally decoded UTF-16LE input.
-Unsupported runtime encodings fail explicitly.
-
-Deterministic property tests compare Exstream with Node CSV across generated
-records and chunk boundaries. Run the focused suite with `npm run test:csv:fuzz`;
-`CSV_FUZZ_SEED` and `CSV_FUZZ_CASES` select a reproducible malformed-input fuzz
-range.
-
-## JSON and JSON Lines
-
-`jsonl()` parses one JSON value from every physical line without collecting the
-complete input. It accepts string or byte chunks, handles UTF-8 characters and
-CRLF delimiters split across arbitrary chunk boundaries, and accepts a final
-record without a newline.
+CSV parsing and serialization support quoted and multiline fields, byte chunks,
+custom multi-character Unicode separators, headers, size limits and located
+errors:
 
 ```javascript
-const rows = await exs(response.body)
-  .jsonl({ maxRecordBytes: 8 * 1024 * 1024 })
-  .toPromise()
-```
-
-Blank lines are ignored by default; set `skipEmptyLines: false` to reject them.
-`maxRecordBytes` limits the encoded input record before the delimiter.
-`JsonParseError` exposes `code`, `record`, `line`, `column`, and the zero-based
-decoded-input `offset`. `jsonlStringify()` performs the inverse operation and
-supports `lineEnding`, `replacer`, `encoding`, and `maxRecordBytes`.
-
-`json()` validates one complete JSON document but can emit selected values before
-the document ends. Its deliberately small JSONPath subset contains only the
-segments that can be followed in one forward pass:
-
-- `$` for the document root;
-- `.property` and `['quoted-property']` for object properties;
-- `[0]` for a non-negative array index;
-- `[*]` for every child of an array or object;
-- linear combinations such as `$.groups[*].items[*]`.
-
-Recursive descent, filters, slices, unions, negative indices, and expressions
-are rejected instead of being partially interpreted.
-
-```javascript
-const rows = await exs(response.body)
-  .json({
-    path: '$.data.rows[*]',
-    maxDepth: 100,
-    maxValueBytes: 8 * 1024 * 1024,
-  })
-  .toPromise()
-```
-
-Without `path`, `json()` emits the complete root value and therefore materializes
-the complete document. A wildcard path materializes only the selected value that
-is currently being parsed. `maxValueBytes` counts the UTF-8 representation of
-each selected input value, including its JSON syntax, and fails while the value
-is still arriving rather than after it has grown beyond the limit.
-
-`jsonStringify()` writes a compact JSON array incrementally. An envelope path
-must end with one wildcard and may contain object properties before it. Static
-root properties are written before the array; `finalize` runs after the source
-ends and may add root properties after it. The callback receives the number of
-successfully serialized values, bytes emitted so far, and the branch signal.
-
-```javascript
-const chunks = await exs(records)
-  .jsonStringify({
-    path: '$.data.records[*]',
-    properties: { version: 1 },
-    finalize: ({ count }) => ({ count }),
-  })
-  .toPromise()
-
-JSON.parse(chunks.join(''))
-// { version: 1, data: { records: [...] }, count: 1000000 }
-```
-
-Final properties and static properties may not collide with each other or with
-the path-owned root property. A failing finalizer ends the pipeline with
-`JsonStringifyError`; it cannot produce a valid completed document after output
-has already started.
-
-## Browser, Web Streams, and events
-
-The default package export selects a Node or browser runtime without global
-polyfills. Explicit entry points are also available as `exstream.js/node` and
-`exstream.js/web`. The browser runtime uses `Uint8Array`, `TextEncoder`, and
-`TextDecoder`; Node-only conversion remains available through `toNodeStream()`.
-
-`ReadableStream` and fetch response bodies can be used as sources, while
-`WritableStream` can be passed directly to `pipe()`:
-
-```javascript
-const output = new WritableStream({
-  async write(row) {
-    await save(row)
-  },
-})
-
-await exs(response.body)
-  .csv({ header: true })
-  .map((row) => ({ ...row, importedAt: Date.now() }))
-  .pipe(output, { signal })
-```
-
-Use `toWebReadable()` for the opposite boundary. Web Stream demand, cancel,
-abort, close, and reliable `fork()` backpressure are propagated through the
-Exstream graph.
-
-`fromEvent()` supports EventEmitter-like objects and `EventTarget`:
-
-```javascript
-const rows = exs.fromEvent(target, 'data', {
-  end: 'end',
-  error: 'error',
-  signal,
-  highWaterMark: 1024,
-  overflow: 'error',
+const rows = exstream(csvChunks).csv({
+  header: true,
+  maxColumns: 100,
+  maxRecordBytes: 8 * 1024 * 1024,
 })
 ```
 
-Pausable producers are paused when the buffer fills and resumed on drain. Hot,
-non-pausable producers cannot provide real backpressure, so their buffer must
-be finite and uses one of `error`, `drop-oldest`, or `drop-newest`. The source
-exposes `received`, `buffered`, `peakBuffered`, and `dropped` metrics and always
-unsubscribes on end, abort, failure, or destruction.
+JSON Lines is available through `jsonl()` and `jsonlStringify()`. `json()` can
+select values from one large document as soon as they complete:
 
-Look at the [documentation](https://exstream-js.github.io/) or
-see more examples in the [test folder](./test).
+```javascript
+const events = exstream(jsonChunks).json({
+  path: '$.batches[*].events[*]',
+  maxDepth: 100,
+  maxValueBytes: 8 * 1024 * 1024,
+})
+```
+
+`jsonStringify()` incrementally writes an array or object envelope. Its
+end-of-stream finalizer can add properties computed while the records flow:
+
+```javascript
+const document = exstream(records).jsonStringify({
+  path: '$.data.records[*]',
+  properties: { version: 1 },
+  finalize: ({ count }) => ({ count }),
+})
+```
+
+The supported JSONPath subset is intentionally forward-only: property access,
+non-negative array indexes and `[*]` wildcards. Recursive descent, filters,
+slices and expressions require buffering or a different tool.
+
+## Fan-out, errors and context
+
+`fork()` is reliable: every branch participates in backpressure. `observe()` is
+non-blocking and accepts an explicit buffer limit and overflow policy for work
+such as metrics or sampling.
+
+Errors produced while handling one record remain recoverable with `errors()`,
+`skipErrors()` or `routeErrors()`. `failOnError()` promotes the first record
+error to a fatal failure and cancels the connected graph.
+
+Record context is opt-in. `withContext()` and `extendContext()` attach metadata
+such as correlation IDs or loaded dependencies to one record. Context is copied
+at branch boundaries, while record values retain normal JavaScript reference
+semantics.
+
+## Runtimes and imports
+
+```javascript
+import exstream from 'exstream.js' // selects Node.js or browser
+import nodeExstream from 'exstream.js/node'
+import portableExstream from 'exstream.js/core'
+import webExstream from 'exstream.js/web'
+
+const commonJsExstream = require('exstream.js')
+```
+
+The portable runtime works with Web Streams, `AbortController`, `EventTarget`,
+`TextEncoder` and `TextDecoder`. The Node.js entry point also understands Node
+streams, `Buffer` and Node-supported text encodings. Exstream does not install
+global polyfills.
+
+## When not to use it
+
+For a small array that already fits in memory, native array methods or a simple
+`for await` loop are usually clearer. Exstream earns its place when the problem
+is the pipeline as a whole: bounded memory, concurrent I/O, fan-out,
+backpressure, cancellation, format parsing and cleanup.
+
+## Documentation
+
+The full documentation portal is the next roadmap step and will live at
+[exstream-js.github.io](https://exstream-js.github.io/). Until then, the
+repository contains the [migration guide](MIGRATION.md),
+[support policy](SUPPORT.md), [changelog](CHANGELOG.md) and reproducible
+[benchmark methodology](test/benchmarks/README.md).
+
+Exstream is released under the [MIT License](LICENSE).

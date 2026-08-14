@@ -65,13 +65,12 @@ const runInChrome = async (chrome, html) => {
   const exited = new Promise((resolve) => child.once('exit', resolve))
   let socket
   try {
-    const deadline = Date.now() + 20_000
+    const startupDeadline = Date.now() + 20_000
     let target
-    while (!target && Date.now() < deadline) {
+    while (!target && Date.now() < startupDeadline) {
       if (child.exitCode !== null) throw Error(`Chrome exited early:\n${diagnostics}`)
       try {
         // Polling is intentionally sequential until Chrome exposes the target.
-        // eslint-disable-next-line no-await-in-loop
         const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) =>
           response.json(),
         )
@@ -79,7 +78,6 @@ const runInChrome = async (chrome, html) => {
       } catch {
         // Chrome has not opened its debugging endpoint yet.
       }
-      // eslint-disable-next-line no-await-in-loop
       if (!target) await wait(50)
     }
     if (!target) throw Error(`Chrome debugging target did not start:\n${diagnostics}`)
@@ -112,14 +110,13 @@ const runInChrome = async (chrome, html) => {
         socket.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression } }))
       })
 
-    while (Date.now() < deadline) {
+    const resultDeadline = Date.now() + 20_000
+    while (Date.now() < resultDeadline) {
       // Each evaluation observes a later browser state.
-      // eslint-disable-next-line no-await-in-loop
       const evaluated = await evaluate('document.body && document.body.textContent')
       const text = evaluated.result.value || ''
       const result = text.match(/EXSTREAM_BROWSER_(?:PASS|FAIL)[^\n]*/)?.[0]?.trim()
       if (result) return result
-      // eslint-disable-next-line no-await-in-loop
       await wait(50)
     }
     throw Error(`browser harness timed out:\n${diagnostics}`)
@@ -127,7 +124,10 @@ const runInChrome = async (chrome, html) => {
     if (socket) socket.close()
     if (child.exitCode === null) child.kill()
     await Promise.race([exited, wait(2_000)])
-    if (child.exitCode === null) child.kill('SIGKILL')
+    if (child.exitCode === null) {
+      child.kill('SIGKILL')
+      await Promise.race([exited, wait(2_000)])
+    }
   }
 }
 
@@ -217,5 +217,5 @@ try {
   console.log(result)
 } finally {
   if (server) await new Promise((resolve) => server.close(resolve))
-  await rm(output, { force: true, recursive: true })
+  await rm(output, { force: true, maxRetries: 10, recursive: true, retryDelay: 100 })
 }
