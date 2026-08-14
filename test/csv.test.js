@@ -1,6 +1,5 @@
 const _ = require('../src/index')
 
-// eslint-disable-next-line max-lines-per-function
 test('csv', () => {
   _(['a,b,c\n1,2,3\n"ciao ""amico""","multiline\nrow",3\n'])
     .csv({ header: true })
@@ -50,7 +49,6 @@ test('csv', () => {
     })
 })
 
-// eslint-disable-next-line max-lines-per-function
 test('csvStringify', () => {
   let res = _([Buffer.from('a,b,,c\n1,2,,3\n"ciao ""amico""","multiline\nrow",3,4\n')])
     .csv({ header: true })

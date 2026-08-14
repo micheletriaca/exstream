@@ -71,7 +71,6 @@ const runInChrome = async (chrome, html) => {
       if (child.exitCode !== null) throw Error(`Chrome exited early:\n${diagnostics}`)
       try {
         // Polling is intentionally sequential until Chrome exposes the target.
-        // eslint-disable-next-line no-await-in-loop
         const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) =>
           response.json(),
         )
@@ -79,7 +78,6 @@ const runInChrome = async (chrome, html) => {
       } catch {
         // Chrome has not opened its debugging endpoint yet.
       }
-      // eslint-disable-next-line no-await-in-loop
       if (!target) await wait(50)
     }
     if (!target) throw Error(`Chrome debugging target did not start:\n${diagnostics}`)
@@ -114,12 +112,10 @@ const runInChrome = async (chrome, html) => {
 
     while (Date.now() < deadline) {
       // Each evaluation observes a later browser state.
-      // eslint-disable-next-line no-await-in-loop
       const evaluated = await evaluate('document.body && document.body.textContent')
       const text = evaluated.result.value || ''
       const result = text.match(/EXSTREAM_BROWSER_(?:PASS|FAIL)[^\n]*/)?.[0]?.trim()
       if (result) return result
-      // eslint-disable-next-line no-await-in-loop
       await wait(50)
     }
     throw Error(`browser harness timed out:\n${diagnostics}`)

@@ -1,4 +1,4 @@
-/* eslint-disable vitest/no-commented-out-tests */
+/* oxlint-disable vitest/no-commented-out-tests -- historical manual performance probes below */
 const _ = require('../src')
 // const __ = require('highland')
 const h = require('./helpers')

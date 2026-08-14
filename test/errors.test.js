@@ -1,7 +1,3 @@
-/*
-  eslint-disable max-lines
-*/
-
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const { Readable, Writable } = require('stream')

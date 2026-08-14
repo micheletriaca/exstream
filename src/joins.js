@@ -1,12 +1,3 @@
-/* eslint-disable no-nested-ternary */
-/* eslint-disable max-statements */
-/* eslint-disable no-use-before-define */
-/* eslint-disable complexity */
-/* eslint-disable sonarjs/cognitive-complexity */
-/* eslint-disable max-statements-per-line */
-/* eslint-disable promise/always-return */
-/* eslint-disable max-lines-per-function */
-
 const { Exstream, ExstreamError } = require('./exstream')
 const { aggregateContexts, appendContext, createContext } = require('./context')
 
@@ -237,6 +228,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
 
       pullData = () => s1Transform.resume()
       n && n()
+      return void 0
     })
     .catch((e) => {
       pullData = () => {
@@ -251,7 +243,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     n = next
     if (pullData) pullData()
   }).on('end', () => {
-    w = n = () => {} // eslint-disable-line no-empty-function
+    w = n = () => {}
     s1Transform.destroy()
     s2Transform.destroy()
     w = n = pullData = a = b = bKey = aContext = bContext = cb1 = cb2 = null

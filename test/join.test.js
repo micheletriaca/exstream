@@ -1,8 +1,3 @@
-/* eslint-disable max-lines-per-function */
-/* eslint-disable max-lines */
-/* eslint-disable max-statements-per-line */
-/* eslint-disable max-len */
-
 const _ = require('../src/index')
 const { sleep } = require('./helpers')
 
