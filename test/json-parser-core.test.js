@@ -40,6 +40,58 @@ test('JSON parser core discards unmatched containers while validating their cont
   ).toEqual([2])
 })
 
+test('JSON parser core preserves selected strings across ordinary and special chunk boundaries', () => {
+  const ordinary = 'ordinary text '.repeat(512)
+  const result = parse(
+    [
+      '{"selected":"',
+      ordinary,
+      '\\',
+      'n',
+      'escaped',
+      '\\uD83D',
+      '\\uDCA5',
+      '-',
+      '\ud83d',
+      '\udca5',
+      '","discarded":"',
+      'x'.repeat(8192),
+      '","after":1}',
+    ],
+    { path: '$.selected' },
+  )
+
+  expect(result.values).toEqual([`${ordinary}\nescaped💥-💥`])
+})
+
+test('JSON parser core reports a control character after a discarded ordinary span exactly', () => {
+  const prefix = '{"discarded":"'
+  const ordinary = 'x'.repeat(4096)
+
+  expect(() => parse([prefix, ordinary, '\n","selected":1'], { path: '$.selected' })).toThrowError(
+    expect.objectContaining({
+      column: prefix.length + ordinary.length + 1,
+      line: 1,
+      offset: prefix.length + ordinary.length,
+    }),
+  )
+})
+
+test('JSON parser core validates surrogate pairs after a discarded ordinary span', () => {
+  const prefix = '{"discarded":"'
+  const ordinary = 'x'.repeat(4096)
+
+  expect(() =>
+    parse([prefix, ordinary, '\ud83d","selected":1'], { path: '$.selected' }),
+  ).toThrowError(
+    expect.objectContaining({
+      column: prefix.length + ordinary.length + 2,
+      line: 1,
+      offset: prefix.length + ordinary.length + 1,
+    }),
+  )
+})
+
 test('JSON parser core covers each value-token transition in discarded arrays', () => {
   expect(
     parse(['{"discarded":[{},[],"a\\nb",0,-1,1.2e+3,true,false,null],"selected":7}'], {

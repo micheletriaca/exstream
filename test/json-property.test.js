@@ -57,6 +57,30 @@ test('json wildcard selection matches a reference selector over varied documents
   }
 })
 
+test('json path state matches reference selectors across depths and container shapes', () => {
+  for (let iteration = 0; iteration < 100; iteration++) {
+    const rows = Array.from({ length: Math.floor(random() * 8) }, () => jsonValue(2))
+    const groups = Array.from({ length: Math.floor(random() * 5) }, () => ({
+      items: Array.from({ length: Math.floor(random() * 5) }, () => jsonValue(3)),
+    }))
+    const document = { groups, metadata: jsonValue(2), payload: { rows } }
+    const input = JSON.stringify(document)
+    const selections = [
+      ['$', [document]],
+      ['$[*]', Object.values(document)],
+      ['$.payload', [document.payload]],
+      ['$.payload.rows[*]', rows],
+      ['$.payload.rows[1]', rows.length > 1 ? [rows[1]] : []],
+      ['$.groups[*].items[*]', groups.flatMap((group) => group.items)],
+      ['$.missing.rows[*]', []],
+    ]
+
+    for (const [path, expected] of selections) {
+      expect(_(randomChunks(input)).json({ path }).values()).toEqual(expected)
+    }
+  }
+})
+
 test('jsonl matches JSON.parse for varied records and byte-at-a-time input', () => {
   const records = Array.from({ length: 100 }, () => jsonValue())
   const input = records.map((value) => JSON.stringify(value)).join('\r\n')

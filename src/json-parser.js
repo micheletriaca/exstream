@@ -1,4 +1,4 @@
-const { parseJsonPath, pathMatches } = require('./json-path.js')
+const { JSON_PATH_WILDCARD, parseJsonPath } = require('./json-path.js')
 const { createUtf8ByteCounter } = require('./byte-counter.js')
 
 class JsonParseError extends Error {
@@ -28,8 +28,8 @@ const asLimit = (value, name) => {
 }
 
 const numberPattern = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
-const numberCharacter = /[\dE+.e-]/
-const whitespace = /[\t\n\r ]/
+// oxlint-disable-next-line no-control-regex -- control characters end the safe string span
+const stringSpecialCharacter = /["\\\u0000-\u001f\uD800-\uDFFF]/g
 const literals = { f: ['false', false], n: ['null', null], t: ['true', true] }
 
 const createJsonParser = ({
@@ -84,22 +84,6 @@ const createJsonParser = ({
     } else target[key] = value
   }
 
-  const valuePath = () => {
-    const parent = currentFrame()
-    if (!parent) {
-      return []
-    } else if (parent.kind === 'array') {
-      return [...parent.path, parent.index]
-    } else {
-      return [...parent.path, parent.key]
-    }
-  }
-
-  const shouldCapture = (pathToValue) => {
-    const parent = currentFrame()
-    return Boolean(parent?.capture) || pathMatches(pathToValue, selectedPath)
-  }
-
   const beginValueCount = () => {
     if (maxValueBytes === Infinity) return
     valueCounter = createUtf8ByteCounter(maxValueBytes, () => {
@@ -110,8 +94,8 @@ const createJsonParser = ({
     })
   }
 
-  const finishValue = (value, pathToValue, capture, start) => {
-    if (pathMatches(pathToValue, selectedPath)) {
+  const finishValue = (value, selected, capture, start) => {
+    if (selected) {
       if (valueCounter) valueCounter.finish()
       valueCounter = null
       onValue(value, start)
@@ -135,7 +119,7 @@ const createJsonParser = ({
   const finishString = () => {
     let value
     if (token.collect) {
-      value = JSON.parse(token.raw)
+      value = token.escapedSyntax ? JSON.parse(token.raw) : token.raw
     } else {
       value = void 0
     }
@@ -144,7 +128,7 @@ const createJsonParser = ({
       frame.key = value
       frame.phase = 'colon'
     } else {
-      finishValue(value, token.path, token.capture, token.start)
+      finishValue(value, token.selected, token.capture, token.start)
     }
     token = null
   }
@@ -152,18 +136,19 @@ const createJsonParser = ({
   const finishNumber = () => {
     if (!numberPattern.test(token.raw)) throw parseError('Invalid JSON number')
     const value = Number(token.raw)
-    finishValue(value, token.path, token.capture, token.start)
+    finishValue(value, token.selected, token.capture, token.start)
     token = null
   }
 
-  const startString = (role, pathToValue, capture) => {
+  const startString = (role, selected, capture) => {
     token = {
       capture,
       collect: role === 'key' || capture,
       escaped: false,
-      path: pathToValue,
-      raw: role === 'key' || capture ? '"' : '',
+      escapedSyntax: false,
+      raw: '',
       role,
+      selected,
       start: location(),
       unicode: 0,
       unicodeValue: 0,
@@ -173,21 +158,35 @@ const createJsonParser = ({
   }
 
   const startValue = (character) => {
-    const pathToValue = valuePath()
-    const capture = shouldCapture(pathToValue)
+    const parent = currentFrame()
+    let depth = 0
+    let prefixMatched = true
+    if (parent) {
+      depth = parent.depth + 1
+      const segment = parent.kind === 'array' ? parent.index : parent.key
+      const expected = selectedPath[depth - 1]
+      prefixMatched =
+        parent.prefixMatched &&
+        depth <= selectedPath.length &&
+        (expected === JSON_PATH_WILDCARD || expected === segment)
+    }
+    const selected = prefixMatched && depth === selectedPath.length
+    const capture = Boolean(parent?.capture) || selected
     const start = location()
-    if (pathMatches(pathToValue, selectedPath)) beginValueCount()
+    if (selected) beginValueCount()
     if (character === '{' || character === '[') {
       if (stack.length + 1 > maxDepth) {
         throw parseError(`JSON exceeds maxDepth (${maxDepth})`, 'EXSTREAM_JSON_MAX_DEPTH')
       } else {
         stack.push({
           capture,
+          depth,
           index: 0,
           key: null,
           kind: character === '{' ? 'object' : 'array',
-          path: pathToValue,
           phase: character === '{' ? 'keyOrEnd' : 'valueOrEnd',
+          prefixMatched,
+          selected,
           start,
           value: capture ? (character === '{' ? {} : []) : void 0,
         })
@@ -195,28 +194,30 @@ const createJsonParser = ({
       }
       return
     } else if (character === '"') {
-      startString('value', pathToValue, capture)
-      return
-    } else if (character === '-' || /\d/.test(character)) {
-      token = { capture, path: pathToValue, raw: character, start, type: 'number' }
-      advance(character)
-      return
-    }
-    if (character in literals) {
-      const [expected, value] = literals[character]
-      token = {
-        capture,
-        expected,
-        index: 1,
-        path: pathToValue,
-        start,
-        type: 'literal',
-        value,
-      }
-      advance(character)
+      startString('value', selected, capture)
       return
     } else {
-      throw parseError('Expected a JSON value')
+      const code = character.charCodeAt(0)
+      if (character !== '-' && (code < 0x30 || code > 0x39)) {
+        if (character in literals) {
+          const [expected, value] = literals[character]
+          token = {
+            capture,
+            expected,
+            index: 1,
+            selected,
+            start,
+            type: 'literal',
+            value,
+          }
+          advance(character)
+          return
+        }
+        throw parseError('Expected a JSON value')
+      }
+      token = { capture, raw: character, selected, start, type: 'number' }
+      advance(character)
+      return
     }
   }
 
@@ -232,7 +233,15 @@ const createJsonParser = ({
 
   const processToken = (character) => {
     if (token.type === 'number') {
-      if (!numberCharacter.test(character)) {
+      const code = character.charCodeAt(0)
+      if (
+        (code < 0x30 || code > 0x39) &&
+        code !== 0x45 &&
+        code !== 0x2b &&
+        code !== 0x2e &&
+        code !== 0x65 &&
+        code !== 0x2d
+      ) {
         finishNumber()
         return false
       } else {
@@ -251,31 +260,47 @@ const createJsonParser = ({
       } else {
         const completed = token
         token = null
-        finishValue(completed.value, completed.path, completed.capture, completed.start)
+        finishValue(completed.value, completed.selected, completed.capture, completed.start)
         return true
       }
     }
-    token.raw = token.collect ? token.raw + character : ''
-
+    const code = character.charCodeAt(0)
     if (token.unicode > 0) {
-      if (!/[\dA-Fa-f]/.test(character)) {
+      if (token.collect) token.raw += character
+      let hex
+      if (code >= 0x30 && code <= 0x39) hex = code - 0x30
+      else if (code >= 0x41 && code <= 0x46) hex = code - 0x37
+      else if (code >= 0x61 && code <= 0x66) hex = code - 0x57
+      else hex = -1
+      if (hex < 0) {
         throw parseError('Invalid Unicode escape in JSON string')
       } else {
-        token.unicodeValue = token.unicodeValue * 16 + Number.parseInt(character, 16)
+        token.unicodeValue = token.unicodeValue * 16 + hex
         token.unicode--
         advance(character)
         if (token.unicode === 0) acceptCodeUnit(token, token.unicodeValue)
         return true
       }
     } else if (token.escaped) {
-      if (!/["/\\bfnrtu]/.test(character)) {
+      if (token.collect) token.raw += character
+      if (
+        code !== 0x22 &&
+        code !== 0x2f &&
+        code !== 0x5c &&
+        code !== 0x62 &&
+        code !== 0x66 &&
+        code !== 0x6e &&
+        code !== 0x72 &&
+        code !== 0x74 &&
+        code !== 0x75
+      ) {
         throw parseError('Invalid escape in JSON string')
       } else {
         token.escaped = false
         if (character === 'u') {
           token.unicode = 4
           token.unicodeValue = 0
-        } else acceptCodeUnit(token, character.charCodeAt(0))
+        } else acceptCodeUnit(token, code)
         advance(character)
         return true
       }
@@ -283,30 +308,51 @@ const createJsonParser = ({
       if (token.pendingHighSurrogate) {
         throw parseError('Unpaired high surrogate in JSON string')
       }
+      if (token.collect && token.escapedSyntax) token.raw += character
       advance(character)
       finishString()
       return true
     } else if (character === '\\') {
+      if (token.collect) {
+        if (!token.escapedSyntax) token.raw = `"${token.raw}`
+        token.raw += character
+      }
+      token.escapedSyntax = true
       token.escaped = true
       advance(character)
       return true
-    } else if (character.charCodeAt(0) < 0x20) {
+    } else if (code < 0x20) {
       throw parseError('Control character in JSON string')
     } else {
-      acceptCodeUnit(token, character.charCodeAt(0))
+      if (token.collect) token.raw += character
+      acceptCodeUnit(token, code)
       advance(character)
       return true
     }
   }
 
+  const processStringSpan = (text, start) => {
+    stringSpecialCharacter.lastIndex = start
+    const special = stringSpecialCharacter.exec(text)
+    const end = special ? special.index : text.length
+    if (end === start) return start
+    if (token.collect) token.raw += text.slice(start, end)
+    const length = end - start
+    offset += length
+    column += length
+    previousCarriage = false
+    return end
+  }
+
   const closeContainer = (character) => {
     const frame = stack.pop()
     advance(character)
-    finishValue(frame.value, frame.path, frame.capture, frame.start)
+    finishValue(frame.value, frame.selected, frame.capture, frame.start)
   }
 
   const processStructural = (character) => {
-    if (whitespace.test(character)) {
+    const code = character.charCodeAt(0)
+    if (code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d) {
       advance(character)
       return
     }
@@ -361,8 +407,25 @@ const createJsonParser = ({
     }
     let index = 0
     while (index < text.length) {
-      const consumed = token ? processToken(text[index]) : (processStructural(text[index]), true)
-      if (consumed) index++
+      if (!token) {
+        processStructural(text[index])
+        index++
+        continue
+      }
+      if (
+        token.role &&
+        !token.escaped &&
+        token.unicode === 0 &&
+        !token.pendingHighSurrogate &&
+        !valueCounter
+      ) {
+        const end = processStringSpan(text, index)
+        if (end !== index) {
+          index = end
+          continue
+        }
+      }
+      if (processToken(text[index])) index++
     }
   }
 

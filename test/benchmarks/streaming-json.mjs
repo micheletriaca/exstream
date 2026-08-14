@@ -20,6 +20,8 @@ const mode = argument('mode', null)
 const cases = [
   'json-select',
   'jsonstream-select',
+  'json-select-sparse',
+  'jsonstream-select-sparse',
   'json-native',
   'jsonl',
   'json-stringify',
@@ -47,15 +49,18 @@ const chunksOf = (input) => {
   return chunks
 }
 
-const createInputs = () => {
+const createInputs = (selectedMode) => {
   const values = Array.from({ length: rows }, (_, index) => ({
     active: index % 2 === 0,
     id: index,
     name: `record-${index}`,
   }))
   const serialized = values.map((_value, index) => rowText(index))
+  const ignored = selectedMode.endsWith('-sparse')
+    ? `,"ignored":"${'x'.repeat(8 * 1024 * 1024)}"`
+    : ''
   const json = Buffer.from(
-    `{"data":{"rows":[${serialized.join(',')}]},"ignored":"${'x'.repeat(8 * 1024 * 1024)}"}`,
+    `{"metadata":{"source":"benchmark","version":1},"data":{"rows":[${serialized.join(',')}]},"count":${rows}${ignored}}`,
   )
   const jsonl = Buffer.from(`${serialized.join('\n')}\n`)
   return { json, jsonChunks: chunksOf(json), jsonl, jsonlChunks: chunksOf(jsonl), values }
@@ -69,7 +74,7 @@ const sampleMemory = (baseline, peak) => {
 }
 
 const runCase = async (selectedMode) => {
-  const input = createInputs()
+  const input = createInputs(selectedMode)
   global.gc?.()
   const baseline = process.memoryUsage()
   const peak = { arrayBuffers: 0, external: 0, heapUsed: 0, rss: 0 }
@@ -84,9 +89,9 @@ const runCase = async (selectedMode) => {
     if ((count & 8191) === 0) sampleMemory(baseline, peak)
   }
 
-  if (selectedMode === 'json-select') {
+  if (selectedMode === 'json-select' || selectedMode === 'json-select-sparse') {
     _(input.jsonChunks).json({ path: '$.data.rows[*]' }).each(mark)
-  } else if (selectedMode === 'jsonstream-select') {
+  } else if (selectedMode === 'jsonstream-select' || selectedMode === 'jsonstream-select-sparse') {
     await new Promise((resolve, reject) => {
       const parser = JSONStream.parse(['data', 'rows', true])
       parser.on('data', mark)
@@ -135,7 +140,9 @@ const runCase = async (selectedMode) => {
   if (!Number.isFinite(checksum)) throw Error('invalid checksum')
   const documentInput =
     selectedMode === 'json-select' ||
+    selectedMode === 'json-select-sparse' ||
     selectedMode === 'jsonstream-select' ||
+    selectedMode === 'jsonstream-select-sparse' ||
     selectedMode === 'json-native'
   return {
     count,

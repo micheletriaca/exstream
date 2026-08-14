@@ -98,12 +98,6 @@ const parseJsonPath = (path = '$') => {
   return segments
 }
 
-const pathMatches = (actual, selected) =>
-  actual.length === selected.length &&
-  actual.every(
-    (segment, index) => selected[index] === JSON_PATH_WILDCARD || selected[index] === segment,
-  )
-
 const stringifyPath = (path) => {
   const segments = parseJsonPath(path === void 0 ? '$[*]' : path)
   if (segments.length === 1 && segments[0] === JSON_PATH_WILDCARD) return []
@@ -120,6 +114,5 @@ const stringifyPath = (path) => {
 module.exports = {
   JSON_PATH_WILDCARD,
   parseJsonPath,
-  pathMatches,
   stringifyPath,
 }

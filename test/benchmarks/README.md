@@ -139,13 +139,15 @@ npm run benchmark:json
 
 The harness runs Exstream and JSONStream path selection, native full-document
 `JSON.parse`, JSONL parse, JSON envelope serialization, and JSONL serialization
-in fresh `--expose-gc` processes. Its default dataset contains 200,000 records
-and an 8 MiB ignored JSON property, feeds both streaming parsers the same 64 KiB
-byte chunks, and reports the median of three runs. JSONStream receives the
-equivalent `['data', 'rows', true]` path. Native parsing is a materializing
-reference rather than a directly equivalent streaming API; the comparison is
-useful for showing the latency and retained-memory tradeoff, not for claiming
-that the two operations provide the same behavior.
+in fresh `--expose-gc` processes. Its primary dense-selection dataset contains
+200,000 records with only small ignored metadata and final-count properties. A
+separate sparse-selection pair appends an 8 MiB ignored JSON property. Both
+streaming parsers receive the same 64 KiB byte chunks and the report contains the
+median of three runs. JSONStream receives the equivalent
+`['data', 'rows', true]` path. Native parsing is a materializing reference rather
+than a directly equivalent streaming API; the comparison is useful for showing
+the latency and retained-memory tradeoff, not for claiming that the two
+operations provide the same behavior.
 
 The valid-input selection benchmark does not imply identical validation
 guarantees. JSONStream 1.3.5 does not report an incomplete unmatched tail at end
