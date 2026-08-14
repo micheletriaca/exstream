@@ -206,6 +206,69 @@ declare namespace exstream {
     maxRecordBytes?: number
   }
 
+  interface JsonOptions {
+    /** Text encoding used for byte chunks. Defaults to UTF-8. */
+    encoding?: string
+    /** Maximum nesting level accepted in the document. */
+    maxDepth?: number
+    /** Maximum encoded size of each selected value. */
+    maxValueBytes?: number
+    /** Streamable JSONPath selecting the values to emit. Defaults to the document root. */
+    path?: string
+  }
+
+  interface JsonlOptions {
+    /** Text encoding used for byte chunks. Defaults to UTF-8. */
+    encoding?: string
+    /** Maximum nesting level accepted in one record. */
+    maxDepth?: number
+    /** Maximum encoded size of one input record. */
+    maxRecordBytes?: number
+    /** Ignores blank input lines. Defaults to true. */
+    skipEmptyLines?: boolean
+    /** Transforms parsed properties using the same rules as JSON.parse(). */
+    reviver?: (this: unknown, key: string, value: unknown) => unknown
+  }
+
+  interface JsonlStringifyOptions {
+    /** Text encoding used for output chunks. Defaults to UTF-8. */
+    encoding?: string
+    /** Text appended after every record. Defaults to a line feed. */
+    lineEnding?: string
+    /** Maximum encoded size of one output record, including its line ending. */
+    maxRecordBytes?: number
+    /** Selects or transforms properties using the same rules as JSON.stringify(). */
+    replacer?:
+      | readonly (number | string)[]
+      | ((this: unknown, key: string, value: unknown) => unknown)
+  }
+
+  interface JsonStringifyStats {
+    /** Number of values successfully serialized into the streamed array. */
+    readonly count: number
+    /** Bytes emitted before the final JSON properties and closing delimiters. */
+    readonly bytesWritten: number
+    /** Cancels when work for the stringifier branch should stop. */
+    readonly signal: AbortSignal
+  }
+
+  interface JsonStringifyOptions<FinalProperties extends object = Record<string, unknown>> {
+    /** Text encoding used for output chunks. Defaults to UTF-8. */
+    encoding?: string
+    /** Adds these root properties before the streamed array. */
+    properties?: Record<string, unknown>
+    /** Maximum encoded size of each array value. */
+    maxValueBytes?: number
+    /** Location of the streamed array. Defaults to $[*]. Envelope paths must end in [*]. */
+    path?: string
+    /** Selects or transforms properties using the same rules as JSON.stringify(). */
+    replacer?:
+      | readonly (number | string)[]
+      | ((this: unknown, key: string, value: unknown) => unknown)
+    /** Adds root properties after the source ends. May return a promise. */
+    finalize?: (stats: JsonStringifyStats) => FinalProperties | PromiseLike<FinalProperties>
+  }
+
   type CsvRow<Header> = Header extends readonly (infer K extends PropertyKey)[]
     ? Record<K, string>
     : Header extends true
@@ -301,6 +364,21 @@ declare namespace exstream {
     readonly code: string
     readonly column?: number
     readonly record: number
+  }
+
+  /** A JSON or JSONL parsing error with the exact input position. */
+  class JsonParseError extends Error {
+    readonly code: string
+    readonly column: number
+    readonly line: number
+    readonly offset: number
+    readonly record?: number
+  }
+
+  /** A JSON output error with the source record when available. */
+  class JsonStringifyError extends Error {
+    readonly code: string
+    readonly record?: number
   }
 
   /** A lazy, backpressure-aware sequence of values. */
@@ -481,6 +559,16 @@ declare namespace exstream {
     csvStringify<H extends readonly PropertyKey[] | boolean = false>(
       options?: CsvStringifyOptions<H> | null,
     ): Exstream<string | Uint8Array, C>
+    /** Parses one JSON document and emits its selected values as soon as they complete. */
+    json<U = unknown>(options?: JsonOptions | null): Exstream<U, C>
+    /** Parses one JSON value from every input line. */
+    jsonl<U = unknown>(options?: JsonlOptions | null): Exstream<U, C>
+    /** Converts every value into one compact JSON line. */
+    jsonlStringify(options?: JsonlStringifyOptions | null): Exstream<string | Uint8Array, C>
+    /** Streams values into a JSON array, optionally nested inside an object envelope. */
+    jsonStringify<FinalProperties extends object = Record<string, unknown>>(
+      options?: JsonStringifyOptions<FinalProperties> | null,
+    ): Exstream<string | Uint8Array, C>
 
     /** Emits values from start (included) to end (excluded). */
     slice(start: number, end?: number): Exstream<T, C>
@@ -559,6 +647,12 @@ declare namespace exstream {
     /** Creates a non-blocking branch that may drop buffered values by policy. */
     observe(options?: ObserveOptions | null): Exstream<T, C>
     /** Connects this stream to a reusable pipeline, stream or transform function. */
+    through<U>(
+      target: <InputContext extends object>(
+        stream: Exstream<T, InputContext>,
+      ) => Exstream<U, InputContext>,
+      options?: ThroughOptions,
+    ): Exstream<U, C>
     through<U, NextContext extends object>(
       target:
         | Pipeline<T, U, NextContext>
@@ -735,6 +829,16 @@ declare namespace exstream {
     csvStringify<H extends readonly PropertyKey[] | boolean = false>(
       options?: CsvStringifyOptions<H> | null,
     ): Pipeline<Input, string | Uint8Array, C>
+    /** Adds incremental JSON parsing. */
+    json<U = unknown>(options?: JsonOptions | null): Pipeline<Input, U, C>
+    /** Adds line-delimited JSON parsing. */
+    jsonl<U = unknown>(options?: JsonlOptions | null): Pipeline<Input, U, C>
+    /** Adds line-delimited JSON serialization. */
+    jsonlStringify(options?: JsonlStringifyOptions | null): Pipeline<Input, string | Uint8Array, C>
+    /** Adds streaming JSON array or envelope serialization. */
+    jsonStringify<FinalProperties extends object = Record<string, unknown>>(
+      options?: JsonStringifyOptions<FinalProperties> | null,
+    ): Pipeline<Input, string | Uint8Array, C>
     /** Adds string-value sorting. */
     sort(): Pipeline<Input, Output, C>
     /** Adds comparison sorting. */
@@ -764,6 +868,12 @@ declare namespace exstream {
       fn: (value: Output, context: C) => K,
     ): Pipeline<Input, SortedGroup<K, Output>, AggregateContext<SortedGroup<K, Output>, C>>
     /** Adds another reusable pipeline after this one. */
+    through<NextOutput>(
+      target: <InputContext extends object>(
+        stream: Exstream<Output, InputContext>,
+      ) => Exstream<NextOutput, InputContext>,
+      options?: ThroughOptions,
+    ): Pipeline<Input, NextOutput, C>
     through<NextOutput, NextContext extends object>(
       target:
         | Pipeline<Output, NextOutput, NextContext>
@@ -1017,6 +1127,42 @@ declare namespace exstream {
   ): Exstream<string | Uint8Array, C>
   function csvStringify<H extends readonly PropertyKey[] | boolean = false>(
     options?: CsvStringifyOptions<H> | null,
+  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string | Uint8Array, C>
+  /** Parses JSON with a stream passed as the last argument. */
+  function json<U = unknown, T = unknown, C extends object = object>(
+    options: JsonOptions | null,
+    stream: Exstream<T, C>,
+  ): Exstream<U, C>
+  function json<U = unknown>(
+    options?: JsonOptions | null,
+  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<U, C>
+  /** Parses JSON Lines with a stream passed as the last argument. */
+  function jsonl<U = unknown, T = unknown, C extends object = object>(
+    options: JsonlOptions | null,
+    stream: Exstream<T, C>,
+  ): Exstream<U, C>
+  function jsonl<U = unknown>(
+    options?: JsonlOptions | null,
+  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<U, C>
+  /** Stringifies JSON Lines with a stream passed as the last argument. */
+  function jsonlStringify<T, C extends object>(
+    options: JsonlStringifyOptions | null,
+    stream: Exstream<T, C>,
+  ): Exstream<string | Uint8Array, C>
+  function jsonlStringify(
+    options?: JsonlStringifyOptions | null,
+  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string | Uint8Array, C>
+  /** Stringifies a streaming JSON array or envelope with a stream passed as the last argument. */
+  function jsonStringify<
+    T,
+    C extends object,
+    FinalProperties extends object = Record<string, unknown>,
+  >(
+    options: JsonStringifyOptions<FinalProperties> | null,
+    stream: Exstream<T, C>,
+  ): Exstream<string | Uint8Array, C>
+  function jsonStringify<FinalProperties extends object = Record<string, unknown>>(
+    options?: JsonStringifyOptions<FinalProperties> | null,
   ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string | Uint8Array, C>
   /** Builds a curried slice operator. */
   function slice<T, C extends object>(

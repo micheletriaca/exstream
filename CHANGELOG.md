@@ -12,6 +12,10 @@ and major releases may change the public contract.
 - Typed CommonJS, ESM, Node, core, and browser package entry points.
 - Named ESM exports backed by the same CommonJS module instance.
 - Type-level regression tests and generated API-reference support.
+- Incremental JSON Lines parsing and serialization for string and byte chunks.
+- Streaming JSON selection through a declared forward-only JSONPath subset.
+- Streaming JSON arrays and object envelopes with end-of-stream final properties.
+- Located JSON parse errors, depth and value-size limits, browser and worker support.
 
 ### Changed
 

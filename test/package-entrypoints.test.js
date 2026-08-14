@@ -20,11 +20,32 @@ test('CommonJS and ESM load the same Node export', async () => {
        process.stdout.write(String(
          esm.default === commonJs &&
          esm.nil === commonJs.nil &&
-         esm.map === commonJs.map
+         esm.map === commonJs.map &&
+         esm.json === commonJs.json &&
+         esm.jsonl === commonJs.jsonl &&
+         esm.jsonStringify === commonJs.jsonStringify &&
+         esm.JsonParseError === commonJs.JsonParseError
        ))`,
     ],
     { cwd: process.cwd(), encoding: 'utf8' },
   )
 
   expect(result).toBe('true')
+})
+
+test('published JSON named operators compose through CommonJS and ESM', () => {
+  const result = execFileSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '--eval',
+      `import exstream, { json, jsonl } from 'exstream.js/node'
+       const selected = exstream(['{"rows":[1,2]}']).through(json({ path: '$.rows[*]' })).values()
+       const output = await exstream(['1\\n2\\n']).through(jsonl()).jsonStringify().toPromise()
+       process.stdout.write(JSON.stringify({ output, selected }))`,
+    ],
+    { cwd: process.cwd(), encoding: 'utf8' },
+  )
+
+  expect(JSON.parse(result)).toEqual({ output: ['[1', ',2', ']'], selected: [1, 2] })
 })

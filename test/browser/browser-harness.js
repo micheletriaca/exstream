@@ -57,6 +57,25 @@ const run = async () => {
     .pipe(new WritableStream({ write: (row) => csvOutput.push(row) }))
   equal(csvOutput, [{ id: 1, name: 'Ada' }], 'fetch body to CSV and Web sink')
 
+  const json = encoder.encode('{"data":{"rows":[{"id":1},{"id":2}]}}')
+  equal(
+    await Exstream(new Response(json).body).json({ path: '$.data.rows[*]' }).toPromise(),
+    [{ id: 1 }, { id: 2 }],
+    'fetch body to streaming JSON',
+  )
+
+  const jsonl = encoder.encode('{"id":1}\n{"id":2}\n')
+  equal(
+    await Exstream(new Response(jsonl).body).jsonl().toPromise(),
+    [{ id: 1 }, { id: 2 }],
+    'fetch body to JSONL',
+  )
+
+  const envelope = await Exstream([{ id: 1 }, { id: 2 }])
+    .jsonStringify({ path: '$.rows[*]', finalize: ({ count }) => ({ count }) })
+    .toPromise()
+  equal(JSON.parse(envelope.join('')), { rows: [{ id: 1 }, { id: 2 }], count: 2 }, 'JSON envelope')
+
   let produced = 0
   const slowOutput = []
   const fastOutput = []
@@ -103,9 +122,9 @@ const run = async () => {
       { once: true },
     )
   })
-  assert(workerResult.checks === 3, 'worker did not complete every check')
+  assert(workerResult.checks === 5, 'worker did not complete every check')
 
-  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=6 worker=3'
+  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=9 worker=5'
 }
 
 run().catch((error) => {

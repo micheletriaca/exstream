@@ -24,7 +24,13 @@ const run = async () => {
   const csv = new TextEncoder().encode('a,b\n1,2\n')
   equal(await Exstream([csv]).csv({ header: true }).toPromise(), [{ a: '1', b: '2' }], 'worker CSV')
 
-  postMessage({ checks: 3, ok: true })
+  const json = new TextEncoder().encode('{"rows":[1,2,3]}')
+  equal(await Exstream([json]).json({ path: '$.rows[*]' }).toPromise(), [1, 2, 3], 'worker JSON')
+
+  const jsonl = new TextEncoder().encode('{"id":1}\n{"id":2}\n')
+  equal(await Exstream([jsonl]).jsonl().toPromise(), [{ id: 1 }, { id: 2 }], 'worker JSONL')
+
+  postMessage({ checks: 5, ok: true })
 }
 
 run().catch((error) => postMessage({ error: error.stack || String(error), ok: false }))

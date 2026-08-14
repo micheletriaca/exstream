@@ -247,6 +247,78 @@ records and chunk boundaries. Run the focused suite with `npm run test:csv:fuzz`
 `CSV_FUZZ_SEED` and `CSV_FUZZ_CASES` select a reproducible malformed-input fuzz
 range.
 
+## JSON and JSON Lines
+
+`jsonl()` parses one JSON value from every physical line without collecting the
+complete input. It accepts string or byte chunks, handles UTF-8 characters and
+CRLF delimiters split across arbitrary chunk boundaries, and accepts a final
+record without a newline.
+
+```javascript
+const rows = await exs(response.body)
+  .jsonl({ maxRecordBytes: 8 * 1024 * 1024 })
+  .toPromise()
+```
+
+Blank lines are ignored by default; set `skipEmptyLines: false` to reject them.
+`maxRecordBytes` limits the encoded input record before the delimiter.
+`JsonParseError` exposes `code`, `record`, `line`, `column`, and the zero-based
+decoded-input `offset`. `jsonlStringify()` performs the inverse operation and
+supports `lineEnding`, `replacer`, `encoding`, and `maxRecordBytes`.
+
+`json()` validates one complete JSON document but can emit selected values before
+the document ends. Its deliberately small JSONPath subset contains only the
+segments that can be followed in one forward pass:
+
+- `$` for the document root;
+- `.property` and `['quoted-property']` for object properties;
+- `[0]` for a non-negative array index;
+- `[*]` for every child of an array or object;
+- linear combinations such as `$.groups[*].items[*]`.
+
+Recursive descent, filters, slices, unions, negative indices, and expressions
+are rejected instead of being partially interpreted.
+
+```javascript
+const rows = await exs(response.body)
+  .json({
+    path: '$.data.rows[*]',
+    maxDepth: 100,
+    maxValueBytes: 8 * 1024 * 1024,
+  })
+  .toPromise()
+```
+
+Without `path`, `json()` emits the complete root value and therefore materializes
+the complete document. A wildcard path materializes only the selected value that
+is currently being parsed. `maxValueBytes` counts the UTF-8 representation of
+each selected input value, including its JSON syntax, and fails while the value
+is still arriving rather than after it has grown beyond the limit.
+
+`jsonStringify()` writes a compact JSON array incrementally. An envelope path
+must end with one wildcard and may contain object properties before it. Static
+root properties are written before the array; `finalize` runs after the source
+ends and may add root properties after it. The callback receives the number of
+successfully serialized values, bytes emitted so far, and the branch signal.
+
+```javascript
+const chunks = await exs(records)
+  .jsonStringify({
+    path: '$.data.records[*]',
+    properties: { version: 1 },
+    finalize: ({ count }) => ({ count }),
+  })
+  .toPromise()
+
+JSON.parse(chunks.join(''))
+// { version: 1, data: { records: [...] }, count: 1000000 }
+```
+
+Final properties and static properties may not collide with each other or with
+the path-owned root property. A failing finalizer ends the pipeline with
+`JsonStringifyError`; it cannot produce a valid completed document after output
+has already started.
+
 ## Browser, Web Streams, and events
 
 The default package export selects a Node or browser runtime without global

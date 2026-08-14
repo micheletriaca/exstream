@@ -121,3 +121,26 @@ single run when making performance claims.
 
 The checked-in [CSV benchmark snapshot](./CSV_RESULTS.md) summarizes the latest
 full and memory reports without replacing their raw samples.
+
+## JSON and JSON Lines smoke baseline
+
+`npm run benchmark` also measures two 5,000-record end-to-end format pipelines:
+streaming selection plus JSON envelope serialization, and JSONL parse plus
+serialization. These cases are regression indicators for the implementation,
+not cross-library performance claims. They verify every output count inside the
+measured function and run with the same warmup and sampling policy as the core
+operator baselines.
+
+For a longer throughput, first-record, and memory comparison, run:
+
+```shell
+npm run benchmark:json
+```
+
+The harness runs JSON selection, native full-document `JSON.parse`, JSONL parse,
+JSON envelope serialization, and JSONL serialization in fresh `--expose-gc`
+processes. Its default dataset contains 200,000 records and an 8 MiB ignored
+JSON property, and it reports the median of three runs. Native parsing is a
+materializing reference rather than a directly equivalent streaming API; the
+comparison is useful for showing the latency and retained-memory tradeoff, not
+for claiming that the two operations provide the same behavior.

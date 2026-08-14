@@ -69,6 +69,51 @@ type CsvObject = Expect<Equal<Value<typeof csvObjects>, Record<string, string>>>
 const csvArrays = exstream(['1,Ada\n']).csv()
 type CsvArray = Expect<Equal<Value<typeof csvArrays>, string[]>>
 
+interface JsonRow {
+  id: number
+  name: string
+}
+
+const jsonRows = exstream(['{"rows":[{"id":1,"name":"Ada"}]}']).json<JsonRow>({
+  path: '$.rows[*]',
+})
+type JsonRowValue = Expect<Equal<Value<typeof jsonRows>, JsonRow>>
+
+const unknownJson = exstream(['null']).json()
+type UnknownJsonValue = Expect<Equal<Value<typeof unknownJson>, unknown>>
+
+const jsonlRows = exstream(['{"id":1,"name":"Ada"}\n']).jsonl<JsonRow>()
+type JsonlRowValue = Expect<Equal<Value<typeof jsonlRows>, JsonRow>>
+
+const jsonOutput = exstream([{ id: 1 }]).jsonStringify({
+  path: '$.rows[*]',
+  finalize: async ({ bytesWritten, count, signal }) => ({
+    bytesWritten,
+    count,
+    stopped: signal.aborted,
+  }),
+})
+type JsonOutputValue = Expect<Equal<Value<typeof jsonOutput>, string | Uint8Array>>
+
+const jsonlOutput = exstream([{ id: 1 }]).jsonlStringify()
+type JsonlOutputValue = Expect<Equal<Value<typeof jsonlOutput>, string | Uint8Array>>
+
+const standaloneJson = exstream(['{"id":1,"name":"Ada"}']).through(exstream.json<JsonRow>())
+type StandaloneJsonValue = Expect<Equal<Value<typeof standaloneJson>, JsonRow>>
+
+const standaloneJsonl = exstream(['{"id":1,"name":"Ada"}\n']).through(exstream.jsonl<JsonRow>())
+type StandaloneJsonlValue = Expect<Equal<Value<typeof standaloneJsonl>, JsonRow>>
+
+const standaloneJsonOutput = exstream([{ id: 1 }]).through(exstream.jsonStringify())
+type StandaloneJsonOutputValue = Expect<
+  Equal<Value<typeof standaloneJsonOutput>, string | Uint8Array>
+>
+
+const standaloneJsonlOutput = exstream([{ id: 1 }]).through(exstream.jsonlStringify())
+type StandaloneJsonlOutputValue = Expect<
+  Equal<Value<typeof standaloneJsonlOutput>, string | Uint8Array>
+>
+
 const reusable = exstream
   .pipeline<number>()
   .map((value) => ({ value }))
@@ -137,6 +182,15 @@ type Used =
   | WrappedValue
   | CsvObject
   | CsvArray
+  | JsonRowValue
+  | UnknownJsonValue
+  | JsonlRowValue
+  | JsonOutputValue
+  | JsonlOutputValue
+  | StandaloneJsonValue
+  | StandaloneJsonlValue
+  | StandaloneJsonOutputValue
+  | StandaloneJsonlOutputValue
   | PipelineValue
   | AggregatedPipelineValue
   | NestedPipelineValue
