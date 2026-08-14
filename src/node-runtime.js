@@ -3,12 +3,37 @@ const { finished, Readable, Transform } = require('stream')
 const { StringDecoder } = require('string_decoder')
 const { configureRuntime } = require('./runtime.js')
 
+const concatTextBytes = (chunks, totalLength) => {
+  const first = chunks[0]
+  if (first) {
+    let nextOffset = first.byteOffset
+    const contiguous = chunks.every((chunk) => {
+      const matches = chunk.buffer === first.buffer && chunk.byteOffset === nextOffset
+      nextOffset += chunk.byteLength
+      return matches
+    })
+    if (contiguous) return Buffer.from(first.buffer, first.byteOffset, totalLength)
+  }
+  return Buffer.concat(chunks, totalLength)
+}
+
+const asBytes = (value, encoding) => {
+  if (Buffer.isBuffer(value)) return value
+  if (ArrayBuffer.isView(value)) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+  }
+  if (value instanceof ArrayBuffer) return Buffer.from(value)
+  return Buffer.from(value, encoding)
+}
+
 configureRuntime({
+  asBytes,
   bytesEqual: (left, right) => left.equals(right),
   bytesFrom: (value, encoding) => Buffer.from(value, encoding),
+  byteLength: (value, encoding) => Buffer.byteLength(value, encoding),
   bytesToString: (value, encoding, start, end) => value.toString(encoding, start, end),
   concatBytes: (chunks, totalLength) => Buffer.concat(chunks, totalLength),
-  concatTextBytes: (chunks, totalLength) => Buffer.concat(chunks, totalLength),
+  concatTextBytes,
   createBase64Encoder: () => new StringDecoder('base64'),
   EventBase: EventEmitter,
   createNodeTransform: (options) =>

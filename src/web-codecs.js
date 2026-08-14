@@ -37,6 +37,16 @@ const concatBytes = (chunks, totalLength) => {
 }
 
 const concatTextBytes = (chunks, totalLength) => {
+  const first = chunks[0]
+  if (first) {
+    let nextOffset = first.byteOffset
+    const contiguous = chunks.every((chunk) => {
+      const matches = chunk.buffer === first.buffer && chunk.byteOffset === nextOffset
+      nextOffset += chunk.byteLength
+      return matches
+    })
+    if (contiguous) return new TextBytes(first.buffer, first.byteOffset, totalLength)
+  }
   const result = new TextBytes(totalLength)
   let offset = 0
   for (const chunk of chunks) {

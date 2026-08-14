@@ -19,6 +19,13 @@ const csvRows = Array.from(
   (_, index) => `${index},name-${index},${index % 2 === 0}`,
 )
 const csvInput = Buffer.from(`id,name,active\n${csvRows.join('\n')}\n`)
+const jsonRows = Array.from({ length: 5_000 }, (_, index) => ({
+  active: index % 2 === 0,
+  id: index,
+  name: `name-${index}`,
+}))
+const jsonInput = Buffer.from(JSON.stringify({ data: { rows: jsonRows }, version: 1 }))
+const jsonlInput = Buffer.from(`${jsonRows.map((row) => JSON.stringify(row)).join('\n')}\n`)
 
 bench(
   'core synchronous map/filter pipeline (20k records)',
@@ -83,6 +90,28 @@ bench(
     const result = _([csvInput]).csv({ header: true }).csvStringify({ header: true }).values()
     if (result.length !== csvRows.length + 1)
       throw Error(`unexpected result length: ${result.length}`)
+  },
+  options,
+)
+
+bench(
+  'JSON path parse and stringify (5k records)',
+  async () => {
+    const result = await _([jsonInput])
+      .json({ path: '$.data.rows[*]' })
+      .jsonStringify({ path: '$.rows[*]' })
+      .toPromise()
+    if (result.length !== jsonRows.length + 1)
+      throw Error(`unexpected result length: ${result.length}`)
+  },
+  options,
+)
+
+bench(
+  'JSONL parse and stringify (5k records)',
+  () => {
+    const result = _([jsonlInput]).jsonl().jsonlStringify().values()
+    if (result.length !== jsonRows.length) throw Error(`unexpected result length: ${result.length}`)
   },
   options,
 )

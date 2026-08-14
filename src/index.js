@@ -3,6 +3,7 @@ require('./platform-runtime.js')
 const { BufferOverflowError, Exstream } = require('./exstream')
 const methods = require('./methods')
 const csv = require('./csv')
+const json = require('./json')
 const joins = require('./joins')
 const events = require('./events.js')
 const utils = require('./utils')
@@ -13,6 +14,7 @@ const _ = (module.exports = Object.assign(
   { BufferOverflowError, data: dataValue },
   utils,
   csv,
+  json,
   joins,
   events,
   methods,
@@ -111,6 +113,18 @@ _.extend('csv', function (opts) {
 })
 _.extend('csvStringify', function (opts) {
   return _.csvStringify(opts, this)
+})
+_.extend('json', function (opts) {
+  return _.json(opts, this)
+})
+_.extend('jsonStringify', function (opts) {
+  return _.jsonStringify(opts, this)
+})
+_.extend('jsonl', function (opts) {
+  return _.jsonl(opts, this)
+})
+_.extend('jsonlStringify', function (opts) {
+  return _.jsonlStringify(opts, this)
 })
 _.extend('slice', function (start, end = Infinity) {
   return _.slice(start, end, this)

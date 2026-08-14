@@ -13,6 +13,13 @@ npm install exstream.js
 
 Exstream requires Node.js 22 or newer.
 
+TypeScript declarations are included. Value and record-context types evolve
+through chained operators without additional configuration. See
+[`MIGRATION.md`](MIGRATION.md) for CommonJS/ESM imports and typing examples,
+[`SUPPORT.md`](SUPPORT.md) for the support policy, and generate the API reference
+with `npm run docs:api`. Packaging and tree-shaking measurements are recorded in
+[`docs/packaging.md`](docs/packaging.md).
+
 ## How to use it
 
 Here is a sync example:
@@ -194,6 +201,123 @@ always returns an array and throws immediately if any part of the pipeline is
 asynchronous. The historical `values()` behavior is unchanged; it may return an
 array or a Promise. Prefer `valuesSync()` for known-synchronous pipelines and
 `toPromise()` for asynchronous ones.
+
+## CSV parsing and serialization
+
+`csv()` parses string or byte chunks incrementally. It preserves quoted fields,
+escaped quotes, multiline values, and tokens split across arbitrary chunk
+boundaries. Separators may be one or more characters, including multibyte
+Unicode strings. Records may end with LF, CRLF, or CR.
+
+```javascript
+const rows = await exs(byteSource)
+  .csv({
+    header: true,
+    separator: ',',
+    maxColumns: 100,
+    maxRecordBytes: 8 * 1024 * 1024,
+  })
+  .toPromise()
+```
+
+The parser defaults to `encoding: 'utf8'`, `quote: '"'`, `escape: '"'`, and
+`skipEmptyLines: true`. Set `skipEmptyLines: false` when a physically empty line
+must produce `['']`. `header` accepts `false`, `true`, an array, or a function
+that maps the first row to an array of names. `fastMode: true` treats quotes as
+ordinary characters and is intended only for known-unquoted input.
+
+`maxRecordBytes` counts the encoded record, including separators and CSV quote
+syntax but excluding the record delimiter. `maxColumns` limits the emitted
+fields. A violation or malformed quoting produces `CsvParseError` with `code`,
+`record`, `line`, `column`, and `offset`; `offset` is measured in decoded
+JavaScript string code units.
+
+`csvStringify()` uses the same separator, quote, escape, and encoding defaults.
+It also supports `header`, `quoted`, `quotedEmpty`, `lineEnding`, `maxColumns`,
+and `maxRecordBytes`. Its byte limit includes the emitted line ending and throws
+`CsvStringifyError` with the output record and column when available.
+
+The browser entry point supports UTF-8 CSV through `Uint8Array`, `TextEncoder`,
+and `TextDecoder`. The Node entry point additionally accepts encodings supported
+by `Buffer` and `StringDecoder`, including incrementally decoded UTF-16LE input.
+Unsupported runtime encodings fail explicitly.
+
+Deterministic property tests compare Exstream with Node CSV across generated
+records and chunk boundaries. Run the focused suite with `npm run test:csv:fuzz`;
+`CSV_FUZZ_SEED` and `CSV_FUZZ_CASES` select a reproducible malformed-input fuzz
+range.
+
+## JSON and JSON Lines
+
+`jsonl()` parses one JSON value from every physical line without collecting the
+complete input. It accepts string or byte chunks, handles UTF-8 characters and
+CRLF delimiters split across arbitrary chunk boundaries, and accepts a final
+record without a newline.
+
+```javascript
+const rows = await exs(response.body)
+  .jsonl({ maxRecordBytes: 8 * 1024 * 1024 })
+  .toPromise()
+```
+
+Blank lines are ignored by default; set `skipEmptyLines: false` to reject them.
+`maxRecordBytes` limits the encoded input record before the delimiter.
+`JsonParseError` exposes `code`, `record`, `line`, `column`, and the zero-based
+decoded-input `offset`. `jsonlStringify()` performs the inverse operation and
+supports `lineEnding`, `replacer`, `encoding`, and `maxRecordBytes`.
+
+`json()` validates one complete JSON document but can emit selected values before
+the document ends. Its deliberately small JSONPath subset contains only the
+segments that can be followed in one forward pass:
+
+- `$` for the document root;
+- `.property` and `['quoted-property']` for object properties;
+- `[0]` for a non-negative array index;
+- `[*]` for every child of an array or object;
+- linear combinations such as `$.groups[*].items[*]`.
+
+Recursive descent, filters, slices, unions, negative indices, and expressions
+are rejected instead of being partially interpreted.
+
+```javascript
+const rows = await exs(response.body)
+  .json({
+    path: '$.data.rows[*]',
+    maxDepth: 100,
+    maxValueBytes: 8 * 1024 * 1024,
+  })
+  .toPromise()
+```
+
+Without `path`, `json()` emits the complete root value and therefore materializes
+the complete document. A wildcard path materializes only the selected value that
+is currently being parsed. `maxValueBytes` counts the UTF-8 representation of
+each selected input value, including its JSON syntax, and fails while the value
+is still arriving rather than after it has grown beyond the limit.
+
+`jsonStringify()` writes a compact JSON array incrementally. An envelope path
+must end with one wildcard and may contain object properties before it. Static
+root properties are written before the array; `finalize` runs after the source
+ends and may add root properties after it. The callback receives the number of
+successfully serialized values, bytes emitted so far, and the branch signal.
+
+```javascript
+const chunks = await exs(records)
+  .jsonStringify({
+    path: '$.data.records[*]',
+    properties: { version: 1 },
+    finalize: ({ count }) => ({ count }),
+  })
+  .toPromise()
+
+JSON.parse(chunks.join(''))
+// { version: 1, data: { records: [...] }, count: 1000000 }
+```
+
+Final properties and static properties may not collide with each other or with
+the path-owned root property. A failing finalizer ends the pipeline with
+`JsonStringifyError`; it cannot produce a valid completed document after output
+has already started.
 
 ## Browser, Web Streams, and events
 

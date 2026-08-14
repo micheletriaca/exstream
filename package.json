@@ -23,7 +23,11 @@
   },
   "files": [
     "src",
+    "types",
+    "CHANGELOG.md",
+    "MIGRATION.md",
     "README.md",
+    "SUPPORT.md",
     "LICENSE"
   ],
   "main": "src/index.js",
@@ -31,22 +35,50 @@
     "./src/platform-runtime.js": "./src/web-runtime.js",
     "./src/node-runtime.js": "./src/web-runtime.js"
   },
+  "types": "types/index.d.ts",
   "exports": {
     ".": {
-      "browser": "./src/browser.js",
-      "node": "./src/index.js",
-      "default": "./src/browser.js"
+      "types": "./types/index.d.ts",
+      "browser": {
+        "import": "./src/browser.mjs",
+        "require": "./src/browser.js"
+      },
+      "node": {
+        "import": "./src/index.mjs",
+        "require": "./src/index.js"
+      },
+      "import": "./src/browser.mjs",
+      "require": "./src/browser.js"
     },
-    "./node": "./src/index.js",
-    "./web": "./src/browser.js"
+    "./core": {
+      "types": "./types/core.d.ts",
+      "import": "./src/browser.mjs",
+      "require": "./src/browser.js"
+    },
+    "./node": {
+      "types": "./types/node.d.ts",
+      "import": "./src/index.mjs",
+      "require": "./src/index.js"
+    },
+    "./web": {
+      "types": "./types/web.d.ts",
+      "import": "./src/browser.mjs",
+      "require": "./src/browser.js"
+    }
   },
   "scripts": {
-    "test": "vitest run --coverage",
-    "ci:test": "vitest run --coverage",
+    "test": "vitest run --coverage && npm run test:types",
+    "ci:test": "vitest run --coverage && npm run test:types",
     "test:browser": "node test/browser/run-browser-tests.mjs",
+    "test:csv:fuzz": "vitest run test/csv-property.test.js --coverage.enabled=false",
+    "test:types": "tsc -p test/types/tsconfig.json",
+    "docs:api": "typedoc --options typedoc.json",
     "benchmark": "vitest bench --run test/benchmarks/performance-baseline.bench.mjs",
-    "benchmark:csv:memory": "node test/benchmarks/streaming-csv.mjs --memory-scaling",
-    "benchmark:csv:stream": "node test/benchmarks/streaming-csv.mjs",
+    "benchmark:csv:full": "node test/benchmarks/streaming-csv.mjs --preset=full",
+    "benchmark:csv:memory": "node test/benchmarks/streaming-csv.mjs --preset=memory",
+    "benchmark:csv:smoke": "node test/benchmarks/streaming-csv.mjs --preset=smoke --no-write",
+    "benchmark:csv:stream": "node test/benchmarks/streaming-csv.mjs --preset=quick",
+    "benchmark:json": "node test/benchmarks/streaming-json.mjs",
     "benchmark:update": "node test/benchmarks/update-baseline.mjs",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix .",
@@ -54,13 +86,19 @@
     "format:check": "oxfmt --check --ignore-path .oxfmtignore ."
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "4.1.10",
+    "JSONStream": "1.3.5",
     "csv-parse": "7.0.2",
+    "csv-parser": "3.2.1",
     "csv-stringify": "6.8.3",
     "fast-csv": "5.0.7",
     "highland": "2.13.5",
     "oxfmt": "0.63.0",
     "oxlint": "1.78.0",
+    "papaparse": "5.5.4",
+    "typedoc": "^0.28.20",
+    "typescript": "^6.0.3",
     "vite": "8.2.1",
     "vitest": "4.1.10"
   },

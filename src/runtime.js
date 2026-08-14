@@ -5,8 +5,10 @@ const unsupported = (operation) => () => {
 }
 
 const runtime = {
+  asBytes: webCodecs.asUint8Array,
   bytesEqual: webCodecs.bytesEqual,
   bytesFrom: webCodecs.asUint8Array,
+  byteLength: (value, encoding) => webCodecs.asUint8Array(value, encoding).length,
   bytesToString: webCodecs.decodeBytes,
   concatBytes: webCodecs.concatBytes,
   concatTextBytes: webCodecs.concatTextBytes,

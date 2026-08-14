@@ -1,111 +1,62 @@
 import { createRequire } from 'node:module'
-import { performance } from 'node:perf_hooks'
+import { PerformanceObserver, performance } from 'node:perf_hooks'
 import { Readable, Writable } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
+import { chunkBuffer, createDataset } from './csv-benchmark-data.mjs'
 
-const [library, rowsArg, chunkBytesArg, throttleBytesArg, throttleMsArg, sourceMode = 'buffer'] =
-  process.argv.slice(2)
-const rowCount = Number(rowsArg)
-const chunkBytes = Number(chunkBytesArg)
-const throttleBytes = Number(throttleBytesArg)
-const throttleMs = Number(throttleMsArg)
-const headers = ['id', 'name', 'description', 'active']
+if (!global.gc) throw Error('CSV benchmark workers require --expose-gc')
 
-if (!['exstream', 'node-csv', 'fast-csv'].includes(library)) {
-  throw Error(`unknown CSV library: ${library}`)
+const config = JSON.parse(process.argv[2])
+const libraries = ['exstream', 'node-csv', 'fast-csv', 'csv-parser', 'papaparse']
+if (!libraries.includes(config.library)) throw Error(`unknown CSV library: ${config.library}`)
+
+const setupStartedAt = performance.now()
+const dataset = createDataset(config.scenario)
+const datasetSetupMs = performance.now() - setupStartedAt
+const objectMode = config.scenario.mode === 'object'
+let firstRecordMs = null
+let startedAt
+let processedRecords = 0
+
+const markRecord = () => {
+  processedRecords++
+  if (firstRecordMs === null) firstRecordMs = performance.now() - startedAt
 }
-if (!['buffer', 'constant-memory'].includes(sourceMode)) {
-  throw Error(`unknown source mode: ${sourceMode}`)
-}
-if (![rowCount, chunkBytes, throttleBytes, throttleMs].every(Number.isFinite)) {
-  throw Error('invalid numeric benchmark argument')
-}
-if (!global.gc) throw Error('run this worker with --expose-gc')
 
-function makeInput(rows) {
-  const header = 'id,name,description,active\n'
-  const digitLengthSum = (count) => {
-    if (count === 0) return 0
-    let sum = 1 // zero
-    for (let digits = 1, start = 1; start < count; digits++, start *= 10) {
-      sum += (Math.min(count, start * 10) - start) * digits
-    }
-    return sum
-  }
-  const descriptionCycleDigits = digitLengthSum(1000)
-  const descriptionDigits =
-    Math.floor(rows / 1000) * descriptionCycleDigits + digitLengthSum(rows % 1000)
-  const bytes =
-    Buffer.byteLength(header) +
-    rows * 25 +
-    digitLengthSum(rows) * 2 +
-    descriptionDigits +
-    Math.floor(rows / 2)
-  const input = Buffer.allocUnsafe(bytes)
-  let offset = input.write(header)
-
-  for (let index = 0; index < rows; index++) {
-    offset += input.write(
-      `${index},name-${index},description-${index % 1000},${index % 2 === 0}\n`,
-      offset,
-    )
+class ObjectSink extends Writable {
+  constructor() {
+    super({ objectMode: true })
   }
 
-  if (offset !== bytes) throw Error(`generated ${offset} CSV bytes; expected ${bytes}`)
+  firstOutputMs = null
 
-  return input
-}
-
-function* chunkInput(input) {
-  for (let offset = 0; offset < input.length; offset += chunkBytes) {
-    yield input.subarray(offset, Math.min(offset + chunkBytes, input.length))
+  _write(value, encoding, callback) {
+    markRecord()
+    if (this.firstOutputMs === null) this.firstOutputMs = performance.now() - startedAt
+    callback()
   }
 }
 
-function makeConstantMemoryInput(rows) {
-  const header = Buffer.from('id,name,description,active\n')
-  const row = '123456,name-123456,description-456,true\n'
-  const rowBytes = Buffer.byteLength(row)
-  const rowsPerChunk = Math.floor(chunkBytes / rowBytes)
-  const fullChunk = Buffer.from(row.repeat(rowsPerChunk))
-  const fullChunks = Math.floor(rows / rowsPerChunk)
-  const remainder = Buffer.from(row.repeat(rows % rowsPerChunk))
-
-  return {
-    bytes: header.length + rows * rowBytes,
-    source() {
-      function* chunks() {
-        yield header
-        for (let index = 0; index < fullChunks; index++) yield fullChunk
-        if (remainder.length > 0) yield remainder
-      }
-      return Readable.from(chunks(), { objectMode: false })
-    },
-  }
-}
-
-class BenchmarkSink extends Writable {
-  #startedAt
+class ByteSink extends Writable {
   #unthrottledBytes = 0
 
-  constructor(startedAt) {
-    super({ highWaterMark: chunkBytes })
-    this.#startedAt = startedAt
+  constructor() {
+    super({ highWaterMark: config.scenario.chunkBytes })
   }
 
   bytes = 0
-  firstByteMs = null
+  firstOutputMs = null
 
-  _write(chunk, encoding, callback) {
-    if (this.firstByteMs === null) this.firstByteMs = performance.now() - this.#startedAt
-    this.bytes += Buffer.byteLength(chunk, encoding)
-
+  _write(value, encoding, callback) {
+    if (this.firstOutputMs === null) this.firstOutputMs = performance.now() - startedAt
+    const bytes = Buffer.byteLength(value, encoding)
+    this.bytes += bytes
+    const { throttleBytes, throttleMs } = config.scenario
     if (throttleBytes === 0 || throttleMs === 0) {
       callback()
       return
     }
-
-    this.#unthrottledBytes += Buffer.byteLength(chunk, encoding)
+    this.#unthrottledBytes += bytes
     const delays = Math.floor(this.#unthrottledBytes / throttleBytes)
     this.#unthrottledBytes %= throttleBytes
     if (delays > 0) setTimeout(callback, delays * throttleMs)
@@ -113,101 +64,218 @@ class BenchmarkSink extends Writable {
   }
 }
 
+const inputSource = () =>
+  Readable.from(chunkBuffer(dataset.input, config.scenario.chunkBytes), { objectMode: false })
+const rowSource = () =>
+  Readable.from(
+    (function* () {
+      for (const row of dataset.rows()) {
+        processedRecords++
+        yield row
+      }
+    })(),
+  )
 const require = createRequire(import.meta.url)
-let runPipeline
-let parsedRows = 0
 
-if (library === 'exstream') {
+const prepareExstreamPipeline = () => {
   const exstream = require('../../src/index.js')
-  runPipeline = async (source, sink) => {
-    exstream(source)
-      .csv({ header: true })
-      .tap(() => parsedRows++)
-      .csvStringify({ header: true })
-      .pipe(sink)
-    await finished(sink)
+  return async () => {
+    const byteSink = new ByteSink()
+    const objectSink = new ObjectSink()
+    if (config.scenario.operation === 'parse') {
+      exstream(inputSource()).csv({ header: objectMode }).pipe(objectSink)
+      await finished(objectSink)
+      return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
+    }
+    if (config.scenario.operation === 'stringify') {
+      exstream(rowSource()).csvStringify({ header: objectMode }).pipe(byteSink)
+      await finished(byteSink)
+      return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
+    }
+    exstream(inputSource())
+      .csv({ header: objectMode })
+      .tap(markRecord)
+      .csvStringify({ header: objectMode })
+      .pipe(byteSink)
+    await finished(byteSink)
+    return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
   }
-} else if (library === 'node-csv') {
+}
+
+const prepareNodeCsvPipeline = async () => {
   const [{ parse }, { stringify }] = await Promise.all([
     import('csv-parse'),
     import('csv-stringify'),
   ])
-  runPipeline = (source, sink) =>
-    pipeline(
-      source,
-      parse({
-        columns: true,
-        on_record(record) {
-          parsedRows++
-          return record
-        },
-      }),
-      stringify({ columns: headers, header: true }),
-      sink,
-    )
-} else {
-  const { format, parse } = await import('fast-csv')
-  runPipeline = (source, sink) =>
-    pipeline(
-      source,
-      parse({ headers: true }).transform((row) => {
-        parsedRows++
-        return row
-      }),
-      format({ headers, includeEndRowDelimiter: true, writeHeaders: true }),
-      sink,
-    )
+  return async () => {
+    const parser = (countRecords = false) =>
+      parse(
+        countRecords
+          ? {
+              columns: objectMode,
+              on_record(value) {
+                markRecord()
+                return value
+              },
+            }
+          : { columns: objectMode },
+      )
+    const serializer = () =>
+      stringify({ columns: objectMode ? dataset.headers : void 0, header: objectMode })
+    const byteSink = new ByteSink()
+    const objectSink = new ObjectSink()
+    if (config.scenario.operation === 'parse') {
+      await pipeline(inputSource(), parser(), objectSink)
+      return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
+    }
+    if (config.scenario.operation === 'stringify') {
+      await pipeline(rowSource(), serializer(), byteSink)
+      return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
+    }
+    await pipeline(inputSource(), parser(true), serializer(), byteSink)
+    return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
+  }
 }
 
-const input =
-  sourceMode === 'constant-memory'
-    ? makeConstantMemoryInput(rowCount)
-    : (() => {
-        const buffer = makeInput(rowCount)
-        return {
-          bytes: buffer.length,
-          source: () => Readable.from(chunkInput(buffer), { objectMode: false }),
-        }
-      })()
-global.gc()
-global.gc()
+const prepareFastCsvPipeline = async () => {
+  const { format, parse } = await import('fast-csv')
+  return async () => {
+    const parser = (countRecords = false) => {
+      const stream = parse({ headers: objectMode })
+      return countRecords
+        ? stream.transform((value) => {
+            markRecord()
+            return value
+          })
+        : stream
+    }
+    const serializer = () =>
+      format({
+        headers: objectMode ? dataset.headers : false,
+        includeEndRowDelimiter: true,
+        writeHeaders: objectMode,
+      })
+    const byteSink = new ByteSink()
+    const objectSink = new ObjectSink()
+    if (config.scenario.operation === 'parse') {
+      await pipeline(inputSource(), parser(), objectSink)
+      return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
+    }
+    if (config.scenario.operation === 'stringify') {
+      await pipeline(rowSource(), serializer(), byteSink)
+      return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
+    }
+    await pipeline(inputSource(), parser(true), serializer(), byteSink)
+    return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
+  }
+}
 
-const baselineMemory = process.memoryUsage()
-let peakHeapUsed = baselineMemory.heapUsed
-let peakRss = baselineMemory.rss
+const prepareCsvParserPipeline = () => {
+  if (config.scenario.operation !== 'parse' || !objectMode) {
+    throw Error('CSV Parser only supports object-mode parse benchmarks')
+  }
+  const csvParser = require('csv-parser')
+  return async () => {
+    const parser = csvParser()
+    const objectSink = new ObjectSink()
+    await pipeline(inputSource(), parser, objectSink)
+    return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
+  }
+}
+
+const preparePapaParsePipeline = () => {
+  if (config.scenario.operation !== 'parse') {
+    throw Error('Papa Parse only supports parse benchmarks')
+  }
+  const Papa = require('papaparse')
+  return async () => {
+    const parser = Papa.parse(Papa.NODE_STREAM_INPUT, { header: objectMode })
+    const objectSink = new ObjectSink()
+    await pipeline(inputSource(), parser, objectSink)
+    return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
+  }
+}
+
+const prepareRunners = {
+  'csv-parser': prepareCsvParserPipeline,
+  exstream: prepareExstreamPipeline,
+  'fast-csv': prepareFastCsvPipeline,
+  'node-csv': prepareNodeCsvPipeline,
+  papaparse: preparePapaParsePipeline,
+}
+
+const librarySetupStartedAt = performance.now()
+const runPipeline = await prepareRunners[config.library]()
+const librarySetupMs = performance.now() - librarySetupStartedAt
+
+global.gc()
+global.gc()
+const baseline = process.memoryUsage()
+let peak = baseline
 const sampleMemory = () => {
   const memory = process.memoryUsage()
-  peakHeapUsed = Math.max(peakHeapUsed, memory.heapUsed)
-  peakRss = Math.max(peakRss, memory.rss)
+  peak = Object.fromEntries(
+    Object.keys(memory).map((key) => [key, Math.max(peak[key] || 0, memory[key])]),
+  )
 }
-const memorySampler = setInterval(sampleMemory, 10)
-memorySampler.unref()
+let gcCount = 0
+let gcDurationMs = 0
+const gcObserver = new PerformanceObserver((list) => {
+  const entries = list.getEntries()
+  gcCount += entries.length
+  for (const entry of entries) gcDurationMs += entry.duration
+})
+gcObserver.observe({ entryTypes: ['gc'] })
+const sampler = setInterval(sampleMemory, config.memorySampleMs)
+sampler.unref()
 
-const startedAt = performance.now()
-const sink = new BenchmarkSink(startedAt)
+startedAt = performance.now()
+let output
 try {
-  await runPipeline(input.source(), sink)
+  output = await runPipeline()
 } finally {
-  clearInterval(memorySampler)
+  clearInterval(sampler)
   sampleMemory()
+  await new Promise((resolve) => setImmediate(resolve))
+  gcObserver.disconnect()
 }
 const elapsedMs = performance.now() - startedAt
 
-if (parsedRows !== rowCount) {
-  throw Error(`${library} parsed ${parsedRows} rows; expected ${rowCount}`)
+if (processedRecords !== config.scenario.rows) {
+  throw Error(
+    `${config.library} processed ${processedRecords} rows; expected ${config.scenario.rows}`,
+  )
 }
-if (sink.bytes === 0 || sink.firstByteMs === null) {
-  throw Error(`${library} produced no CSV output`)
+if (output.firstOutputMs === null) throw Error(`${config.library} produced no output`)
+if (config.scenario.operation !== 'parse' && output.outputBytes !== dataset.inputBytes) {
+  throw Error(
+    `${config.library} produced ${output.outputBytes} bytes; expected ${dataset.inputBytes}`,
+  )
 }
 
+const delta = (key) => Math.max(0, peak[key] - baseline[key])
 process.stdout.write(
   JSON.stringify({
+    allocationBytes: null,
+    allocationCount: null,
+    arrayBuffersDeltaBytes: delta('arrayBuffers'),
     elapsedMs,
-    firstByteMs: sink.firstByteMs,
-    heapDeltaBytes: Math.max(0, peakHeapUsed - baselineMemory.heapUsed),
-    inputBytes: input.bytes,
-    outputBytes: sink.bytes,
-    parsedRows,
-    rssDeltaBytes: Math.max(0, peakRss - baselineMemory.rss),
+    externalDeltaBytes: delta('external'),
+    firstOutputMs: output.firstOutputMs,
+    firstRecordMs,
+    gcCount,
+    gcDurationMs,
+    heapDeltaBytes: delta('heapUsed'),
+    heapPeakBytes: peak.heapUsed,
+    heapStartBytes: baseline.heapUsed,
+    inputBytes: dataset.inputBytes,
+    librarySetupMs,
+    outputBytes: output.outputBytes,
+    processedRecords,
+    rssDeltaBytes: delta('rss'),
+    rssPeakBytes: peak.rss,
+    rssStartBytes: baseline.rss,
+    sampleRows: dataset.sampleRows,
+    datasetSetupMs,
   }),
 )
