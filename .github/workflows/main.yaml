@@ -2,16 +2,12 @@ name: test
 
 on:
   push:
-    branches: [master, next, 'release/**']
+    branches: [master]
   pull_request:
-    branches: ['*']
+    branches: [master]
 
 permissions:
   contents: read
-
-concurrency:
-  group: test-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
 
 jobs:
   test:
