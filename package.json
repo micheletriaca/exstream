@@ -88,6 +88,7 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "4.1.10",
+    "JSONStream": "1.3.5",
     "csv-parse": "7.0.2",
     "csv-parser": "3.2.1",
     "csv-stringify": "6.8.3",

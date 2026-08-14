@@ -5,6 +5,8 @@ import process from 'node:process'
 
 const require = createRequire(import.meta.url)
 const _ = require('../../src/index.js')
+const JSONStream = require('JSONStream')
+const jsonStreamVersion = require('JSONStream/package.json').version
 
 const argument = (name, fallback) => {
   const prefix = `--${name}=`
@@ -13,18 +15,37 @@ const argument = (name, fallback) => {
 
 const rows = Number(argument('rows', '200000'))
 const rounds = Number(argument('rounds', '3'))
+const chunkBytes = Number(argument('chunk-bytes', String(64 * 1024)))
 const mode = argument('mode', null)
-const cases = ['json-select', 'json-native', 'jsonl', 'json-stringify', 'jsonl-stringify']
+const cases = [
+  'json-select',
+  'jsonstream-select',
+  'json-native',
+  'jsonl',
+  'json-stringify',
+  'jsonl-stringify',
+]
 
 const assertConfiguration = () => {
   if (!Number.isSafeInteger(rows) || rows <= 0) throw Error('--rows must be a positive integer')
   if (!Number.isSafeInteger(rounds) || rounds <= 0) {
     throw Error('--rounds must be a positive integer')
   }
+  if (!Number.isSafeInteger(chunkBytes) || chunkBytes <= 0) {
+    throw Error('--chunk-bytes must be a positive integer')
+  }
   if (mode !== null && !cases.includes(mode)) throw Error(`unknown --mode: ${mode}`)
 }
 
 const rowText = (index) => `{"id":${index},"name":"record-${index}","active":${index % 2 === 0}}`
+
+const chunksOf = (input) => {
+  const chunks = []
+  for (let offset = 0; offset < input.length; offset += chunkBytes) {
+    chunks.push(input.subarray(offset, offset + chunkBytes))
+  }
+  return chunks
+}
 
 const createInputs = () => {
   const values = Array.from({ length: rows }, (_, index) => ({
@@ -33,11 +54,11 @@ const createInputs = () => {
     name: `record-${index}`,
   }))
   const serialized = values.map((_value, index) => rowText(index))
-  return {
-    json: `{"data":{"rows":[${serialized.join(',')}]},"ignored":"${'x'.repeat(8 * 1024 * 1024)}"}`,
-    jsonl: `${serialized.join('\n')}\n`,
-    values,
-  }
+  const json = Buffer.from(
+    `{"data":{"rows":[${serialized.join(',')}]},"ignored":"${'x'.repeat(8 * 1024 * 1024)}"}`,
+  )
+  const jsonl = Buffer.from(`${serialized.join('\n')}\n`)
+  return { json, jsonChunks: chunksOf(json), jsonl, jsonlChunks: chunksOf(jsonl), values }
 }
 
 const sampleMemory = (baseline, peak) => {
@@ -64,12 +85,21 @@ const runCase = async (selectedMode) => {
   }
 
   if (selectedMode === 'json-select') {
-    _([input.json]).json({ path: '$.data.rows[*]' }).each(mark)
+    _(input.jsonChunks).json({ path: '$.data.rows[*]' }).each(mark)
+  } else if (selectedMode === 'jsonstream-select') {
+    await new Promise((resolve, reject) => {
+      const parser = JSONStream.parse(['data', 'rows', true])
+      parser.on('data', mark)
+      parser.once('end', resolve)
+      parser.once('error', reject)
+      for (const chunk of input.jsonChunks) parser.write(chunk)
+      parser.end()
+    })
   } else if (selectedMode === 'json-native') {
-    const document = JSON.parse(input.json)
+    const document = JSON.parse(input.json.toString('utf8'))
     for (const value of document.data.rows) mark(value)
   } else if (selectedMode === 'jsonl') {
-    _([input.jsonl]).jsonl().each(mark)
+    _(input.jsonlChunks).jsonl().each(mark)
   } else if (selectedMode === 'json-stringify') {
     let outputChunks = 0
     const output = await _(input.values)
@@ -103,7 +133,10 @@ const runCase = async (selectedMode) => {
   const elapsedMs = performance.now() - start
   if (count !== rows) throw Error(`unexpected record count: ${count}`)
   if (!Number.isFinite(checksum)) throw Error('invalid checksum')
-  const documentInput = selectedMode === 'json-select' || selectedMode === 'json-native'
+  const documentInput =
+    selectedMode === 'json-select' ||
+    selectedMode === 'jsonstream-select' ||
+    selectedMode === 'json-native'
   return {
     count,
     elapsedMs,
@@ -127,7 +160,13 @@ const runParent = () => {
     for (let round = 0; round < rounds; round++) {
       const child = spawnSync(
         process.execPath,
-        ['--expose-gc', import.meta.filename, `--mode=${selectedMode}`, `--rows=${rows}`],
+        [
+          '--expose-gc',
+          import.meta.filename,
+          `--mode=${selectedMode}`,
+          `--rows=${rows}`,
+          `--chunk-bytes=${chunkBytes}`,
+        ],
         { encoding: 'utf8' },
       )
       if (child.status !== 0) throw Error(child.stderr || child.stdout)
@@ -138,12 +177,24 @@ const runParent = () => {
       medianElapsedMs: median(samples.map((sample) => sample.elapsedMs)),
       medianFirstRecordMs: median(samples.map((sample) => sample.firstRecordMs)),
       medianHeapDeltaMiB: median(samples.map((sample) => sample.peakDeltaMiB.heapUsed)),
+      medianPeakDeltaMiB: Object.fromEntries(
+        Object.keys(samples[0].peakDeltaMiB).map((key) => [
+          key,
+          median(samples.map((sample) => sample.peakDeltaMiB[key])),
+        ]),
+      ),
       medianRecordsPerSecond: median(samples.map((sample) => sample.recordsPerSecond)),
       mode: selectedMode,
       samples,
     })
   }
-  console.log(JSON.stringify({ node: process.version, rounds, rows, results }, null, 2))
+  console.log(
+    JSON.stringify(
+      { chunkBytes, jsonStreamVersion, node: process.version, rounds, rows, results },
+      null,
+      2,
+    ),
+  )
 }
 
 assertConfiguration()
