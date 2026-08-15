@@ -424,7 +424,12 @@ declare namespace exstream {
     write(value: T | Error | DataValue<T> | Nil): boolean
     /** Writes one value as data, including Error objects. */
     writeData(value: T): boolean
-    /** Starts a source that was waiting for explicit startup. */
+    /**
+     * Starts a source whose automatic startup was disabled, typically with `fork(true)`.
+     * This releases the producer once downstream consumers are ready; it is not a terminal
+     * consumer and the returned promise does not wait for the stream to finish. Use `drain()`
+     * to run a pipeline that has no writer or whose output should be discarded.
+     */
     start(): Promise<void>
     /** Ends this stream after its buffered values. */
     end(): void
@@ -679,6 +684,13 @@ declare namespace exstream {
     toArray(fn: (values: T[], context: AggregateContext<T[], C>) => void): void
     /** Collects all values in a promise. */
     toPromise(): Promise<T[]>
+    /**
+     * Runs this pipeline to completion while discarding every output value.
+     * Use this terminal operation for side-effecting pipelines that have no writer, or whenever
+     * collecting the output would be unnecessary. Unlike `start()`, `drain()` supplies downstream
+     * demand and its promise settles when the pipeline finishes or encounters an unhandled error.
+     */
+    drain(): Promise<void>
     /** Returns the only value, and fails when more than one value exists. */
     value(): T | undefined | Promise<T | undefined>
     /** Returns values synchronously and fails for an asynchronous stream. */
@@ -1349,6 +1361,12 @@ declare namespace exstream {
   ): <C extends object>(stream: Exstream<T, C>) => void
   /** Collects a stream into a promise. */
   function toPromise<T, C extends object>(stream: Exstream<T, C>): Promise<T[]>
+  /**
+   * Runs a stream to completion and discards its output without collecting it in memory.
+   * Use this terminal operation when a pipeline has no writer; use `stream.start()` instead only
+   * to release a source whose automatic startup was disabled.
+   */
+  function drain<T, C extends object>(stream: Exstream<T, C>): Promise<void>
   /** Converts a stream to a Node Transform. */
   function toNodeStream<T, C extends object>(
     options: object | undefined,

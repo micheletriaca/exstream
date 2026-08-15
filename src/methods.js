@@ -1062,6 +1062,41 @@ _m.toPromise = (s) =>
     }),
   )
 
+_m.drain = (s) =>
+  new Promise((resolve, reject) => {
+    let settled = false
+    let sink
+
+    const rejectOnce = (error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    const cleanup = () => {
+      sink.off('error', rejectOnce)
+      sink.off('abort', onAbort)
+      sink.off('end', onEnd)
+    }
+    const onAbort = (reason) => {
+      rejectOnce(reason)
+      cleanup()
+    }
+    const onEnd = () => {
+      cleanup()
+      if (settled) return
+      settled = true
+      resolve()
+    }
+
+    sink = s.consumeSync((err, x, push) => {
+      if (err) {
+        rejectOnce(err)
+        sink.abort(err)
+      } else if (x === _.nil) push(null, _.nil)
+    })
+    sink.on('error', rejectOnce).once('abort', onAbort).once('end', onEnd).resume()
+  })
+
 _m.toNodeStream = _.curry((options, s) => s.pipe(runtime.createNodeTransform(options)))
 
 _m.toWebReadable = _.curry((options, s) => {

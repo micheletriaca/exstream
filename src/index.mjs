@@ -21,6 +21,7 @@ export const {
   curry,
   data,
   decode,
+  drain,
   drop,
   encode,
   errors,
