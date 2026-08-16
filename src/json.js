@@ -3,6 +3,7 @@ const { asLimit, createJsonParser, JsonParseError } = require('./json-parser.js'
 const { parseJsonPath, stringifyPath } = require('./json-path.js')
 const { runtime } = require('./runtime.js')
 const { createEncodedByteCounter } = require('./byte-counter.js')
+const { annotateError } = require('./error-info.js')
 
 class JsonStringifyError extends Error {
   constructor(message, { code = 'EXSTREAM_JSON_STRINGIFY', record } = {}) {
@@ -25,11 +26,6 @@ const normalizeEncoding = (options, name) => {
   if (typeof options.encoding !== 'string' || options.encoding.length === 0) {
     throw Error(`${name} encoding must be a non-empty string`)
   }
-}
-
-const failParser = (push, error) => {
-  push(error)
-  push(null, _.nil)
 }
 
 const createDecoder = (encoding) => {
@@ -61,12 +57,21 @@ const normalizeJsonOptions = (options) => {
   return options
 }
 
+const failBranch = (result, push, error) => {
+  try {
+    push(error)
+  } finally {
+    result.abort(error)
+  }
+}
+
 const parseJson = (options, source) => {
   options = normalizeJsonOptions(objectOptions(options, 'json'))
   const decoder = createDecoder(options.encoding)
   let parser
   let currentContext
-  return source.consumeSync((error, value, push, context) => {
+  let result
+  result = source.consumeSync((error, value, push, context) => {
     if (error) {
       push(error)
       return
@@ -87,9 +92,11 @@ const parseJson = (options, source) => {
         push(null, _.nil)
       } else parser.write(decoder.write(value))
     } catch (reason) {
-      failParser(push, reason)
+      annotateError(reason, { origin: 'format', stage: 'json' })
+      failBranch(result, push, reason)
     }
   })
+  return result
 }
 
 const normalizeJsonlOptions = (options) => {
@@ -206,19 +213,25 @@ const createJsonlParser = (options, push, getContext, fail) => {
   const emit = () => {
     const text = parts.length < 2 ? parts[0] || '' : parts.join('')
     clear()
-    if (/^[\t ]*$/.test(text)) {
-      if (options.skipEmptyLines) return
-      throw new JsonParseError('Empty JSONL record', {
-        code: 'EXSTREAM_JSONL_EMPTY_RECORD',
-        column: 1,
-        line,
-        offset: lineOffset,
-        record: record + 1,
-      })
+    try {
+      if (/^[\t ]*$/.test(text)) {
+        if (options.skipEmptyLines) return
+        record++
+        throw new JsonParseError('Empty JSONL record', {
+          code: 'EXSTREAM_JSONL_EMPTY_RECORD',
+          column: 1,
+          line,
+          offset: lineOffset,
+          record,
+        })
+      }
+      record++
+      const parsed = parseJsonlRecord(text, options, { line, offset: lineOffset, record })
+      push(null, parsed, getContext())
+    } catch (error) {
+      annotateError(error, { origin: 'format', stage: 'jsonl' })
+      push(error, null, getContext())
     }
-    record++
-    const parsed = parseJsonlRecord(text, options, { line, offset: lineOffset, record })
-    push(null, parsed, getContext())
   }
 
   const write = (text) => {
@@ -284,7 +297,8 @@ const parseJsonl = (options, source) => {
   let parser
   let failed = false
   let currentContext
-  return source.consumeSync((error, value, push, context) => {
+  let result
+  result = source.consumeSync((error, value, push, context) => {
     if (error) {
       push(error)
       return
@@ -298,7 +312,8 @@ const parseJsonl = (options, source) => {
         (reason) => {
           if (failed) return
           failed = true
-          failParser(push, reason)
+          annotateError(reason, { origin: 'format', stage: 'jsonl' })
+          failBranch(result, push, reason)
         },
       )
     }
@@ -309,9 +324,11 @@ const parseJsonl = (options, source) => {
       } else parser.write(decoder.write(value))
     } catch (reason) {
       failed = true
-      failParser(push, reason)
+      annotateError(reason, { origin: 'format', stage: 'jsonl' })
+      failBranch(result, push, reason)
     }
   })
+  return result
 }
 
 const normalizeJsonlStringifyOptions = (options) => {
@@ -359,18 +376,23 @@ const jsonlStringify = (options, source) => {
     if (error) push(error)
     else if (value === _.nil) push(null, _.nil)
     else {
-      record++
-      const output = serialize(value, options.replacer, record) + options.lineEnding
-      if (
-        options.maxRecordBytes !== Infinity &&
-        runtime.byteLength(output, options.encoding) > options.maxRecordBytes
-      ) {
-        throw new JsonStringifyError(
-          `JSONL record exceeds maxRecordBytes (${options.maxRecordBytes})`,
-          { code: 'EXSTREAM_JSONL_MAX_RECORD_BYTES', record },
-        )
+      try {
+        record++
+        const output = serialize(value, options.replacer, record) + options.lineEnding
+        if (
+          options.maxRecordBytes !== Infinity &&
+          runtime.byteLength(output, options.encoding) > options.maxRecordBytes
+        ) {
+          throw new JsonStringifyError(
+            `JSONL record exceeds maxRecordBytes (${options.maxRecordBytes})`,
+            { code: 'EXSTREAM_JSONL_MAX_RECORD_BYTES', record },
+          )
+        }
+        push(null, outputValue(output, options.encoding))
+      } catch (reason) {
+        annotateError(reason, { origin: 'format', stage: 'jsonlStringify' })
+        push(reason)
       }
-      push(null, outputValue(output, options.encoding))
     }
   })
 }
@@ -510,8 +532,8 @@ const jsonStringify = (options, source) => {
         next()
       } catch (reason) {
         stopped = true
-        push(reason)
-        push(null, _.nil)
+        annotateError(reason, { origin: 'format', stage: 'jsonStringify' })
+        failBranch(result, push, reason)
       }
       return
     } else {
@@ -519,12 +541,12 @@ const jsonStringify = (options, source) => {
       finish(push).catch((reason) => {
         if (result.signal.aborted) return
         stopped = true
-        push(
+        const error =
           reason instanceof JsonStringifyError
             ? reason
-            : new JsonStringifyError(`Cannot finalize JSON: ${reason.message || reason}`),
-        )
-        push(null, _.nil)
+            : new JsonStringifyError(`Cannot finalize JSON: ${reason.message || reason}`)
+        annotateError(error, { origin: 'format', stage: 'jsonStringify' })
+        failBranch(result, push, error)
       })
     }
   })

@@ -4,6 +4,7 @@ const { runtime } = require('./runtime.js')
 const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
 const { createContext, forkContext } = require('./context')
+const { annotateError } = require('./error-info.js')
 
 const signalActive = Symbol('exstream signal active')
 
@@ -20,13 +21,15 @@ function getErrorMessage(value) {
 }
 
 class ExstreamError extends Error {
-  constructor(e, exstreamInput) {
+  constructor(e, exstreamInput, info) {
     super(getErrorMessage(e))
     if (e && e.exstreamError) {
+      annotateError(e, info)
       return e
     } else if (e instanceof Error) {
       e.exstreamError = true
       e.exstreamInput = exstreamInput
+      annotateError(e, info)
       return e
     }
     if (e && (typeof e === 'object' || typeof e === 'function')) Object.assign(this, e)
@@ -34,6 +37,7 @@ class ExstreamError extends Error {
     this.exstreamError = true
     this.exstreamInput = exstreamInput
     this.reason = e
+    annotateError(this, info)
   }
 }
 
@@ -209,7 +213,7 @@ class Exstream extends EventHub {
     xs.pipe(this)
     this.#addOnceListener('error', xs, (e) => {
       // sometimes e is not an instance of Error, nobody knows why
-      this.write(new ExstreamError(e))
+      this.write(new ExstreamError(e, void 0, { origin: 'source', stage: 'read' }))
       scheduleNextTurn(() => this.end())
     })
     this.once('end', () => xs.destroy())
@@ -232,7 +236,7 @@ class Exstream extends EventHub {
             next()
           }
         } catch (error) {
-          write(new ExstreamError(error))
+          write(new ExstreamError(error, void 0, { origin: 'source', stage: 'iterate' }))
           write(_.nil)
         }
       })()
@@ -260,7 +264,7 @@ class Exstream extends EventHub {
             next()
           }
         } catch (error) {
-          write(new ExstreamError(error))
+          write(new ExstreamError(error, void 0, { origin: 'source', stage: 'read' }))
           write(_.nil)
         }
       })()
@@ -314,8 +318,12 @@ class Exstream extends EventHub {
       return this._writeData(x.value, skipBackPressure)
     if (x === _.nil)
       return this.#writeControlRecord(END, void 0, void 0, false, void 0, skipBackPressure)
-    if (_.isError(x))
+    if (_.isError(x)) {
+      if (!x.exstreamError) {
+        x = new ExstreamError(x, x.exstreamInput, { origin: 'source', stage: 'source' })
+      }
       return this.#writeControlRecord(ERROR, x, x.exstreamInput, false, void 0, skipBackPressure)
+    }
     return this._writeData(x, skipBackPressure)
   }
 
@@ -548,6 +556,7 @@ class Exstream extends EventHub {
   #destroyActive = () => {
     const reason = Error('The stream was destroyed')
     reason.name = 'AbortError'
+    annotateError(reason, { origin: 'lifecycle', stage: 'destroy' })
     this.#cancelSignal(reason)
     this.#terminate('destroyed', true)
   }
@@ -558,6 +567,7 @@ class Exstream extends EventHub {
       reason = Error('The operation was aborted')
       reason.name = 'AbortError'
     }
+    annotateError(reason, { origin: 'lifecycle', stage: 'abort' })
     return this.#abortDownstream(reason)
   }
 
@@ -588,7 +598,7 @@ class Exstream extends EventHub {
   }
 
   fail(reason, input) {
-    const error = new ExstreamError(reason, input)
+    const error = new ExstreamError(reason, input, { origin: 'operator', stage: 'fail' })
     error.exstreamFatal = true
     let root = this
     while (root.source) root = root.source
@@ -652,7 +662,7 @@ class Exstream extends EventHub {
         nextVal = this.#sourceData.next()
       } catch (e) {
         // es6 generator fatal error. Must end the stream
-        this.write(e)
+        this.write(new ExstreamError(e, void 0, { origin: 'source', stage: 'iterate' }))
         this.end()
         return
       }
@@ -878,6 +888,157 @@ class Exstream extends EventHub {
     return dest
   }
 
+  pipeTo(destination, options = {}) {
+    if (options === null) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      return Promise.reject(Error('error in .pipeTo(). options must be an object'))
+    }
+    const signal = options.signal
+    if (
+      signal !== void 0 &&
+      (!signal ||
+        typeof signal.aborted !== 'boolean' ||
+        typeof signal.addEventListener !== 'function' ||
+        typeof signal.removeEventListener !== 'function')
+    ) {
+      return Promise.reject(Error('error in .pipeTo(). signal must be an AbortSignal'))
+    }
+    if (runtime.isWebWritableStream(destination)) {
+      return this.#pipeWebWritable(destination, options).then(() => undefined)
+    }
+    if (!destination || typeof destination.write !== 'function' || !runtime.finished) {
+      return Promise.reject(
+        Error('error in .pipeTo(). destination must be a Node writable or WritableStream'),
+      )
+    }
+    return this.#pipeNodeWritable(destination, options)
+  }
+
+  #pipeNodeWritable = (destination, options) =>
+    new Promise((resolve, reject) => {
+      let settled = false
+      let sourceEnded = false
+      let nextCallback
+      let pendingWrites = 0
+      let sink
+      let stopWatching = () => {}
+      const canClose =
+        !runtime.isStandardOutput(destination) && options.end !== false && !options.preventClose
+      const canAbort = !runtime.isStandardOutput(destination) && !options.preventAbort
+
+      const drain = () => {
+        const next = nextCallback
+        nextCallback = null
+        if (next) next()
+      }
+      const abortFromSignal = () => {
+        annotateError(options.signal.reason, { origin: 'lifecycle', stage: 'abort' })
+        fail(options.signal.reason)
+      }
+      const cleanup = () => {
+        destination.off('drain', drain)
+        stopWatching()
+        if (options.signal !== void 0) {
+          options.signal.removeEventListener('abort', abortFromSignal)
+        }
+      }
+      const abortDestination = () => {
+        if (canAbort && typeof destination.destroy === 'function' && !destination.destroyed) {
+          destination.destroy()
+        }
+      }
+      const succeed = () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        if (sink && !sink.ended) sink.end()
+        resolve()
+      }
+      const fail = (error, info) => {
+        if (settled) return
+        settled = true
+        annotateError(error, info)
+        cleanup()
+        abortDestination()
+        if (sink && !sink.ended) sink.abort(error)
+        reject(error)
+      }
+      const writeCompleted = (error) => {
+        pendingWrites--
+        if (error) {
+          fail(error, { origin: 'sink', stage: 'write' })
+        } else if (sourceEnded && !canClose && pendingWrites === 0) {
+          succeed()
+        }
+      }
+
+      sink = this.consume((error, value, push, next) => {
+        if (settled) return
+        if (error) {
+          fail(error)
+        } else if (value === _.nil) {
+          sourceEnded = true
+          if (!canClose) {
+            if (pendingWrites === 0) succeed()
+            return
+          }
+          try {
+            destination.end()
+          } catch (reason) {
+            fail(reason, { origin: 'sink', stage: 'close' })
+          }
+        } else {
+          try {
+            if (canClose) {
+              if (!destination.write(value)) nextCallback = next
+              else next()
+              return
+            }
+            let completed = false
+            const completeWrite = (error) => {
+              if (completed) return
+              completed = true
+              writeCompleted(error)
+            }
+            pendingWrites++
+            const acceptsMore = destination.write(value, completeWrite)
+            if (settled) return
+            if (!acceptsMore) nextCallback = next
+            else next()
+          } catch (reason) {
+            fail(reason, { origin: 'sink', stage: 'write' })
+          }
+        }
+      })
+
+      destination.on('drain', drain)
+      stopWatching = runtime.finished(destination, { cleanup: true }, (error) => {
+        if (settled) return
+        if (error) {
+          fail(error, { origin: 'sink', stage: sourceEnded ? 'close' : 'write' })
+        } else if (sourceEnded) {
+          succeed()
+        } else {
+          const reason = Error('Destination completed before the source')
+          reason.code = 'EXSTREAM_DESTINATION_CLOSED'
+          fail(reason, { origin: 'sink', stage: 'write' })
+        }
+      })
+      if (options.signal !== void 0) {
+        if (options.signal.aborted) scheduleMicrotask(abortFromSignal)
+        else options.signal.addEventListener('abort', abortFromSignal, { once: true })
+      }
+      sink.once('abort', fail)
+      destination.emit('pipe', this)
+      scheduleNextTurn(() => {
+        try {
+          sink.resume()
+        } catch (error) {
+          fail(error)
+        }
+      })
+    })
+
   #pipeWebWritable = async (destination, options) => {
     const writer = destination.getWriter()
     const iterator = this.toAsyncIterator({ signal: options.signal })
@@ -888,20 +1049,33 @@ class Exstream extends EventHub {
         : new Promise((resolve, reject) => {
             rejectAbort = reject
           })
-    const abort = () => rejectAbort(options.signal.reason)
+    const abort = () => {
+      annotateError(options.signal.reason, { origin: 'lifecycle', stage: 'abort' })
+      rejectAbort(options.signal.reason)
+    }
     if (options.signal !== void 0) options.signal.addEventListener('abort', abort, { once: true })
     const wait = (promise) => (abortPromise ? Promise.race([promise, abortPromise]) : promise)
+    const waitForSink = async (promise, stage) => {
+      try {
+        return await wait(promise)
+      } catch (error) {
+        annotateError(error, { origin: 'sink', stage })
+        throw error
+      }
+    }
     try {
       // Sequential awaits are the Web WritableStream backpressure boundary.
       /* oxlint-disable no-await-in-loop */
       while (true) {
         const item = await wait(iterator.next())
         if (item.done) break
-        await wait(writer.ready)
-        await wait(writer.write(item.value))
+        await waitForSink(writer.ready, 'write')
+        await waitForSink(writer.write(item.value), 'write')
       }
       /* oxlint-enable no-await-in-loop */
-      if (options.end !== false && !options.preventClose) await wait(writer.close())
+      if (options.end !== false && !options.preventClose) {
+        await waitForSink(writer.close(), 'close')
+      }
       return destination
     } catch (error) {
       await iterator.throw(error).catch(() => {})

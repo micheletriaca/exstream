@@ -114,6 +114,23 @@ Errors produced while handling one record remain recoverable with `errors()`,
 `skipErrors()` or `routeErrors()`. `failOnError()` promotes the first record
 error to a fatal failure and cancels the connected graph.
 
+Use `pipeTo()` when writing must be an explicit terminal operation:
+
+```javascript
+try {
+  await exstream(input).csv({ header: true }).map(transform).jsonStringify().pipeTo(output)
+} catch (error) {
+  const { origin, stage } = exstream.errorInfo(error)
+  console.error(`Pipeline failed in ${origin}:${stage ?? 'unknown'}`, error)
+}
+```
+
+The promise resolves only after the destination finishes. It rejects on an
+unhandled record error, source or destination failure, structural format error,
+or cancellation. A failed destination cancels its own fork; reliable sibling
+branches can continue. The older `pipe()` remains available for Node-compatible
+event-driven piping.
+
 Record context is opt-in. `withContext()` and `extendContext()` attach metadata
 such as correlation IDs or loaded dependencies to one record. Context is copied
 at branch boundaries, while record values retain normal JavaScript reference

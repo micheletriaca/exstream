@@ -157,6 +157,10 @@ type DeadLetter = Expect<
 
 const webReadable: ReadableStream<number> = exstream([1]).toWebReadable()
 const asyncIterator: AsyncIterableIterator<number> = exstream([1]).toAsyncIterator()
+const pipeDestination: exstream.NodeWritableLike<number> = {} as exstream.NodeWritableLike<number>
+const pipeCompletion: Promise<void> = exstream([1]).pipeTo(pipeDestination)
+const curriedPipeCompletion: Promise<void> = exstream.pipeTo(pipeDestination)(exstream([1]))
+const errorOrigin: exstream.ErrorOrigin = exstream.errorInfo(Error('failure')).origin
 const nodeTransform: exstream.NodeTransformLike<unknown, number> = exstream([1]).toNodeStream()
 
 exstream([{ a: 1 }]).map((value) => {
@@ -194,6 +198,9 @@ type Used =
   | PipelineValue
   | AggregatedPipelineValue
   | NestedPipelineValue
+  | typeof pipeCompletion
+  | typeof curriedPipeCompletion
+  | typeof errorOrigin
   | ForkValue
   | ForkContext
   | MergedValue

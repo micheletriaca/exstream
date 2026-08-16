@@ -5,6 +5,25 @@ first public release after 0.25.0 and consolidates the work developed through
 the internal 0.26–0.33 milestones. npm releases and Git history remain the
 authoritative record for earlier versions.
 
+## Unreleased
+
+### Added
+
+- `pipeTo()` as a strict Promise-based terminal for Node and Web writable
+  streams, with backpressure, coordinated cleanup and branch-local destination
+  failure.
+- `errorInfo()` and non-enumerable error provenance for distinguishing source,
+  operator, format, sink and lifecycle failures without replacing the original
+  error.
+
+### Changed
+
+- Structural CSV and JSON document failures now terminate their parser or
+  serializer branch even when a record-error handler is present.
+- JSON Lines syntax and serialization errors remain recoverable per record when
+  the next line can be processed safely; decoding and size failures terminate
+  the branch.
+
 ## [0.33.0] - 2026-08-14
 
 ### Added
