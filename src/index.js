@@ -7,10 +7,11 @@ const joins = require('./joins')
 const events = require('./events.js')
 const utils = require('./utils')
 const { dataValue } = require('./protocol')
+const { errorInfo } = require('./error-info.js')
 
 const _ = (module.exports = Object.assign(
   (xs, options) => new Exstream(xs, options),
-  { BufferOverflowError, data: dataValue },
+  { BufferOverflowError, data: dataValue, errorInfo },
   utils,
   csv,
   json,
@@ -183,6 +184,9 @@ _.extend('toArray', function (fn) {
 })
 _.extend('toPromise', function () {
   return _.toPromise(this)
+})
+_.extend('drain', function () {
+  return _.drain(this)
 })
 _.extend('toNodeStream', function (options) {
   return _.toNodeStream(options, this)

@@ -30,6 +30,7 @@ declare namespace exstream {
   /** The lifecycle state of a stream. */
   type StreamState = 'idle' | 'running' | 'ending' | 'ended' | 'destroyed' | 'aborted'
   type OverflowPolicy = 'error' | 'drop-oldest' | 'drop-newest'
+  type ErrorOrigin = 'source' | 'operator' | 'format' | 'sink' | 'lifecycle' | 'unknown'
   type SortDirection = 'asc' | 'desc'
   type JoinType = 'inner' | 'left' | 'right'
   type PropertyKeyOf<T> = Extract<keyof T, PropertyKey>
@@ -300,9 +301,18 @@ declare namespace exstream {
   interface PipeOptions {
     /** End the destination when the source ends. Defaults to true. */
     end?: boolean
+    /** Cancels the transfer when this signal aborts. */
     signal?: AbortSignal
+    /** Leaves the destination open after a failed or cancelled transfer. */
     preventAbort?: boolean
+    /** Leaves the destination open after a successful transfer. */
     preventClose?: boolean
+  }
+  /** Describes where an error first entered an Exstream pipeline. */
+  interface ErrorInfo<Input = unknown> {
+    readonly origin: ErrorOrigin
+    readonly stage?: string
+    readonly input?: Input
   }
   interface ToWebReadableOptions {
     signal?: AbortSignal
@@ -335,6 +345,7 @@ declare namespace exstream {
     readonly exstreamInput: Input
     readonly reason?: unknown
     readonly exstreamFatal?: boolean
+    readonly exstreamInfo?: ErrorInfo<Input>
   }
 
   /** Raised when a configured stream buffer cannot accept another value. */
@@ -424,7 +435,12 @@ declare namespace exstream {
     write(value: T | Error | DataValue<T> | Nil): boolean
     /** Writes one value as data, including Error objects. */
     writeData(value: T): boolean
-    /** Starts a source that was waiting for explicit startup. */
+    /**
+     * Starts a source whose automatic startup was disabled, typically with `fork(true)`.
+     * This releases the producer once downstream consumers are ready; it is not a terminal
+     * consumer and the returned promise does not wait for the stream to finish. Use `drain()`
+     * to run a pipeline that has no writer or whose output should be discarded.
+     */
     start(): Promise<void>
     /** Ends this stream after its buffered values. */
     end(): void
@@ -642,6 +658,15 @@ declare namespace exstream {
       destination: Exstream<U, NextContext> | Pipeline<T, U, NextContext>,
       options?: PipeOptions,
     ): Exstream<U, NextContext>
+    /**
+     * Writes every value to a destination and settles only when the transfer is complete.
+     * Unhandled record errors, source failures, destination failures and cancellation reject the
+     * promise. Handle recoverable errors before this terminal operation.
+     */
+    pipeTo(
+      destination: NodeWritableLike<T> | WritableStream<T>,
+      options?: PipeOptions,
+    ): Promise<void>
     /** Creates an independent consuming branch. Context objects are copied at the boundary. */
     fork(disableAutostart?: boolean): Exstream<T, C>
     /** Creates a non-blocking branch that may drop buffered values by policy. */
@@ -679,6 +704,13 @@ declare namespace exstream {
     toArray(fn: (values: T[], context: AggregateContext<T[], C>) => void): void
     /** Collects all values in a promise. */
     toPromise(): Promise<T[]>
+    /**
+     * Runs this pipeline to completion while discarding every output value.
+     * Use this terminal operation for side-effecting pipelines that have no writer, or whenever
+     * collecting the output would be unnecessary. Unlike `start()`, `drain()` supplies downstream
+     * demand and its promise settles when the pipeline finishes or encounters an unhandled error.
+     */
+    drain(): Promise<void>
     /** Returns the only value, and fails when more than one value exists. */
     value(): T | undefined | Promise<T | undefined>
     /** Returns values synchronously and fails for an asynchronous stream. */
@@ -1349,6 +1381,26 @@ declare namespace exstream {
   ): <C extends object>(stream: Exstream<T, C>) => void
   /** Collects a stream into a promise. */
   function toPromise<T, C extends object>(stream: Exstream<T, C>): Promise<T[]>
+  /**
+   * Runs a stream to completion and discards its output without collecting it in memory.
+   * Use this terminal operation when a pipeline has no writer; use `stream.start()` instead only
+   * to release a source whose automatic startup was disabled.
+   */
+  function drain<T, C extends object>(stream: Exstream<T, C>): Promise<void>
+  /** Writes a stream to a destination and rejects when any unhandled failure reaches the terminal. */
+  function pipeTo<T, C extends object>(
+    destination: NodeWritableLike<T> | WritableStream<T>,
+    options: PipeOptions | null,
+    stream: Exstream<T, C>,
+  ): Promise<void>
+  function pipeTo<T, C extends object>(
+    destination: NodeWritableLike<T> | WritableStream<T>,
+    stream: Exstream<T, C>,
+  ): Promise<void>
+  function pipeTo<T>(
+    destination: NodeWritableLike<T> | WritableStream<T>,
+    options?: PipeOptions | null,
+  ): <C extends object>(stream: Exstream<T, C>) => Promise<void>
   /** Converts a stream to a Node Transform. */
   function toNodeStream<T, C extends object>(
     options: object | undefined,
@@ -1396,6 +1448,8 @@ declare namespace exstream {
   function isError(value: unknown): value is Error
   /** Returns true for Node-style streams. */
   function isNodeStream(value: unknown): value is NodeReadableLike | NodeWritableLike
+  /** Returns Exstream provenance metadata without replacing the original error. */
+  function errorInfo<Input = unknown>(error: unknown): ErrorInfo<Input>
   /** Converts a valid positive integer, or returns null. */
   function asPositiveInteger(value: unknown, allowInfinity?: boolean): number | null
   /** Converts a valid non-negative finite number, or returns null. */

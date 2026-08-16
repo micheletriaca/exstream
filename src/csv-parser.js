@@ -1,5 +1,6 @@
 const _ = require('./utils.js')
 const { runtime } = require('./runtime.js')
+const { annotateError } = require('./error-info.js')
 
 class CsvParseError extends Error {
   constructor(message, { code = 'EXSTREAM_CSV_PARSE', column, line, offset, record } = {}) {
@@ -671,8 +672,12 @@ const parseCsv = (options, source) => {
     if (!parser) {
       parser = createParser(options, push, (reason) => {
         failed = true
-        push(reason)
-        push(null, _.nil)
+        annotateError(reason, { origin: 'format', stage: 'csv' })
+        try {
+          push(reason)
+        } finally {
+          result.abort(reason)
+        }
       })
       parser = createByteRouter(options, parser)
     }

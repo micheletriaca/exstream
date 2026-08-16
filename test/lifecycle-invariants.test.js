@@ -15,6 +15,79 @@ test('concurrent start calls consume a manually started source exactly once', as
   expect(end).toHaveBeenCalledTimes(1)
 })
 
+test('start is not a terminal consumer', async () => {
+  const values = []
+  const output = _([1, 2, 3]).tap((value) => values.push(value))
+
+  await output.start()
+  await nextTurn()
+
+  expect(values).toEqual([])
+  expect(output.paused).toBe(true)
+  output.destroy()
+})
+
+test('drain consumes and discards a terminal pipeline', async () => {
+  const values = []
+
+  const result = await _([1, 2, 3])
+    .map((value) => value * 2)
+    .tap((value) => values.push(value))
+    .drain()
+
+  expect(result).toBeUndefined()
+  expect(values).toEqual([2, 4, 6])
+})
+
+test('drain waits for asynchronous work to finish', async () => {
+  let release
+  const pendingValue = new Promise((resolve) => {
+    release = () => resolve(42)
+  })
+  const values = []
+  let finished = false
+  const draining = _([pendingValue])
+    .resolve()
+    .tap((value) => values.push(value))
+    .drain()
+    .then(() => (finished = true))
+
+  await nextTurn()
+  expect(finished).toBe(false)
+  expect(values).toEqual([])
+
+  release()
+  await draining
+
+  expect(finished).toBe(true)
+  expect(values).toEqual([42])
+})
+
+test('drain rejects an unhandled record error', async () => {
+  const reason = Error('cannot drain this record')
+  const values = []
+
+  const output = _([1, 2, 3])
+    .map((value) => {
+      if (value === 2) throw reason
+      return value
+    })
+    .tap((value) => values.push(value))
+  const result = output.drain()
+
+  await expect(result).rejects.toBe(reason)
+  expect(values).toEqual([1])
+  expect(output.state).toBe('aborted')
+})
+
+test('functional drain consumes a stream without collecting its values', async () => {
+  const values = []
+
+  await _.drain(_([1, 2]).tap((value) => values.push(value)))
+
+  expect(values).toEqual([1, 2])
+})
+
 test('lifecycle exposes idle, running and ended states', async () => {
   const source = _()
   expect(source.state).toBe('idle')

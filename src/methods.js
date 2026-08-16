@@ -99,7 +99,7 @@ _m.map = _.curry((fn, options, s) => {
         const probablyPromise = res && res.then && res.catch
         if (probablyPromise)
           res = res.catch((e) => {
-            throw new ExstreamError(e, x)
+            throw new ExstreamError(e, x, { origin: 'operator', stage: 'map' })
           })
         if (!options || !options.wrap) {
           return push(null, res, nextContext)
@@ -113,7 +113,7 @@ _m.map = _.curry((fn, options, s) => {
           push(null, { input: x, output: res }, nextContext)
         }
       } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
+        push(new ExstreamError(e, x, { origin: 'operator', stage: 'map' }), null, nextContext)
       }
     }
   }
@@ -136,7 +136,11 @@ _m.withContext = _.curry((fn, s) => {
         assignContext(nextContext, fn ? fn(x, nextContext) : void 0)
         push(null, x, nextContext)
       } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
+        push(
+          new ExstreamError(e, x, { origin: 'operator', stage: 'withContext' }),
+          null,
+          nextContext,
+        )
       }
     }
   })
@@ -159,7 +163,11 @@ _m.extendContext = _.curry((fn, s) => {
         push(null, x, nextContext)
         next()
       } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
+        push(
+          new ExstreamError(e, x, { origin: 'operator', stage: 'extendContext' }),
+          null,
+          nextContext,
+        )
         next()
       }
     }
@@ -319,7 +327,7 @@ _m.filter = _.curry((fn, s) => {
         const res = usesContext ? fn(x, nextContext) : fn(x)
         if (res) push(null, x, nextContext)
       } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
+        push(new ExstreamError(e, x, { origin: 'operator', stage: 'filter' }), null, nextContext)
       }
     }
   }
@@ -343,7 +351,7 @@ _m.reject = _.curry((fn, s) => {
         const res = usesContext ? fn(x, nextContext) : fn(x)
         if (!res) push(null, x, nextContext)
       } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
+        push(new ExstreamError(e, x, { origin: 'operator', stage: 'reject' }), null, nextContext)
       }
     }
   })
@@ -368,7 +376,11 @@ _m.asyncFilter = _.curry((fn, s) => {
         if (res) push(null, x, nextContext)
         next()
       } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
+        push(
+          new ExstreamError(e, x, { origin: 'operator', stage: 'asyncFilter' }),
+          null,
+          nextContext,
+        )
         next()
       }
     }
@@ -1061,6 +1073,47 @@ _m.toPromise = (s) =>
       resolve(res)
     }),
   )
+
+_m.drain = (s) =>
+  new Promise((resolve, reject) => {
+    let settled = false
+    let sink
+
+    const rejectOnce = (error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    const cleanup = () => {
+      sink.off('error', rejectOnce)
+      sink.off('abort', onAbort)
+      sink.off('end', onEnd)
+    }
+    const onAbort = (reason) => {
+      rejectOnce(reason)
+      cleanup()
+    }
+    const onEnd = () => {
+      cleanup()
+      if (settled) return
+      settled = true
+      resolve()
+    }
+
+    sink = s.consumeSync((err, x, push) => {
+      if (err) {
+        rejectOnce(err)
+        sink.abort(err)
+      } else if (x === _.nil) push(null, _.nil)
+    })
+    sink.on('error', rejectOnce).once('abort', onAbort).once('end', onEnd).resume()
+  })
+
+_m.pipeTo = function (destination, options, s) {
+  if (s) return s.pipeTo(destination, options)
+  if (_.isExstream(options)) return options.pipeTo(destination)
+  return (stream) => stream.pipeTo(destination, options)
+}
 
 _m.toNodeStream = _.curry((options, s) => s.pipe(runtime.createNodeTransform(options)))
 
