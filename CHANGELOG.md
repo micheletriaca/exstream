@@ -5,16 +5,19 @@ first public release after 0.25.0 and consolidates the work developed through
 the internal 0.26–0.33 milestones. npm releases and Git history remain the
 authoritative record for earlier versions.
 
-## Unreleased
+## [0.34.0] - 2026-08-16
 
 ### Added
 
 - `pipeTo()` as a strict Promise-based terminal for Node and Web writable
-  streams, with backpressure, coordinated cleanup and branch-local destination
-  failure.
+  streams. It respects backpressure, waits for accepted writes and destination
+  completion, supports cancellation and destination ownership options, and
+  keeps sink failures local to the connected branch.
+- `drain()` as a Promise-based terminal for running a pipeline to completion
+  while discarding its output, including functional and typed ESM forms.
 - `errorInfo()` and non-enumerable error provenance for distinguishing source,
-  operator, format, sink and lifecycle failures without replacing the original
-  error.
+  operator, format, sink and lifecycle failures by origin and stage without
+  replacing the original error or losing its input record.
 
 ### Changed
 
@@ -23,6 +26,15 @@ authoritative record for earlier versions.
 - JSON Lines syntax and serialization errors remain recoverable per record when
   the next line can be processed safely; decoding and size failures terminate
   the branch.
+- Source, operator, format, sink and lifecycle boundaries now preserve the first
+  known error provenance while errors travel through the graph.
+
+### Fixed
+
+- `pipeTo()` releases its listeners, writer locks and cancellation hooks after
+  success or failure, and rejects when a destination closes before its source.
+- A failed `pipeTo()` destination cancels only its own fork, allowing reliable
+  sibling branches to continue consuming their data.
 
 ## [0.33.0] - 2026-08-14
 
