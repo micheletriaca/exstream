@@ -841,6 +841,112 @@ const concurrentTransform = (s, options) => {
   return result
 }
 
+const slidingConcurrentTransform = (s, options) => {
+  const { concurrency, createTask, ordered, signal } = options
+  const tasks = []
+  const readyTasks = []
+  let sourceEnded = false
+  let outputNext = null
+  let started = false
+  let sink
+  let result
+
+  const hasReadyTask = () => (ordered ? tasks[0]?.settled === true : readyTasks.length > 0)
+
+  const takeReadyTask = () => {
+    const task = ordered ? tasks.shift() : readyTasks.shift()
+    if (!ordered) tasks.splice(tasks.indexOf(task), 1)
+    return task
+  }
+
+  const wakeOutput = () => {
+    if (!outputNext) return
+    if (!hasReadyTask() && !(sourceEnded && tasks.length === 0)) return
+    const next = outputNext
+    outputNext = null
+    next()
+  }
+
+  const handleTaskResult = (isError, value, task) => {
+    const index = tasks.indexOf(task)
+    if (result.ended) {
+      if (index !== -1) tasks.splice(index, 1)
+      return
+    }
+    if (isError && value.exstreamFatal) {
+      result.fail(value, value.exstreamInput)
+      return
+    }
+    task.error = isError ? value : null
+    task.result = value
+    task.settled = true
+    if (!ordered) readyTasks.push(task)
+    wakeOutput()
+  }
+
+  result = new Exstream((write, next) => {
+    if (!started) {
+      started = true
+      sink.resume()
+    }
+
+    if (hasReadyTask()) {
+      const task = takeReadyTask()
+      if (task.error) result._writeError(task.error, task.context)
+      else result._writeData(task.result, false, task.context)
+      task.next()
+      next()
+    } else if (sourceEnded && tasks.length === 0) {
+      write(_.nil)
+    } else {
+      outputNext = next
+    }
+  })
+
+  sink = s.consume((error, value, push, next) => {
+    if (result.ended) return
+    if (error) {
+      const task = {
+        context: sink._recordContext,
+        error,
+        next,
+        settled: true,
+      }
+      tasks.push(task)
+      if (!ordered) readyTasks.push(task)
+      if (tasks.length < concurrency) next()
+      wakeOutput()
+    } else if (value === _.nil) {
+      sourceEnded = true
+      push(null, _.nil)
+      wakeOutput()
+    } else {
+      let context = sink._recordContext
+      const taskResult = createTask(value, context, result)
+      context = taskResult.context
+      const task = { context, next, settled: false }
+      tasks.push(task)
+      Promise.resolve(taskResult.value)
+        .then((resolved) => handleTaskResult(false, resolved, task))
+        .catch((reason) => handleTaskResult(true, new ExstreamError(reason, value), task))
+      if (tasks.length < concurrency) next()
+    }
+  })
+
+  result.once('abort', (reason) => {
+    if (!sink.ended) sink.abort(reason)
+  })
+  result.once('end', () => {
+    outputNext = null
+    if (!sink.ended) sink.destroy()
+  })
+  sink.once('abort', (reason) => {
+    if (!result.ended) result.abort(reason)
+  })
+  linkAbortSignal(result, signal)
+  return result
+}
+
 _m.resolve = _.curry((parallelism, preserveOrder, s) => {
   parallelism = _.asPositiveInteger(parallelism, true)
   if (parallelism === null) {
@@ -884,7 +990,7 @@ _m.mapAsync = _.curry((fn, options, s) => {
     (_.isFunction(retry.delay) && retry.delay.length >= 4)
   const hasTaskPolicy = retry.retries > 0 || timeout !== null
   const timeoutCoordinator = timeout === null ? null : createAttemptTimeoutCoordinator()
-  const result = concurrentTransform(s, {
+  const result = slidingConcurrentTransform(s, {
     concurrency,
     createTask: (value, context, result) => {
       if (needsContext && context === void 0) context = createContext(value, result.signal)
@@ -910,7 +1016,6 @@ _m.mapAsync = _.curry((fn, options, s) => {
       }
     },
     ordered,
-    requirePromise: false,
     signal: options.signal,
   })
   if (timeoutCoordinator) result.once('end', timeoutCoordinator.close)

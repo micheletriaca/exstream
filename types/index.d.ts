@@ -166,7 +166,7 @@ declare namespace exstream {
   }
 
   interface MapAsyncOptions<T, C extends object> {
-    /** Maximum number of operations running at once. Defaults to 1. */
+    /** Maximum active operations plus completed results awaiting downstream demand. Defaults to 1. */
     concurrency?: number
     /** Keep results in input order. Defaults to true. */
     ordered?: boolean

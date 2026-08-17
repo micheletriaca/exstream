@@ -36,10 +36,59 @@ test('mapAsync never invokes more than concurrency operations', async () => {
   expect(maxActive).toBe(concurrency)
 })
 
+test('mapAsync refills one slot whenever slow downstream accepts a result', async () => {
+  const concurrency = 3
+  const started = []
+  const writes = []
+  const writeGates = []
+
+  const completion = _([1, 2, 3, 4, 5, 6])
+    .mapAsync(
+      async (value) => {
+        started.push(value)
+        return value
+      },
+      { concurrency, ordered: false },
+    )
+    .pipeTo(
+      new WritableStream({
+        write(value) {
+          const gate = deferred()
+          writes.push(value)
+          writeGates.push(gate)
+          return gate.promise
+        },
+      }),
+    )
+
+  await waitFor(() => writes.length === 1, 'downstream did not accept the first result')
+  await waitFor(() => started.length === 4, 'mapAsync did not refill the first released slot')
+  expect(started).toEqual([1, 2, 3, 4])
+
+  for (let index = 0; index < 5; index++) {
+    writeGates[index].resolve()
+    await waitFor(
+      () => writes.length === index + 2,
+      `downstream did not accept result ${index + 2}`,
+    )
+    await waitFor(
+      () => started.length === Math.min(index + 5, 6),
+      `mapAsync did not refill slot ${index + 2}`,
+    )
+    expect(started.length - writes.length).toBeLessThanOrEqual(concurrency)
+  }
+
+  writeGates[5].resolve()
+  await completion
+  expect(writes).toEqual([1, 2, 3, 4, 5, 6])
+})
+
 test('mapAsync emits completion order only when ordered is false', async () => {
   const values = [0, 1, 2, 3, 4]
   const orderedGates = values.map(() => deferred())
   const unorderedGates = values.map(() => deferred())
+  const unorderedStarted = []
+  const unorderedSeen = []
 
   const orderedResult = _(values)
     .mapAsync((value) => orderedGates[value].promise.then(() => value), {
@@ -48,17 +97,36 @@ test('mapAsync emits completion order only when ordered is false', async () => {
     })
     .toArray()
   const unorderedResult = _(values)
-    .mapAsync((value) => unorderedGates[value].promise.then(() => value), {
-      concurrency: 3,
-      ordered: false,
-    })
+    .mapAsync(
+      (value) => {
+        unorderedStarted.push(value)
+        return unorderedGates[value].promise.then(() => value)
+      },
+      {
+        concurrency: 3,
+        ordered: false,
+      },
+    )
+    .tap((value) => unorderedSeen.push(value))
     .toArray()
 
-  for (const value of [2, 1, 0, 4, 3]) {
+  for (const [value, started] of [
+    [2, 4],
+    [1, 5],
+    [0, 5],
+  ]) {
     orderedGates[value].resolve()
     unorderedGates[value].resolve()
-    await Promise.resolve()
+    await waitFor(
+      () => unorderedStarted.length === started,
+      `mapAsync did not refill after value ${value}`,
+    )
   }
+  orderedGates[4].resolve()
+  unorderedGates[4].resolve()
+  await waitFor(() => unorderedSeen.includes(4), 'unordered mapAsync did not emit value 4')
+  orderedGates[3].resolve()
+  unorderedGates[3].resolve()
 
   expect(await orderedResult).toEqual(values)
   expect(await unorderedResult).toEqual([2, 1, 0, 4, 3])
@@ -125,6 +193,28 @@ test('mapAsync normalizes throws and rejections while preserving input and conte
   expect(errors.every(({ context }) => context.stage === 'enrich')).toBe(true)
 })
 
+test('mapAsync forwards upstream record errors without consuming a mapping slot', async () => {
+  const sourceError = Error('upstream record failure')
+  const mapped = []
+  const errors = []
+
+  const result = await _([1, sourceError, 2])
+    .mapAsync(
+      async (value) => {
+        mapped.push(value)
+        return value * 10
+      },
+      { concurrency: 2, ordered: false },
+    )
+    .errors((error) => errors.push(error))
+    .toArray()
+
+  expect(result).toEqual([10, 20])
+  expect(mapped).toEqual([1, 2])
+  expect(errors).toHaveLength(1)
+  expect(errors[0].message).toBe(sourceError.message)
+})
+
 test('mapAsync accepts synchronous results and captures synchronous throws', async () => {
   const errors = []
 
@@ -187,6 +277,32 @@ test('mapAsync ignores a task that completes after the graph was aborted', async
 
   expect(resultStream.state).toBe('aborted')
   expect(resultStream.abortReason).toBe(reason)
+})
+
+test('mapAsync stops refilling when downstream ends early', async () => {
+  const gates = [deferred(), deferred(), deferred(), deferred()]
+  const started = []
+  const mapped = _([1, 2, 3, 4]).mapAsync(
+    async (value) => {
+      started.push(value)
+      await gates[value - 1].promise
+      return value
+    },
+    { concurrency: 2, ordered: false },
+  )
+  const result = mapped.take(1).toArray()
+
+  await waitFor(() => started.length === 2, 'mapAsync did not fill its initial window')
+  gates[0].resolve()
+  await waitFor(() => started.length === 3, 'mapAsync did not refill the delivered result')
+  gates[1].resolve()
+
+  expect(await result).toEqual([1])
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(started).toEqual([1, 2, 3])
+
+  gates[2].resolve()
 })
 
 test('mapAsync does not start work when its external signal is already aborted', async () => {

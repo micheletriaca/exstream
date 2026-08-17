@@ -11,6 +11,9 @@ authoritative record for earlier versions.
 
 - Terminal completion now has a uniform Promise contract through `toArray()`,
   `single()`, `drain()`, and `pipeTo()`.
+- `mapAsync()` now treats `concurrency` as a sliding window of active work and
+  completed results awaiting downstream demand. Each delivered result releases
+  one slot immediately instead of refilling work in batches behind a slow sink.
 - Exstream instances implement `Symbol.asyncIterator` directly.
 - Node interoperability now uses the readable-only `toNodeReadable()` adapter;
   `toWebReadable()` remains the corresponding Web Streams adapter.
