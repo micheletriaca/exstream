@@ -11,7 +11,7 @@ const equal = (actual, expected, message) => {
 const run = async () => {
   const mapped = await Exstream([1, 2, 3])
     .mapAsync(async (value) => value * 10, { concurrency: 2 })
-    .toPromise()
+    .toArray()
   equal(mapped, [10, 20, 30], 'browser mapAsync')
 
   const readable = new ReadableStream({
@@ -24,7 +24,7 @@ const run = async () => {
   equal(
     await Exstream(readable)
       .map((value) => value + 1)
-      .toPromise(),
+      .toArray(),
     [2, 3],
     'web source',
   )
@@ -33,7 +33,7 @@ const run = async () => {
   const writable = new WritableStream({ write: (value) => written.push(value) })
   await Exstream([1, 2])
     .map((value) => value * 2)
-    .pipe(writable)
+    .pipeTo(writable)
   equal(written, [2, 4], 'web sink')
 
   const target = new EventTarget()
@@ -42,7 +42,7 @@ const run = async () => {
     error: false,
     map: (event) => event.detail,
   })
-  const eventResult = events.toPromise()
+  const eventResult = events.toArray()
   target.dispatchEvent(new CustomEvent('row', { detail: 7 }))
   target.dispatchEvent(new Event('complete'))
   equal(await eventResult, [7], 'EventTarget source')
@@ -54,26 +54,26 @@ const run = async () => {
   await Exstream(response.body)
     .csv({ header: true, separator: '💥' })
     .map((row) => Object.assign(row, { id: Number(row.id) }))
-    .pipe(new WritableStream({ write: (row) => csvOutput.push(row) }))
+    .pipeTo(new WritableStream({ write: (row) => csvOutput.push(row) }))
   equal(csvOutput, [{ id: 1, name: 'Ada' }], 'fetch body to CSV and Web sink')
 
   const json = encoder.encode('{"data":{"rows":[{"id":1},{"id":2}]}}')
   equal(
-    await Exstream(new Response(json).body).json({ path: '$.data.rows[*]' }).toPromise(),
+    await Exstream(new Response(json).body).json({ path: '$.data.rows[*]' }).toArray(),
     [{ id: 1 }, { id: 2 }],
     'fetch body to streaming JSON',
   )
 
   const jsonl = encoder.encode('{"id":1}\n{"id":2}\n')
   equal(
-    await Exstream(new Response(jsonl).body).jsonl().toPromise(),
+    await Exstream(new Response(jsonl).body).jsonl().toArray(),
     [{ id: 1 }, { id: 2 }],
     'fetch body to JSONL',
   )
 
   const envelope = await Exstream([{ id: 1 }, { id: 2 }])
     .jsonStringify({ path: '$.rows[*]', finalize: ({ count }) => ({ count }) })
-    .toPromise()
+    .toArray()
   equal(JSON.parse(envelope.join('')), { rows: [{ id: 1 }, { id: 2 }], count: 2 }, 'JSON envelope')
 
   let produced = 0
@@ -86,7 +86,7 @@ const run = async () => {
       next()
     }
   })
-  const slowDone = source.fork(true).pipe(
+  const slowDone = source.fork(true).pipeTo(
     new WritableStream({
       async write(value) {
         slowOutput.push(value)
@@ -96,7 +96,7 @@ const run = async () => {
   )
   const fastDone = source
     .fork(true)
-    .pipe(new WritableStream({ write: (value) => fastOutput.push(value) }))
+    .pipeTo(new WritableStream({ write: (value) => fastOutput.push(value) }))
   await source.start()
   await Promise.all([slowDone, fastDone])
   equal(slowOutput, [1, 2, 3], 'slow browser fork')

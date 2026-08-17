@@ -4,7 +4,7 @@ const h = require('./helpers.js')
 test('ratelimit', async () => {
   const s = _(h.randomStringGenerator(Infinity)).ratelimit(2, 5)
   setTimeout(() => s.destroy(), 20)
-  const res = await s.toPromise()
+  const res = await s.toArray()
   expect(res.length).toBeGreaterThanOrEqual(6)
   expect(res.length).toBeLessThanOrEqual(12)
 })
@@ -20,7 +20,7 @@ test('generator slower than ratelimit', () =>
         }
       })(),
     ).ratelimit(2, 10)
-    s.pipe(h.getSlowWritable(res, 0, 20))
+    s.pipeTo(h.getSlowWritable(res, 0, 20))
     setTimeout(() => {
       s.destroy()
       resolve()
@@ -38,7 +38,7 @@ test('throttle is unaffected by wall-clock jumps', async () => {
         if (value === 2) vi.setSystemTime(new Date('2036-01-01T00:00:00Z'))
       })
       .throttle(1000)
-      .toPromise()
+      .toArray()
 
     expect(result).toEqual([1])
   } finally {
@@ -51,7 +51,7 @@ test('abort clears a pending ratelimit timer', async () => {
   try {
     const reason = Error('abort rate limit')
     const limited = _([1, 2]).ratelimit(1, 1000)
-    const result = limited.toPromise()
+    const result = limited.toArray()
 
     expect(vi.getTimerCount()).toBe(1)
     limited.abort(reason)

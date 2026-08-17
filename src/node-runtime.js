@@ -1,5 +1,5 @@
 const { EventEmitter } = require('events')
-const { finished, Readable, Transform } = require('stream')
+const { finished, Readable } = require('stream')
 const { StringDecoder } = require('string_decoder')
 const { configureRuntime } = require('./runtime.js')
 
@@ -36,15 +36,6 @@ configureRuntime({
   concatTextBytes,
   createBase64Encoder: () => new StringDecoder('base64'),
   EventBase: EventEmitter,
-  createNodeTransform: (options) =>
-    new Transform({
-      objectMode: true,
-      transform(chunk, encoding, callback) {
-        this.push(chunk)
-        callback()
-      },
-      ...options,
-    }),
   finished,
   createStringDecoder: (encoding) => new StringDecoder(encoding),
   decodeBase64: (value) => Buffer.from(value, 'base64'),
@@ -52,6 +43,6 @@ configureRuntime({
   isNodeStream: (value) =>
     value && typeof value.on === 'function' && typeof value.pipe === 'function',
   isStandardOutput: (value) => value === process.stdout || value === process.stderr,
-  readableFromAsyncIterable: (iterable) => Readable.from(iterable),
+  readableFromAsyncIterable: (iterable, options) => Readable.from(iterable, options),
   platform: 'node',
 })

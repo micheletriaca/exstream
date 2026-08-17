@@ -33,22 +33,17 @@ test('async filter', async () => {
       await h.sleep(10)
       return x % 2 === 0
     })
-    .toPromise()
+    .toArray()
 
   expect(res).toEqual([2])
 })
 
-test('slow writes on node stream', () => {
+test('slow writes on node stream', async () => {
   const res = []
-  return new Promise((resolve) => {
-    _([2, 3, 4])
-      .map((x) => x * 2)
-      .pipe(h.getSlowWritable(res))
-      .on('finish', () => {
-        resolve()
-        expect(res).toEqual([4, 6, 8])
-      })
-  })
+  await _([2, 3, 4])
+    .map((x) => x * 2)
+    .pipeTo(h.getSlowWritable(res))
+  expect(res).toEqual([4, 6, 8])
 })
 
 test('throttle', async () => {
@@ -59,7 +54,7 @@ test('throttle', async () => {
     }
   }
 
-  const res = await _(gen()).throttle(50).toPromise()
+  const res = await _(gen()).throttle(50).toArray()
 
   expect(res.length).toBeLessThan(4)
   expect(res.length).toBeGreaterThan(1)

@@ -1,14 +1,14 @@
 const _ = require('../src')
 
-test('encode', () => {
-  const res = _(['ciao', ', come va?']).encode('base64').values().join('')
+test('encode', async () => {
+  const res = (await _(['ciao', ', come va?']).encode('base64').toArray()).join('')
   expect(res).toEqual('Y2lhbywgY29tZSB2YT8=')
 })
 
-test('invalid encode', () => {
+test('invalid encode', async () => {
   let ex = null
   try {
-    _([1, ', come va?']).encode('base64').values().join('')
+    ;(await _([1, ', come va?']).encode('base64').toArray()).join('')
   } catch (e) {
     ex = e
   }
@@ -18,22 +18,22 @@ test('invalid encode', () => {
   )
 })
 
-test('decode', () => {
-  const res = _(['Y2l', 'hbywgY29tZSB2YT8='])
-    .decode('base64')
-    .map((x) => x.toString())
-    .values()
-    .join('')
+test('decode', async () => {
+  const res = (
+    await _(['Y2l', 'hbywgY29tZSB2YT8='])
+      .decode('base64')
+      .map((x) => x.toString())
+      .toArray()
+  ).join('')
   expect(res.toString()).toEqual('ciao, come va?')
 })
 
 test('incomplete decode', async () => {
   const s = _()
-  const result = new Promise((resolve) => {
-    s.decode('base64')
-      .map((x) => x.toString())
-      .toArray(resolve)
-  })
+  const result = s
+    .decode('base64')
+    .map((x) => x.toString())
+    .toArray()
 
   s.write('Y2l')
   s.write('hbyw')
@@ -43,21 +43,23 @@ test('incomplete decode', async () => {
   expect(res.join('')).toBe('ciao,')
 })
 
-test('encode buffer', () => {
-  const res = _([Buffer.from('ciao'), Buffer.from(', come va?')])
-    .encode('base64')
-    .values()
-    .join('')
+test('encode buffer', async () => {
+  const res = (
+    await _([Buffer.from('ciao'), Buffer.from(', come va?')])
+      .encode('base64')
+      .toArray()
+  ).join('')
   expect(res).toEqual('Y2lhbywgY29tZSB2YT8=')
 })
 
-test('encode error', () => {
+test('encode error', async () => {
   let ex = null
   try {
-    _([Buffer.from('ciao'), Buffer.from(', come va?')])
-      .encode('md5')
-      .values()
-      .join('')
+    ;(
+      await _([Buffer.from('ciao'), Buffer.from(', come va?')])
+        .encode('md5')
+        .toArray()
+    ).join('')
   } catch (e) {
     ex = e
   }
@@ -65,10 +67,10 @@ test('encode error', () => {
   expect(ex.message).toBe('.encode() supports only base64 at the moment')
 })
 
-test('invalid decode', () => {
+test('invalid decode', async () => {
   let ex = null
   try {
-    _(['Y2l', 'hbywgY29tZSB2YT8=']).decode('aes256').values().join('')
+    ;(await _(['Y2l', 'hbywgY29tZSB2YT8=']).decode('aes256').toArray()).join('')
   } catch (e) {
     ex = e
   }

@@ -38,7 +38,7 @@ const orders = exstream(response.body)
   )
   .filter((order) => order.customer.active)
 
-for await (const order of orders.toAsyncIterator()) {
+for await (const order of orders) {
   await writeOrder(order)
 }
 ```
@@ -61,8 +61,8 @@ signal is cancelled when work for that record and branch is no longer useful.
   have separate policies, cleanup and cancellation semantics.
 - **Types that follow the data.** Value and record-context types evolve through
   chained operators, including asynchronous transformations.
-- **A fast synchronous path.** Ordinary `map()` and `filter()` pipelines do not
-  pay the cost of an asynchronous abstraction they are not using.
+- **Cheap synchronous operators.** Ordinary `map()` and `filter()` still process
+  records synchronously; terminal operations consistently return promises.
 
 ## Formats
 

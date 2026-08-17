@@ -10,35 +10,23 @@ beforeEach(() => {
   fs.__setMockFiles({ out })
 })
 
-test('merging with fs', async () =>
-  new Promise((resolve) => {
-    _([_(fs.createReadStream('out')), _(fs.createReadStream('out'))])
-      .merge(1)
-      .pipe(fs.createWriteStream('out3'))
-      .on('finish', () => {
-        resolve()
-        const o = out.map((x) => x.toString()).join('')
-        expect(fs.__getMockFiles().out3.join('')).toEqual(o + o)
-      })
-  }))
+test('merging with fs', async () => {
+  await _([_(fs.createReadStream('out')), _(fs.createReadStream('out'))])
+    .merge(1)
+    .pipeTo(fs.createWriteStream('out3'))
+  const o = out.map((x) => x.toString()).join('')
+  expect(fs.__getMockFiles().out3.join('')).toEqual(o + o)
+})
 
-test('through node stream', () =>
-  new Promise((resolve) => {
-    _(fs.createReadStream('out'))
-      .through(zlib.createGzip())
-      .pipe(fs.createWriteStream('out.gz'))
-      .on('finish', () => {
-        _(fs.createReadStream('out.gz'))
-          .through(zlib.createGunzip())
-          .pipe(fs.createWriteStream('out2'))
-          .on('finish', () => {
-            const f1 = fs.readFileSync('out')
-            const f2 = fs.readFileSync('out2')
-            expect(f1).toEqual(f2)
-            resolve()
-          })
-      })
-  }))
+test('through node stream', async () => {
+  await _(fs.createReadStream('out'))
+    .through(zlib.createGzip())
+    .pipeTo(fs.createWriteStream('out.gz'))
+  await _(fs.createReadStream('out.gz'))
+    .through(zlib.createGunzip())
+    .pipeTo(fs.createWriteStream('out2'))
+  expect(fs.readFileSync('out')).toEqual(fs.readFileSync('out2'))
+})
 
 test('pipe pipeline', async () => {
   const p = _.pipeline()
@@ -50,23 +38,14 @@ test('pipe pipeline', async () => {
     .map((x) => 'buahaha' + x + '\n')
 
   const res = []
-  await new Promise((resolve) => {
-    fs.createReadStream('out')
-      .pipe(p.generateStream())
-      .pipe(h.getSlowWritable(res, 0))
-      .on('finish', resolve)
-  })
+  await _(fs.createReadStream('out')).through(p.generateStream()).pipeTo(h.getSlowWritable(res, 0))
 
   expect(res.length).toBe(11)
 })
 
-test('pipeToFile', () =>
-  new Promise((resolve) => {
-    _(h.fibonacci(5))
-      .map((x) => x.toString() + '\n')
-      .pipe(fs.createWriteStream('fibo'))
-      .on('finish', () => {
-        resolve()
-        expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
-      })
-  }))
+test('pipeToFile', async () => {
+  await _(h.fibonacci(5))
+    .map((x) => x.toString() + '\n')
+    .pipeTo(fs.createWriteStream('fibo'))
+  expect(fs.__getMockFiles().fibo.join('')).toBe('0\n1\n1\n2\n3\n')
+})

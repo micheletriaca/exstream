@@ -20,7 +20,7 @@ function createReadStream(file) {
     })
     .resolve()
     .flatten()
-    .toNodeStream()
+    .toNodeReadable()
 }
 
 function createWriteStream(file) {

@@ -1,8 +1,8 @@
 const _ = require('../src/index.js')
 const { waitFor } = require('./invariant-helpers.js')
 
-test('withContext creates per-record context preserved by one-to-one operators', () => {
-  const result = _([1, 2, 3])
+test('withContext creates per-record context preserved by one-to-one operators', async () => {
+  const result = await _([1, 2, 3])
     .withContext((value) => ({ correlationId: `row-${value}` }))
     .map((value, context) => {
       context.mapped = value * 2
@@ -19,7 +19,7 @@ test('withContext creates per-record context preserved by one-to-one operators',
       output: value,
       tapped: context.tapped,
     }))
-    .values()
+    .toArray()
 
   expect(result).toEqual([
     { correlationId: 'row-1', input: 1, mapped: 2, output: 2, tapped: 2 },
@@ -27,13 +27,13 @@ test('withContext creates per-record context preserved by one-to-one operators',
   ])
 })
 
-test('withContext supports Express-style mutation without returning additions', () => {
-  const result = _([1])
+test('withContext supports Express-style mutation without returning additions', async () => {
+  const result = await _([1])
     .withContext((value, context) => {
       context.correlationId = `row-${value}`
     })
     .map((value, context) => context.correlationId)
-    .value()
+    .single()
 
   expect(result).toBe('row-1')
 })
@@ -45,7 +45,7 @@ test('extendContext supports asynchronous type-shaped enrichment', async () => {
       customer: { id: value, correlationId: context.correlationId },
     }))
     .map((value, context) => ({ value, customer: context.customer }))
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([
     { value: 1, customer: { id: 1, correlationId: 'row-1' } },
@@ -53,34 +53,34 @@ test('extendContext supports asynchronous type-shaped enrichment', async () => {
   ])
 })
 
-test('a binary callback lazily creates context without withContext', () => {
-  const result = _([2])
+test('a binary callback lazily creates context without withContext', async () => {
+  const result = await _([2])
     .map((value, context) => ({
       input: context.input,
       signal: context.signal,
       value,
     }))
-    .value()
+    .single()
 
   expect(result.input).toBe(2)
   expect(result.value).toBe(2)
   expect(result.signal).toBeInstanceOf(AbortSignal)
   expect(
-    _([1])
+    await _([1])
       .map((value, context) => value - context.input)
-      .value(),
+      .single(),
   ).toBe(0)
   expect(
-    _([1, 2])
+    await _([1, 2])
       .reject((value, context) => context.input === value && value === 1)
-      .values(),
+      .toArray(),
   ).toEqual([2])
 })
 
-test('unary callbacks retain their historical argument list', () => {
+test('unary callbacks retain their historical argument list', async () => {
   const transform = vi.fn((value) => value * 2)
 
-  expect(_([2]).map(transform).value()).toBe(4)
+  expect(await _([2]).map(transform).single()).toBe(4)
   expect(transform).toHaveBeenCalledWith(2)
 })
 
@@ -101,7 +101,7 @@ test('concurrent promise resolution keeps input and output contexts correlated',
       output: value,
       resolved: context.resolved,
     }))
-    .toPromise()
+    .toArray()
 
   expect(contexts.size).toBe(4)
   expect(result).toEqual([
@@ -123,7 +123,7 @@ test('forks receive shallow context copies that evolve independently', async () 
       context.destination = 'first'
       return { value, destination: context.destination, correlationId: context.correlationId }
     })
-    .toPromise()
+    .toArray()
   const second = source
     .fork()
     .map((value, context) => {
@@ -131,7 +131,7 @@ test('forks receive shallow context copies that evolve independently', async () 
       context.destination = 'second'
       return { value, destination: context.destination, correlationId: context.correlationId }
     })
-    .toPromise()
+    .toArray()
 
   await expect(Promise.all([first, second])).resolves.toEqual([
     [
@@ -146,7 +146,7 @@ test('forks receive shallow context copies that evolve independently', async () 
   expect([...firstSignals][0]).not.toBe([...secondSignals][0])
 })
 
-test('observers cannot mutate the reliable branch context', () => {
+test('observers cannot mutate the reliable branch context', async () => {
   const source = _([1]).withContext(() => ({ destination: 'source' }))
   const observer = source.observe().map((value, context) => {
     context.destination = 'observer'
@@ -157,8 +157,8 @@ test('observers cannot mutate the reliable branch context', () => {
     return context.destination
   })
 
-  expect(main.values()).toEqual(['main'])
-  expect(observer.values()).toEqual(['observer'])
+  expect(await main.toArray()).toEqual(['main'])
+  expect(await observer.toArray()).toEqual(['observer'])
 })
 
 test('record error handlers receive the context that caused the error', async () => {
@@ -175,7 +175,7 @@ test('record error handlers receive the context that caused the error', async ()
         stage: context.stage,
       })
     })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([{ input: 1, message: 'invalid 1', stage: 'map' }])
 })
@@ -185,16 +185,16 @@ test('context rejects attempts to replace its managed signal', async () => {
   const result = await _([1])
     .withContext(() => ({ signal: 'not allowed' }))
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([])
   expect(errors).toHaveLength(1)
   expect(errors[0].message).toBe('context signal is managed by Exstream')
 })
 
-test('flatten gives every emitted child an independent shallow context', () => {
+test('flatten gives every emitted child an independent shallow context', async () => {
   const contexts = []
-  const result = _([[1, 2]])
+  const result = await _([[1, 2]])
     .withContext(() => ({ correlationId: 'row-1' }))
     .flatten()
     .map((value, context) => {
@@ -203,7 +203,7 @@ test('flatten gives every emitted child an independent shallow context', () => {
       context.child = value
       return { correlationId: context.correlationId, previousChild, value }
     })
-    .values()
+    .toArray()
 
   expect(result).toEqual([
     { correlationId: 'row-1', previousChild: undefined, value: 1 },
@@ -212,8 +212,8 @@ test('flatten gives every emitted child an independent shallow context', () => {
   expect(contexts[0]).not.toBe(contexts[1])
 })
 
-test('batch and collect expose aligned parent contexts on their aggregate', () => {
-  const batched = _([1, 2, 3])
+test('batch and collect expose aligned parent contexts on their aggregate', async () => {
+  const batched = await _([1, 2, 3])
     .withContext((value) => ({ correlationId: `row-${value}` }))
     .batch(2)
     .map((values, context) => ({
@@ -221,9 +221,9 @@ test('batch and collect expose aligned parent contexts on their aggregate', () =
       sameInput: context.input === values,
       values,
     }))
-    .values()
+    .toArray()
 
-  const collected = _([1, 2])
+  const collected = await _([1, 2])
     .withContext((value) => ({ correlationId: `row-${value}` }))
     .collect()
     .map((values, context) => ({
@@ -231,7 +231,7 @@ test('batch and collect expose aligned parent contexts on their aggregate', () =
       sameInput: context.input === values,
       values,
     }))
-    .value()
+    .single()
 
   expect(batched).toEqual([
     { inputs: [1, 2], sameInput: true, values: [1, 2] },
@@ -244,9 +244,9 @@ test('batch and collect expose aligned parent contexts on their aggregate', () =
   })
 })
 
-test('reduce receives each record context and emits an aggregate context', () => {
+test('reduce receives each record context and emits an aggregate context', async () => {
   const seen = []
-  const result = _([1, 2, 3])
+  const result = await _([1, 2, 3])
     .withContext((value) => ({ correlationId: `row-${value}` }))
     .reduce((total, value, context) => {
       seen.push(context.correlationId)
@@ -257,7 +257,7 @@ test('reduce receives each record context and emits an aggregate context', () =>
       sameInput: context.input === total,
       total,
     }))
-    .value()
+    .single()
 
   expect(seen).toEqual(['row-1', 'row-2', 'row-3'])
   expect(result).toEqual({ inputs: [1, 2, 3], sameInput: true, total: 6 })
@@ -274,7 +274,7 @@ test('asyncReduce receives a lazily-created record context', async () => {
       inputs: context.contexts.map((parent) => parent.input),
       total,
     }))
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([{ inputs: [1, 2], total: 3 }])
 })
@@ -297,7 +297,7 @@ test('ordered resolve keeps contexts correlated when promises settle out of orde
       started: context.started,
       value,
     }))
-    .toPromise()
+    .toArray()
 
   await waitFor(() => resolvers.length === 2, 'resolve did not start both promises')
   resolvers[1]()
@@ -322,7 +322,7 @@ test('unordered merge preserves each substream record context', async () => {
       sourceValue: context.sourceValue,
       value,
     }))
-    .toPromise()
+    .toArray()
 
   expect(result.toSorted((a, b) => a.value - b.value)).toEqual([
     { input: 1, source: 'first', sourceValue: 1, value: 1 },
@@ -343,7 +343,7 @@ test('ordered merge preserves record contexts while buffering substreams', async
       sourceValue: context.sourceValue,
       value,
     }))
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([
     { input: 1, source: 'first', sourceValue: 1, value: 1 },
@@ -359,7 +359,7 @@ test.each([null, [], 'invalid'])(
     const result = await _([1])
       .withContext(() => invalid)
       .errors((error) => errors.push(error))
-      .toPromise()
+      .toArray()
 
     expect(result).toEqual([])
     expect(errors).toHaveLength(1)
@@ -367,10 +367,10 @@ test.each([null, [], 'invalid'])(
   },
 )
 
-test('withContext can establish a fresh boundary over an existing context', () => {
+test('withContext can establish a fresh boundary over an existing context', async () => {
   let firstContext
   let secondContext
-  const result = _([1])
+  const result = await _([1])
     .withContext((value, context) => {
       firstContext = context
       return { correlationId: `row-${value}` }
@@ -385,18 +385,18 @@ test('withContext can establish a fresh boundary over an existing context', () =
       stage: context.stage,
       value,
     }))
-    .value()
+    .single()
 
   expect(result).toEqual({ correlationId: 'row-1', input: 1, stage: 'second', value: 1 })
   expect(secondContext).not.toBe(firstContext)
   expect(secondContext.signal).not.toBe(firstContext.signal)
 })
 
-test('withContext without an initializer still establishes input and signal', () => {
-  const result = _([1])
+test('withContext without an initializer still establishes input and signal', async () => {
+  const result = await _([1])
     .withContext()
     .map((value, context) => ({ input: context.input, signal: context.signal, value }))
-    .value()
+    .single()
 
   expect(result.input).toBe(1)
   expect(result.signal).toBeInstanceOf(AbortSignal)
@@ -410,13 +410,13 @@ test('context is preserved through reject and contextual promise handlers', asyn
     .map((value, context) => Promise.resolve({ value, correlationId: context.correlationId }))
     .massThen((result, context) => ({ ...result, input: context.input }))
     .resolve()
-    .toPromise()
+    .toArray()
 
   expect(recovered).toEqual([{ value: 2, correlationId: 'row-2', input: 2 }])
 })
 
 test('contextual map preserves context in sync and async wrap mode', async () => {
-  const sync = _([1])
+  const sync = await _([1])
     .withContext(() => ({ correlationId: 'sync' }))
     .map((value, context) => value + Number(context.input === value), { wrap: true })
     .map((value, context) => ({
@@ -424,7 +424,7 @@ test('contextual map preserves context in sync and async wrap mode', async () =>
       input: value.input,
       output: value.output,
     }))
-    .value()
+    .single()
 
   const async = await _([2])
     .withContext(() => ({ correlationId: 'async' }))
@@ -437,7 +437,7 @@ test('contextual map preserves context in sync and async wrap mode', async () =>
       input: value.input,
       output: value.output,
     }))
-    .toPromise()
+    .toArray()
 
   expect(sync).toEqual({ input: 1, output: 2, correlationId: 'sync' })
   expect(async).toEqual([{ input: 2, output: 3, correlationId: 'async' }])
@@ -458,7 +458,7 @@ test('context survives async legacy operators and contextual rejection recovery'
     })
     .resolve()
     .map((value, context) => ({ correlationId: context.correlationId, value }))
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([
     { correlationId: 'row-1', value: 1 },
@@ -482,7 +482,7 @@ test('contextual predicate failures remain correlated record errors', async () =
     .errors((error, push, context) => {
       failure = { correlationId: context.correlationId, message: error.message }
     })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([])
   expect(failure).toEqual({ correlationId: 'row-2', message: 'async predicate' })
@@ -499,21 +499,21 @@ test('a contextual stopOnError handler receives the failing record context', asy
     .stopOnError((error, push, context) => {
       handled = { correlationId: context.correlationId, message: error.message }
     })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([1])
   expect(handled).toEqual({ correlationId: 'row-2', message: 'stop' })
 })
 
 test('reduce1 aggregates all contexts and isolates reducer failures', async () => {
-  const success = _([1, 2, 3])
+  const success = await _([1, 2, 3])
     .withContext((value) => ({ correlationId: `row-${value}` }))
     .reduce1((total, value, context) => total + value + Number(context.input === value))
     .map((total, context) => ({
       inputs: context.contexts.map((parent) => parent.input),
       total,
     }))
-    .value()
+    .single()
 
   let failureContext
   const failed = await _([1, 2])
@@ -525,7 +525,7 @@ test('reduce1 aggregates all contexts and isolates reducer failures', async () =
     .errors((error, push, context) => {
       failureContext = context
     })
-    .toPromise()
+    .toArray()
 
   expect(success).toEqual({ inputs: [1, 2, 3], total: 8 })
   expect(failed).toEqual([undefined])

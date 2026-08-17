@@ -3,10 +3,11 @@ const { EventHub } = require('./event-hub.js')
 const { runtime } = require('./runtime.js')
 const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
-const { createContext, forkContext } = require('./context')
+const { forkContext } = require('./context')
 const { annotateError } = require('./error-info.js')
 
 const signalActive = Symbol('exstream signal active')
+const noCancel = () => undefined
 
 function getErrorMessage(value) {
   if (value && value.message !== void 0) return String(value.message)
@@ -89,7 +90,6 @@ class Exstream extends EventHub {
   #observedSource = null
   #contextBoundary = false
   #autostart = true
-  #synchronous = true
 
   #destroyers = []
 
@@ -151,13 +151,10 @@ class Exstream extends EventHub {
     } else if (_.isIterable(xs)) {
       this.#sourceData = xs[Symbol.iterator]()
     } else if (_.isAsyncIterable(xs)) {
-      if (runtime.readableFromAsyncIterable)
-        this.#pipeReadable(runtime.readableFromAsyncIterable(xs))
-      else this.#pipeAsyncIterable(xs)
+      this.#pipeAsyncIterable(xs)
     } else if (_.isPromise(xs)) {
       return new Exstream([xs]).resolve()
     } else if (_.isFunction(xs)) {
-      this.#synchronous = false
       this.#generator = xs
     } else {
       throw Error(
@@ -209,7 +206,6 @@ class Exstream extends EventHub {
   }
 
   #pipeReadable = (xs) => {
-    this.#synchronous = false
     xs.pipe(this)
     this.#addOnceListener('error', xs, (e) => {
       // sometimes e is not an instance of Error, nobody knows why
@@ -220,7 +216,6 @@ class Exstream extends EventHub {
   }
 
   #pipeAsyncIterable = (iterable) => {
-    this.#synchronous = false
     const iterator = iterable[Symbol.asyncIterator]()
     let cancelled = false
     this.#generator = (write, next) => {
@@ -248,7 +243,6 @@ class Exstream extends EventHub {
   }
 
   #pipeWebReadable = (readable) => {
-    this.#synchronous = false
     const reader = readable.getReader()
     let cancelled = false
     this.#generator = (write, next) => {
@@ -264,6 +258,7 @@ class Exstream extends EventHub {
             next()
           }
         } catch (error) {
+          if (cancelled) return
           write(new ExstreamError(error, void 0, { origin: 'source', stage: 'read' }))
           write(_.nil)
         }
@@ -693,7 +688,6 @@ class Exstream extends EventHub {
         otherStream.#overflowPolicy = this.#overflowPolicy
         this.#buffer = []
         this.#buffered = 0
-        otherStream.#synchronous = false
         this.#consumers = []
         this.destroy()
         me = otherStream
@@ -702,8 +696,10 @@ class Exstream extends EventHub {
     }
 
     const w = (x) => {
-      this.write(x)
+      if (this.ended || this.#nilPushed) return false
+      const wrote = this.write(x)
       if (x === _.nil) next()
+      return wrote
     }
 
     do {
@@ -755,7 +751,6 @@ class Exstream extends EventHub {
   }
 
   consume(fn) {
-    this.#synchronous = false
     const res = new Exstream()
     res.#consumeFn = fn
     this.#addConsumer(res)
@@ -771,55 +766,6 @@ class Exstream extends EventHub {
 
   get _recordContext() {
     return this.#activeContext
-  }
-
-  pull(fn) {
-    const _pull = (fn) => {
-      const usesContext = fn.length >= 3
-      let s2
-      s2 = this.consumeSync((err, x) => {
-        this.#removeConsumer(s2)
-        if (usesContext) {
-          let context = s2._recordContext
-          if (context === void 0 && !err && x !== _.nil) context = createContext(x, s2.signal)
-          fn(err, x, context)
-        } else {
-          fn(err, x)
-        }
-      })
-      s2.resume()
-    }
-
-    if (fn) _pull(fn)
-    else
-      return new Promise((resolve, reject) => {
-        _pull((err, x) => {
-          if (err) reject(err)
-          else if (x === _.nil) resolve(_.nil)
-          else resolve(x)
-        })
-      })
-  }
-
-  each(fn) {
-    let s2
-    const onValue =
-      fn.length >= 2
-        ? (value) => {
-            const context = s2._recordContext
-            fn(value, context === void 0 ? createContext(value, s2.signal) : context)
-          }
-        : fn
-    s2 = this.consumeSync((err, x, push) => {
-      if (err) {
-        ;(this.endOfChain || this).emit('error', err)
-      } else if (x === _.nil) {
-        push(null, _.nil)
-      } else {
-        onValue(x)
-      }
-    })
-    s2.resume()
   }
 
   #addConsumer = (s, skipCheck = false) => {
@@ -845,47 +791,6 @@ class Exstream extends EventHub {
   #removeObserver = (observer) => {
     this.#observers = this.#observers.filter((candidate) => candidate !== observer)
     observer.#observedSource = null
-  }
-
-  pipe(dest, options = {}) {
-    if (runtime.isWebWritableStream(dest)) return this.#pipeWebWritable(dest, options)
-    let nextCallback
-    const drainCallback = () => {
-      if (nextCallback) {
-        nextCallback()
-        nextCallback = null
-      }
-    }
-    this.#synchronous = false
-    if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
-    const canClose = !runtime.isStandardOutput(dest) && options.end !== false
-    const end = canClose ? dest.end : () => ({})
-    const s = this.consume((err, x, push, next) => {
-      if (x === _.nil) {
-        dest.off('drain', drainCallback)
-        scheduleMicrotask(() => {
-          end.call(dest)
-          if (!canClose) s.end()
-        })
-      } else if (err) {
-        // A next turn is needed to exit from a promise context.
-        scheduleNextTurn(() => {
-          dest.emit('error', err)
-          next()
-        })
-      } else if (!dest.write(x)) {
-        nextCallback = next
-      } else {
-        next()
-      }
-    })
-    dest.on('drain', drainCallback)
-    s.#destroyers.push(() => dest.off('drain', drainCallback))
-    const stopWatching = runtime.finished(dest, { cleanup: true, error: false }, () => s.end())
-    s.#destroyers.push(stopWatching)
-    dest.emit('pipe', this)
-    scheduleNextTurn(() => s.resume())
-    return dest
   }
 
   pipeTo(destination, options = {}) {
@@ -1041,7 +946,7 @@ class Exstream extends EventHub {
 
   #pipeWebWritable = async (destination, options) => {
     const writer = destination.getWriter()
-    const iterator = this.toAsyncIterator({ signal: options.signal })
+    const iterator = this.#createAsyncIterator({ signal: options.signal })
     let rejectAbort
     const abortPromise =
       options.signal === void 0
@@ -1087,10 +992,292 @@ class Exstream extends EventHub {
     }
   }
 
+  #createAsyncIterator = (options = {}) => {
+    if (options === null) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error creating async iterator: options must be an object')
+    }
+    const signal = options.signal
+    if (
+      signal !== void 0 &&
+      (!signal ||
+        typeof signal.aborted !== 'boolean' ||
+        typeof signal.addEventListener !== 'function' ||
+        typeof signal.removeEventListener !== 'function')
+    ) {
+      throw Error('error creating async iterator: signal must be an AbortSignal')
+    }
+
+    if (this.ended) {
+      let terminalError = this.#state === 'aborted' ? this.#abortReason : null
+      return {
+        next() {
+          if (terminalError) {
+            const error = terminalError
+            terminalError = null
+            return Promise.reject(error)
+          }
+          return Promise.resolve({ done: true, value: void 0 })
+        },
+        return(value) {
+          terminalError = null
+          return Promise.resolve({ done: true, value })
+        },
+        throw(error) {
+          terminalError = null
+          return Promise.reject(error)
+        },
+        [Symbol.asyncIterator]() {
+          return this
+        },
+      }
+    }
+
+    let closed = false
+    let pending
+    let sequence = Promise.resolve()
+    let sink
+    let terminalError
+
+    const cleanup = () => {
+      if (signal !== void 0) signal.removeEventListener('abort', abortFromSignal)
+    }
+    const finish = (error) => {
+      if (closed) return
+      closed = true
+      cleanup()
+      if (pending) {
+        const request = pending
+        pending = null
+        if (error) request.reject(error)
+        else request.resolve({ done: true, value: void 0 })
+      } else if (error) terminalError = error
+    }
+    const abortFromSignal = () => sink.abort(signal.reason)
+
+    sink = this.consumeSync((error, value) => {
+      if (closed) return
+      if (value === _.nil) {
+        finish()
+        return
+      }
+
+      sink.pause()
+      const request = pending
+      pending = null
+      if (error) {
+        closed = true
+        cleanup()
+        request.reject(error)
+        sink.destroy()
+      } else {
+        request.resolve({ done: false, value })
+      }
+    })
+    sink.once('error', finish)
+
+    if (signal !== void 0) {
+      if (signal.aborted) scheduleMicrotask(abortFromSignal)
+      else signal.addEventListener('abort', abortFromSignal, { once: true })
+    }
+
+    const readOne = () => {
+      if (closed) {
+        if (terminalError) {
+          const error = terminalError
+          terminalError = null
+          return Promise.reject(error)
+        }
+        return Promise.resolve({ done: true, value: void 0 })
+      }
+      return new Promise((resolve, reject) => {
+        pending = { reject, resolve }
+        sink.resume()
+      })
+    }
+
+    return {
+      next() {
+        const request = sequence.then(readOne)
+        sequence = request.then(noCancel, noCancel)
+        return request
+      },
+      return(value) {
+        terminalError = null
+        finish()
+        sink.destroy()
+        return Promise.resolve({ done: true, value })
+      },
+      throw(error) {
+        sink.abort(error)
+        terminalError = null
+        return Promise.reject(error)
+      },
+      [Symbol.asyncIterator]() {
+        return this
+      },
+    }
+  };
+
+  [Symbol.asyncIterator]() {
+    return this.#createAsyncIterator()
+  }
+
+  toNodeReadable(options = {}) {
+    if (!runtime.readableFromAsyncIterable) {
+      throw Error('toNodeReadable() is not available in this runtime')
+    }
+    if (options === null) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error in .toNodeReadable(). options must be an object')
+    }
+    return runtime.readableFromAsyncIterable(
+      this.#createAsyncIterator({ signal: options.signal }),
+      options,
+    )
+  }
+
+  toWebReadable(options = {}) {
+    if (typeof globalThis.ReadableStream !== 'function') {
+      throw Error('toWebReadable() requires ReadableStream support')
+    }
+    if (options === null) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error in .toWebReadable(). options must be an object')
+    }
+    const iterator = this.#createAsyncIterator({ signal: options.signal })
+    return new globalThis.ReadableStream(
+      {
+        async pull(controller) {
+          try {
+            const item = await iterator.next()
+            if (item.done) controller.close()
+            else controller.enqueue(item.value)
+          } catch (error) {
+            controller.error(error)
+          }
+        },
+        async cancel(reason) {
+          if (reason === void 0) await iterator.return()
+          else await iterator.throw(reason).catch(() => {})
+        },
+      },
+      options.strategy,
+    )
+  }
+
+  toArray() {
+    return this.#runTerminal({ collect: true })
+  }
+
+  drain() {
+    return this.#runTerminal({ collect: false })
+  }
+
+  single() {
+    return new Promise((resolve, reject) => {
+      let settled = false
+      let hasValue = false
+      let result
+      let sink
+
+      const cleanup = () => {
+        sink.off('error', fail)
+        sink.off('abort', fail)
+        sink.off('end', succeed)
+      }
+      const fail = (error) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      }
+      const rejectRecord = (error) => {
+        if (settled) return
+        sink.pause()
+        scheduleMicrotask(() => {
+          if (!sink.ended) sink.abort(error)
+        })
+        fail(error)
+      }
+      const succeed = () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(result)
+      }
+
+      sink = this.consumeSync((error, value, push) => {
+        if (error) {
+          rejectRecord(error)
+        } else if (value === _.nil) {
+          push(null, _.nil)
+        } else if (hasValue) {
+          const error = Error('single() expected at most one value')
+          error.code = 'EXSTREAM_MORE_THAN_ONE_VALUE'
+          rejectRecord(error)
+        } else {
+          hasValue = true
+          result = value
+        }
+      })
+      sink.once('error', fail).once('abort', fail).once('end', succeed)
+      try {
+        sink.resume()
+      } catch (error) {
+        fail(error)
+      }
+    })
+  }
+
+  #runTerminal = ({ collect }) =>
+    new Promise((resolve, reject) => {
+      let settled = false
+      const values = collect ? [] : null
+      let sink
+
+      const cleanup = () => {
+        sink.off('error', fail)
+        sink.off('abort', fail)
+        sink.off('end', succeed)
+      }
+      const fail = (error) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      }
+      const rejectRecord = (error) => {
+        if (settled) return
+        sink.pause()
+        scheduleMicrotask(() => {
+          if (!sink.ended) sink.abort(error)
+        })
+        fail(error)
+      }
+      const succeed = () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(collect ? values : void 0)
+      }
+
+      sink = this.consumeSync((error, value, push) => {
+        if (error) rejectRecord(error)
+        else if (value === _.nil) push(null, _.nil)
+        else if (collect) values.push(value)
+      })
+      sink.once('error', fail).once('abort', fail).once('end', succeed)
+      try {
+        sink.resume()
+      } catch (error) {
+        fail(error)
+      }
+    })
+
   fork(disableAutostart = false) {
     if (this.#resumedAtLeastOnce)
       throw Error("this stream is already started. you can't fork it anymore")
-    this.#synchronous = false
     this.#autostart = false
     if (!disableAutostart) scheduleMicrotask(() => this.start())
     const res = new Exstream()
@@ -1118,12 +1305,10 @@ class Exstream extends EventHub {
       this.#addConsumer(pipelineInstance)
       return pipelineInstance
     } else if (_.isNodeStream(target) && !writable) {
-      this.#synchronous = false
-      this.pipe(target)
+      this.toNodeReadable().pipe(target)
       return new Exstream(target)
     } else if (_.isNodeStream(target) && writable) {
-      this.#synchronous = false
-      this.pipe(target)
+      this.toNodeReadable().pipe(target)
       const s = new Exstream()
       s.readable = false
       s.source = this
@@ -1155,11 +1340,9 @@ class Exstream extends EventHub {
     if (parallelism === null) {
       throw Error('error in .merge(). parallelism must be a positive integer or Infinity')
     }
-    this.#synchronous = false
 
     const merged = new Exstream()
     merged.setMaxListeners(parallelism * 2 + 1)
-    merged.#synchronous = false
 
     const pipeline = preserveOrder
       ? new Exstream().resolve(parallelism, preserveOrder).flatten()
@@ -1240,50 +1423,6 @@ class Exstream extends EventHub {
       sink.once('error', reject)
       sink.resume()
     })
-  }
-
-  value() {
-    const res = this.values()
-    if (_.isPromise(res)) {
-      return res.then((result) => {
-        if (result.length > 1)
-          throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
-        return result[0]
-      })
-    } else if (res.length > 1) {
-      throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
-    } else {
-      return res[0]
-    }
-  }
-
-  valuesSync() {
-    let current = this
-    while (current.#synchronous && current.source) current = current.source
-    if (!current.#synchronous) {
-      throw Error('this stream is asynchronous. use .toPromise() instead of .valuesSync()')
-    }
-    return this.values()
-  }
-
-  values() {
-    let curr = this
-    let isSync = this.#synchronous
-    while (isSync && curr.source) {
-      curr = curr.source
-      isSync = isSync && curr.#synchronous
-    }
-    if (!isSync) {
-      return this.toPromise()
-    }
-    const res = []
-    /* v8 ignore next 5 -- V8 does not attribute this synchronous private callback. */
-    this.consumeSync((err, x, push) => {
-      if (err) throw err
-      else if (x === _.nil) push(null, _.nil)
-      else res.push(x)
-    }).resume()
-    return res
   }
 }
 

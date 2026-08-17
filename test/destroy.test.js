@@ -1,23 +1,18 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 
-test('end1', () =>
-  new Promise((resolve) => {
-    const res = []
-    const s1 = _(h.randomStringGenerator(Infinity))
-    const s2 = s1.map((x) => x.toUpperCase())
-    const s3 = h.getSlowWritable(res, 1, 10)
-    s2.pipe(s3)
-    s1.once('end', () => {
-      resolve()
-      // expect(res.length).toBeGreaterThan(5)
-      expect(s2.paused).toBe(true)
-      expect(s2.ended).toBe(true)
-      expect(s1.paused).toBe(true)
-      expect(s1.ended).toBe(true)
-    })
-    setTimeout(() => s3.end(), 30)
-  }))
+test('an early destination end aborts a pipeTo source', async () => {
+  const res = []
+  const s1 = _(h.randomStringGenerator(Infinity))
+  const s2 = s1.map((x) => x.toUpperCase())
+  const s3 = h.getSlowWritable(res, 1, 10)
+  const transfer = s2.pipeTo(s3)
+  setTimeout(() => s3.end(), 30)
+
+  await expect(transfer).rejects.toMatchObject({ code: 'EXSTREAM_DESTINATION_CLOSED' })
+  expect(s2.ended).toBe(true)
+  expect(s1.ended).toBe(true)
+})
 
 test('merge end propagation', () =>
   new Promise((resolve) => {
@@ -26,7 +21,7 @@ test('merge end propagation', () =>
     const s2 = _(h.randomStringGenerator(Infinity))
     const s3 = _([s1, s2]).merge(2, false)
     const s4 = h.getSlowWritable(res, 1, 10)
-    s3.pipe(s4)
+    s3.toNodeReadable().pipe(s4)
     s2.once('end', () => {
       resolve()
       // expect(res.length).toBeGreaterThan(5)
@@ -101,7 +96,7 @@ test('standard end propagation', async () => {
       expect(s3Ended).toBe(true)
       s4Ended = true
     })
-    .toPromise()
+    .toArray()
   expect(res).toEqual([2, 4, 6])
 })
 
@@ -184,18 +179,14 @@ test('graceful end', () => {
   process.nextTick(() => expect(res).toEqual(['1', '2', '3', '4']))
 })
 
-test('endless stream', () =>
-  new Promise((resolve) => {
-    const res = []
-    const nodeStream = h.getSlowWritable(res, 0, 10)
-    const s = _(['1', '2', '3'])
-    s.pipe(nodeStream, { end: false })
-    setImmediate(() => {
-      resolve()
-      expect(res).toEqual(['1', '2', '3'])
-      expect(s.ended).toBe(true)
-      expect(nodeStream.writableEnded).toBe(false)
-      nodeStream.end()
-      expect(nodeStream.writableEnded).toBe(true)
-    })
-  }))
+test('endless stream', async () => {
+  const res = []
+  const nodeStream = h.getSlowWritable(res, 0, 10)
+  const s = _(['1', '2', '3'])
+  await s.pipeTo(nodeStream, { end: false })
+  expect(res).toEqual(['1', '2', '3'])
+  expect(s.ended).toBe(true)
+  expect(nodeStream.writableEnded).toBe(false)
+  nodeStream.end()
+  expect(nodeStream.writableEnded).toBe(true)
+})

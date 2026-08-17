@@ -103,7 +103,7 @@ test('a pipeTo sink failure aborts only its fork while reliable siblings continu
   })
 
   const failedResult = failed.pipeTo(destination)
-  const siblingResult = sibling.toPromise()
+  const siblingResult = sibling.toArray()
   await source.start()
 
   await expect(failedResult).rejects.toBe(reason)
@@ -235,20 +235,6 @@ test.each([[], 1])('pipeTo rejects invalid options: %j', async (options) => {
 
   await expect(_([1]).pipeTo(destination, options)).rejects.toThrow('options must be an object')
   destination.destroy()
-})
-
-test('pipeTo supports standalone direct and curried forms', async () => {
-  const directValues = []
-  const curriedValues = []
-  const explicitValues = []
-
-  await _.pipeTo(collectingWritable(directValues), _([1, 2]))
-  await _.pipeTo(collectingWritable(curriedValues))(_([3, 4]))
-  await _.pipeTo(collectingWritable(explicitValues), { end: true }, _([5, 6]))
-
-  expect(directValues).toEqual([1, 2])
-  expect(curriedValues).toEqual([3, 4])
-  expect(explicitValues).toEqual([5, 6])
 })
 
 test.each([null, {}, { aborted: false, addEventListener() {}, removeEventListener: 1 }])(

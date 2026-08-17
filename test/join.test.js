@@ -10,7 +10,7 @@ test('sortedJoin - left - left stream empty', async () => {
       (b) => b.id,
       'left',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([])
 })
 
@@ -23,7 +23,7 @@ test('sortedJoin - right - left stream empty', async () => {
       (b) => b.id,
       'right',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -50,7 +50,7 @@ test('sortedJoin - left - right stream empty', async () => {
       (b) => b.parent,
       'left',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -77,7 +77,7 @@ test('sortedJoin - right - right stream empty', async () => {
       (b) => b.parent,
       'right',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([])
 })
 
@@ -103,7 +103,7 @@ test('sortedJoin - left', async () => {
       (b) => b.parent,
       'left',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -150,7 +150,7 @@ test('sortedJoin - left - with join strings', async () => {
     { id: 'child3', parent: 3 },
     { id: 'child4', parent: 4 },
   ])
-  const res = await _([s1, s2]).sortedJoin('id', 'parent', 'left').values()
+  const res = await _([s1, s2]).sortedJoin('id', 'parent', 'left').toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -179,7 +179,7 @@ test('sortedJoin - no more than 2 substreams', async () => {
   let exc
   await _([_(), _(), _()])
     .sortedJoin('id', 'id', 'left', 'asc')
-    .values()
+    .toArray()
     .catch((e) => void (exc = e))
 
   expect(exc).not.toBe(null)
@@ -197,7 +197,7 @@ test('sortedJoin - sync error in source stream generation', async () => {
     .sortedJoin('id', 'id', 'left', 'asc')
 
   await sleep(0)
-  await s3.values().catch((e) => void (exc = e))
+  await s3.toArray().catch((e) => void (exc = e))
 
   expect(exc).not.toBe(null)
   expect(exc.message).toBe('an error')
@@ -223,7 +223,7 @@ test('sortedJoin - inner - complex', async () => {
       'inner',
       'asc',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -261,7 +261,7 @@ test('multiple hits on second parent', async () => {
       (b) => b.parent,
       'inner',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 2,
@@ -297,7 +297,7 @@ test('multiple keys in both s1 and s2', async () => {
       (b) => b.parent,
       'inner',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -345,7 +345,7 @@ test('join with async source', async () => {
       (b) => b.parent,
       'inner',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 2,
@@ -388,7 +388,7 @@ test('join that starts later', async () => {
     'inner',
   )
   await sleep(0)
-  const res = await s3.values()
+  const res = await s3.toArray()
   expect(res).toEqual([
     {
       key: 2,
@@ -426,7 +426,7 @@ test('sortedJoin - right', async () => {
       (b) => b.id,
       'right',
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -468,7 +468,7 @@ test('sortedInnerJoin', async () => {
       (a) => a.id,
       (b) => b.parent,
     )
-    .values()
+    .toArray()
   expect(res).toEqual([
     {
       key: 1,
@@ -515,7 +515,7 @@ test('sortedLeftJoinWithErrors', async () => {
     .errors((e) => {
       exc = e
     })
-    .values()
+    .toArray()
   expect(exc).not.toBe(null)
   expect(res).toEqual([
     {
@@ -563,7 +563,7 @@ test('sortedLeftJoinWithErrorsInB', async () => {
     .errors((e) => {
       exc = e
     })
-    .values()
+    .toArray()
   expect(exc).not.toBe(null)
   expect(res).toEqual([
     {
@@ -612,7 +612,7 @@ test('sortedLeftJoin - WithErrors In substream B', async () => {
     .errors((e) => {
       exc = e
     })
-    .values()
+    .toArray()
   expect(exc).not.toBe(null)
   expect(res).toEqual([
     {
@@ -660,7 +660,7 @@ test('sortedRightJoinWithErrors', async () => {
     .errors((e) => {
       exc = e
     })
-    .values()
+    .toArray()
   expect(exc).not.toBe(null)
   expect(res).toEqual([
     {
@@ -676,15 +676,15 @@ test('sortedRightJoinWithErrors', async () => {
   ])
 })
 
-test('sorted group by', () => {
-  const res = _([
+test('sorted group by', async () => {
+  const res = await _([
     { id: 1, name: 'name1' },
     { id: 1, name: 'name2' },
     { id: 2, name: 'name3' },
     { name: 'name4' },
   ])
     .sortedGroupBy((x) => x.id)
-    .values()
+    .toArray()
 
   expect(res).toEqual([
     {
@@ -705,15 +705,15 @@ test('sorted group by', () => {
   ])
 })
 
-test('sorted group by - string', () => {
-  const res = _([
+test('sorted group by - string', async () => {
+  const res = await _([
     { id: 1, name: 'name1' },
     { id: 1, name: 'name2' },
     { id: 2, name: 'name3' },
     { name: 'name4' },
   ])
     .sortedGroupBy('id')
-    .values()
+    .toArray()
 
   expect(res).toEqual([
     {
@@ -734,17 +734,17 @@ test('sorted group by - string', () => {
   ])
 })
 
-test('sorted group by. empty stream does not emit anything', () => {
-  const res = _([])
+test('sorted group by. empty stream does not emit anything', async () => {
+  const res = await _([])
     .sortedGroupBy((x) => x.id)
-    .values()
+    .toArray()
 
   expect(res).toEqual([])
 })
 
-test('sorted group by. error in key fn', () => {
+test('sorted group by. error in key fn', async () => {
   let exc
-  const res = _([
+  const res = await _([
     { id: 1, name: 'name1' },
     { id: 1, name: 'name2' },
     { id: 2, name: 'name3' },
@@ -757,7 +757,7 @@ test('sorted group by. error in key fn', () => {
     .errors((e) => {
       exc = e
     })
-    .values()
+    .toArray()
 
   expect(exc).not.toBe(null)
   expect(res).toEqual([

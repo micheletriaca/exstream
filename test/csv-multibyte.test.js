@@ -10,7 +10,7 @@ test.each(['§', '💩', '||'])(
 
     const result = await _(Readable.from(oneByteChunks(input)))
       .csv({ header: true, separator })
-      .toPromise()
+      .toArray()
 
     expect(result).toEqual([{ first: `left${separator}right`, second: 'say "hello"' }])
   },
@@ -21,20 +21,20 @@ test.each(['§', '💩', '||'])('csv round-trips rows with the %s separator', as
     { first: `left${separator}right`, second: 'say "hello"' },
     { first: 'plain', second: `another${separator}value` },
   ]
-  const serialized = _(rows).csvStringify({ header: true, separator }).values().join('')
+  const serialized = (await _(rows).csvStringify({ header: true, separator }).toArray()).join('')
 
   const result = await _(Readable.from(oneByteChunks(serialized)))
     .csv({ header: true, separator })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual(rows)
 })
 
-test('csv completes a multibyte-delimited final row without a trailing newline', () => {
+test('csv completes a multibyte-delimited final row without a trailing newline', async () => {
   expect(
-    _([Buffer.from('first💩second\nleft💩right')])
+    await _([Buffer.from('first💩second\nleft💩right')])
       .csv({ header: true, separator: '💩' })
-      .values(),
+      .toArray(),
   ).toEqual([{ first: 'left', second: 'right' }])
 })
 
@@ -44,9 +44,9 @@ test('csv round-trips a UTF-16LE dialect with Unicode quotes and fragmented toke
     { first: 'multiline\r\nvalue', second: 'plain' },
   ]
   const serialized = Buffer.concat(
-    _(rows)
+    await _(rows)
       .csvStringify({ encoding: 'utf16le', header: true, quote: '«', separator: '||' })
-      .values(),
+      .toArray(),
   )
   const chunks = Array.from({ length: Math.ceil(serialized.length / 3) }, (_, index) =>
     serialized.subarray(index * 3, index * 3 + 3),
@@ -55,6 +55,6 @@ test('csv round-trips a UTF-16LE dialect with Unicode quotes and fragmented toke
   await expect(
     _(Readable.from(chunks))
       .csv({ encoding: 'utf16le', header: true, quote: '«', separator: '||' })
-      .toPromise(),
+      .toArray(),
   ).resolves.toEqual(rows)
 })

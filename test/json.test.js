@@ -5,45 +5,48 @@ const chunk = (text, size) =>
     text.slice(index * size, index * size + size),
   )
 
-test.each([1, 2, 7, 4096])('json parses a complete root across %i-character chunks', (size) => {
-  const value = {
-    array: [1, true, null, -12.5e2],
-    escaped: 'quote: " slash: \\ newline:\n euro: €',
-    object: { a: 1, b: 2 },
-  }
-  const text = JSON.stringify(value)
+test.each([1, 2, 7, 4096])(
+  'json parses a complete root across %i-character chunks',
+  async (size) => {
+    const value = {
+      array: [1, true, null, -12.5e2],
+      escaped: 'quote: " slash: \\ newline:\n euro: €',
+      object: { a: 1, b: 2 },
+    }
+    const text = JSON.stringify(value)
 
-  expect(_(chunk(text, size)).json().values()).toEqual([value])
-})
+    expect(await _(chunk(text, size)).json().toArray()).toEqual([value])
+  },
+)
 
-test('json streams matching values from nested wildcards without emitting containers', () => {
+test('json streams matching values from nested wildcards without emitting containers', async () => {
   const document = {
     ignored: { huge: Array.from({ length: 100 }, (_, index) => index) },
     groups: [{ items: [{ id: 1 }, { id: 2 }] }, { items: [{ id: 3 }] }],
   }
-  const output = _(chunk(JSON.stringify(document), 1))
+  const output = await _(chunk(JSON.stringify(document), 1))
     .json({ path: '$.groups[*].items[*]' })
-    .values()
+    .toArray()
 
   expect(output).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
 })
 
-test('json supports property and array-index selectors', () => {
+test('json supports property and array-index selectors', async () => {
   const document = JSON.stringify({ 'data.items': [{ id: 1 }, { id: 2 }] })
 
-  expect(_([document]).json({ path: "$['data.items'][1]" }).values()).toEqual([{ id: 2 }])
-  expect(_(['[1,2,3]']).json({ path: '$[0]' }).values()).toEqual([1])
-  expect(_(['{"first":1,"second":2}']).json({ path: '$[*]' }).values()).toEqual([1, 2])
-  expect(_(['{"missing":true}']).json({ path: '$.items[*]' }).values()).toEqual([])
+  expect(await _([document]).json({ path: "$['data.items'][1]" }).toArray()).toEqual([{ id: 2 }])
+  expect(await _(['[1,2,3]']).json({ path: '$[0]' }).toArray()).toEqual([1])
+  expect(await _(['{"first":1,"second":2}']).json({ path: '$[*]' }).toArray()).toEqual([1, 2])
+  expect(await _(['{"missing":true}']).json({ path: '$.items[*]' }).toArray()).toEqual([])
 })
 
-test('json handles selected and discarded primitive values', () => {
+test('json handles selected and discarded primitive values', async () => {
   const input = JSON.stringify({
     discarded: ['text', -12.5e2, true, false, null],
     selected: ['text', -12.5e2, true, false, null],
   })
 
-  expect(_([input]).json({ path: '$.selected[*]' }).values()).toEqual([
+  expect(await _([input]).json({ path: '$.selected[*]' }).toArray()).toEqual([
     'text',
     -1250,
     true,
@@ -52,21 +55,21 @@ test('json handles selected and discarded primitive values', () => {
   ])
 })
 
-test('json accepts empty chunks, null options, exact limits and Node encodings', () => {
+test('json accepts empty chunks, null options, exact limits and Node encodings', async () => {
   expect(
-    _(['', Buffer.alloc(0), '"€"'])
+    await _(['', Buffer.alloc(0), '"€"'])
       .json(null)
-      .values(),
+      .toArray(),
   ).toEqual(['€'])
-  expect(_(['"€"']).json({ maxValueBytes: 5 }).values()).toEqual(['€'])
+  expect(await _(['"€"']).json({ maxValueBytes: 5 }).toArray()).toEqual(['€'])
   expect(
-    _([Buffer.from('{"id":1}', 'utf16le')])
+    await _([Buffer.from('{"id":1}', 'utf16le')])
       .json({ encoding: 'utf16le' })
-      .values(),
+      .toArray(),
   ).toEqual([{ id: 1 }])
 })
 
-test('json preserves chunk order when text interrupts an incomplete byte sequence', () => {
+test('json preserves chunk order when text interrupts an incomplete byte sequence', async () => {
   const chunks = [
     Buffer.from('["'),
     Buffer.from([0xe2]),
@@ -75,18 +78,18 @@ test('json preserves chunk order when text interrupts an incomplete byte sequenc
     Buffer.from('"]'),
   ]
 
-  expect(_(chunks).json().values()).toEqual([['�x��']])
+  expect(await _(chunks).json().toArray()).toEqual([['�x��']])
 })
 
-test('json works as a curried standalone operator', () => {
+test('json works as a curried standalone operator', async () => {
   const parseRows = _.json({ path: '$.rows[*]' })
-  expect(_(['{"rows":[1,2]}']).through(parseRows).values()).toEqual([1, 2])
-  expect(_(['1']).through(_.json()).values()).toEqual([1])
-  expect(_.json(null, _(['2'])).values()).toEqual([2])
+  expect(await _(['{"rows":[1,2]}']).through(parseRows).toArray()).toEqual([1, 2])
+  expect(await _(['1']).through(_.json()).toArray()).toEqual([1])
+  expect(await _.json(null, _(['2'])).toArray()).toEqual([2])
 })
 
 test('json validates the entire document after the last selected value', async () => {
-  const result = _(['{"items":[1,2],"tail":}']).json({ path: '$.items[*]' }).toPromise()
+  const result = _(['{"items":[1,2],"tail":}']).json({ path: '$.items[*]' }).toArray()
 
   await expect(result).rejects.toMatchObject({ name: 'JsonParseError' })
 })
@@ -104,21 +107,22 @@ test('json emits a selected value before the complete document arrives', async (
     yield '{"id":2}],"tail":"still arriving"}'
   }
   const selected = _(source()).json({ path: '$.items[*]' })
-  const first = selected.pull()
+  const iterator = selected[Symbol.asyncIterator]()
+  const first = iterator.next()
 
-  await expect(first).resolves.toEqual({ id: 1 })
+  await expect(first).resolves.toEqual({ done: false, value: { id: 1 } })
   expect(secondChunkRequested).toBe(false)
 
-  const rest = selected.toPromise()
   release()
-  await expect(rest).resolves.toEqual([{ id: 2 }])
+  await expect(iterator.next()).resolves.toEqual({ done: false, value: { id: 2 } })
+  await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
 })
 
-test('json keeps only the currently selected value while scanning ignored data', () => {
+test('json keeps only the currently selected value while scanning ignored data', async () => {
   const document = `{"ignored":${JSON.stringify('x'.repeat(256 * 1024))},"rows":[1,2]}`
-  expect(_(chunk(document, 17)).json({ path: '$.rows[*]', maxValueBytes: 1 }).values()).toEqual([
-    1, 2,
-  ])
+  expect(
+    await _(chunk(document, 17)).json({ path: '$.rows[*]', maxValueBytes: 1 }).toArray(),
+  ).toEqual([1, 2])
 })
 
 test.each([
@@ -144,27 +148,27 @@ test.each([
   ['{"a":1,}', 'Expected a JSON object property'],
   ['[1 2]', 'Expected , or ] after JSON array value'],
 ])('json rejects invalid input %s', async (input, message) => {
-  await expect(_(chunk(input, 1)).json().toPromise()).rejects.toThrow(message)
+  await expect(_(chunk(input, 1)).json().toArray()).rejects.toThrow(message)
 })
 
-test('json accepts surrogate pairs in escaped, literal, and chunked forms', () => {
-  expect(_(['"\\uD83D', '\\uDCA5"']).json().values()).toEqual(['💥'])
-  expect(_(['"\ud83d', '\udca5"']).json().values()).toEqual(['💥'])
+test('json accepts surrogate pairs in escaped, literal, and chunked forms', async () => {
+  expect(await _(['"\\uD83D', '\\uDCA5"']).json().toArray()).toEqual(['💥'])
+  expect(await _(['"\ud83d', '\udca5"']).json().toArray()).toEqual(['💥'])
 })
 
 test('json rejects unpaired literal surrogate code units', async () => {
-  await expect(_(['"\ud83d"']).json().toPromise()).rejects.toThrow(
+  await expect(_(['"\ud83d"']).json().toArray()).rejects.toThrow(
     'Unpaired high surrogate in JSON string',
   )
-  await expect(_(['"\udca5"']).json().toPromise()).rejects.toThrow(
+  await expect(_(['"\udca5"']).json().toArray()).rejects.toThrow(
     'Unpaired low surrogate in JSON string',
   )
 })
 
-test('json parses every JSON escape, empty containers, and protected object keys', () => {
+test('json parses every JSON escape, empty containers, and protected object keys', async () => {
   const input =
     '{"emptyObject":{},"emptyArray":[],"escapes":"\\\"\\\\\\/\\b\\f\\n\\r\\t\\u20ac","__proto__":{"safe":true}}'
-  const value = _([input]).json().values()[0]
+  const value = (await _([input]).json().toArray())[0]
 
   expect(value.emptyObject).toEqual({})
   expect(value.emptyArray).toEqual([])
@@ -174,7 +178,7 @@ test('json parses every JSON escape, empty containers, and protected object keys
 })
 
 test('json reports line, column and offset after mixed whitespace', async () => {
-  await expect(_(['{\r\n  "a": 1,\n  "b": }']).json().toPromise()).rejects.toMatchObject({
+  await expect(_(['{\r\n  "a": 1,\n  "b": }']).json().toArray()).rejects.toMatchObject({
     column: 8,
     line: 3,
     offset: 20,
@@ -182,19 +186,21 @@ test('json reports line, column and offset after mixed whitespace', async () => 
 })
 
 test('json enforces depth and selected-value byte limits', async () => {
-  await expect(_(['{"a":{"b":1}}']).json({ maxDepth: 1 }).toPromise()).rejects.toMatchObject({
+  await expect(_(['{"a":{"b":1}}']).json({ maxDepth: 1 }).toArray()).rejects.toMatchObject({
     code: 'EXSTREAM_JSON_MAX_DEPTH',
   })
   await expect(
-    _(['{"items":["€"]}']).json({ path: '$.items[*]', maxValueBytes: 4 }).toPromise(),
+    _(['{"items":["€"]}']).json({ path: '$.items[*]', maxValueBytes: 4 }).toArray(),
   ).rejects.toMatchObject({ code: 'EXSTREAM_JSON_MAX_VALUE_BYTES' })
   expect(
-    _(['{"ignored":"this may be large","items":[1]}'])
+    await _(['{"ignored":"this may be large","items":[1]}'])
       .json({ path: '$.items[*]', maxValueBytes: 1 })
-      .values(),
+      .toArray(),
   ).toEqual([1])
   expect(
-    _(['{"ignored":"large","other":1}']).json({ path: '$.missing', maxValueBytes: 1 }).values(),
+    await _(['{"ignored":"large","other":1}'])
+      .json({ path: '$.missing', maxValueBytes: 1 })
+      .toArray(),
   ).toEqual([])
 })
 
@@ -212,7 +218,7 @@ test.each([
 test('jsonStringify emits a streaming JSON array by default', async () => {
   const chunks = await _([{ id: 1 }, { id: 2 }, null])
     .jsonStringify()
-    .toPromise()
+    .toArray()
 
   expect(chunks.length).toBeGreaterThan(1)
   expect(JSON.parse(chunks.join(''))).toEqual([{ id: 1 }, { id: 2 }, null])
@@ -232,7 +238,7 @@ test('jsonStringify builds nested envelopes and appends final properties at stre
       path: '$.data.records[*]',
       properties: { version: 1 },
     })
-    .toPromise()
+    .toArray()
 
   expect(finalized).toBe(true)
   expect(JSON.parse(chunks.join(''))).toEqual({
@@ -262,7 +268,7 @@ test('jsonStringify exposes branch cancellation to an asynchronous finalizer', a
       })
     },
   })
-  const pending = output.toPromise()
+  const pending = output.toArray()
 
   await finalizerStarted
   output.abort(reason)
@@ -280,18 +286,18 @@ test('jsonStringify supports replacers, quoted envelope paths, and standalone cu
   })
   const chunks = await _([{ visible: 1, hidden: 2 }])
     .through(stringifyRows)
-    .toPromise()
+    .toArray()
 
   expect(JSON.parse(chunks.join(''))).toEqual({ version: 1, 'data.items': [{ visible: 1 }] })
-  expect((await _([1]).through(_.jsonStringify()).toPromise()).join('')).toBe('[1]')
-  expect((await _.jsonStringify(null, _([2])).toPromise()).join('')).toBe('[2]')
+  expect((await _([1]).through(_.jsonStringify()).toArray()).join('')).toBe('[1]')
+  expect((await _.jsonStringify(null, _([2])).toArray()).join('')).toBe('[2]')
 })
 
 test('jsonStringify closes empty arrays and envelopes', async () => {
-  await expect(_([]).jsonStringify().toPromise()).resolves.toEqual(['[', ']'])
+  await expect(_([]).jsonStringify().toArray()).resolves.toEqual(['[', ']'])
   const chunks = await _([])
     .jsonStringify({ path: '$.rows[*]', finalize: ({ count }) => ({ count }) })
-    .toPromise()
+    .toArray()
   expect(JSON.parse(chunks.join(''))).toEqual({ rows: [], count: 0 })
 })
 
@@ -303,7 +309,7 @@ test('jsonStringify rejects collisions, unsupported values, and invalid finalize
   await expect(
     _([BigInt(1)])
       .jsonStringify()
-      .toPromise(),
+      .toArray(),
   ).rejects.toMatchObject({
     name: 'JsonStringifyError',
     record: 1,
@@ -311,22 +317,22 @@ test('jsonStringify rejects collisions, unsupported values, and invalid finalize
   await expect(
     _([1])
       .jsonStringify({ path: '$.rows[*]', finalize: () => ({ rows: 1 }) })
-      .toPromise(),
+      .toArray(),
   ).rejects.toThrow('final property collides')
   await expect(
     _([1])
       .jsonStringify({ path: '$.rows[*]', finalize: () => null })
-      .toPromise(),
+      .toArray(),
   ).rejects.toThrow('finalize must return an object')
   await expect(
     _([1])
       .jsonStringify({ path: '$.rows[*]', finalize: () => [] })
-      .toPromise(),
+      .toArray(),
   ).rejects.toThrow('finalize must return an object')
   await expect(
     _([1])
       .jsonStringify({ path: '$.rows[*]', finalize: () => undefined })
-      .toPromise(),
+      .toArray(),
   ).rejects.toThrow('finalize must return an object')
   await expect(
     _([1])
@@ -336,21 +342,21 @@ test('jsonStringify rejects collisions, unsupported values, and invalid finalize
           throw Error('application finalizer failed')
         },
       })
-      .toPromise(),
+      .toArray(),
   ).rejects.toThrow('Cannot finalize JSON: application finalizer failed')
   await expect(
     _([1])
       .jsonStringify({ path: '$.rows[*]', finalize: () => Promise.reject('string failure') })
-      .toPromise(),
+      .toArray(),
   ).rejects.toThrow('Cannot finalize JSON: string failure')
 
   const cyclic = {}
   cyclic.self = cyclic
-  await expect(_([cyclic]).jsonStringify().toPromise()).rejects.toThrow('Cannot stringify JSON')
+  await expect(_([cyclic]).jsonStringify().toArray()).rejects.toThrow('Cannot stringify JSON')
   await expect(
     _([void 0])
       .jsonStringify()
-      .toPromise(),
+      .toArray(),
   ).rejects.toThrow('JSON value is not serializable at record 1')
   expect(() => _([1]).jsonStringify({ properties: { invalid: void 0 } })).toThrow(
     'properties and finalize require an envelope path',
@@ -374,19 +380,16 @@ test.each([
 })
 
 test('jsonStringify enforces serialized value limits and supports encoded byte chunks', async () => {
-  await expect(_(['€']).jsonStringify({ maxValueBytes: 4 }).toPromise()).rejects.toMatchObject({
+  await expect(_(['€']).jsonStringify({ maxValueBytes: 4 }).toArray()).rejects.toMatchObject({
     code: 'EXSTREAM_JSON_MAX_VALUE_BYTES',
     record: 1,
   })
 
-  const chunks = await _([1, 2]).jsonStringify({ encoding: 'utf16le' }).toPromise()
+  const chunks = await _([1, 2]).jsonStringify({ encoding: 'utf16le' }).toArray()
   expect(Buffer.concat(chunks).toString('utf16le')).toBe('[1,2]')
 
-  await expect(_([1]).jsonStringify({ maxValueBytes: 1 }).toPromise()).resolves.toEqual(['[1', ']'])
-  await expect(_([1]).jsonStringify({ encoding: 'utf-8' }).toPromise()).resolves.toEqual([
-    '[1',
-    ']',
-  ])
+  await expect(_([1]).jsonStringify({ maxValueBytes: 1 }).toArray()).resolves.toEqual(['[1', ']'])
+  await expect(_([1]).jsonStringify({ encoding: 'utf-8' }).toArray()).resolves.toEqual(['[1', ']'])
 })
 
 test('JSON format operators preserve recoverable source errors', async () => {
@@ -401,7 +404,7 @@ test('JSON format operators preserve recoverable source errors', async () => {
     source
       .json()
       .errors((error) => seen.push(error))
-      .toPromise(),
+      .toArray(),
   ).resolves.toEqual([1])
   expect(seen).toEqual([reason])
 
@@ -415,7 +418,7 @@ test('JSON format operators preserve recoverable source errors', async () => {
     stringifySource
       .jsonStringify()
       .errors((error) => stringifySeen.push(error))
-      .toPromise(),
+      .toArray(),
   ).resolves.toEqual(['[1', ']'])
   expect(stringifySeen).toEqual([reason])
 })

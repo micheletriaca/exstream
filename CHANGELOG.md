@@ -5,6 +5,24 @@ first public release after 0.25.0 and consolidates the work developed through
 the internal 0.26–0.33 milestones. npm releases and Git history remain the
 authoritative record for earlier versions.
 
+## [Unreleased]
+
+### Changed
+
+- Terminal completion now has a uniform Promise contract through `toArray()`,
+  `single()`, `drain()`, and `pipeTo()`.
+- Exstream instances implement `Symbol.asyncIterator` directly.
+- Node interoperability now uses the readable-only `toNodeReadable()` adapter;
+  `toWebReadable()` remains the corresponding Web Streams adapter.
+
+### Removed
+
+- The overlapping `toPromise()`, `values()`, `valuesSync()`, callback
+  `toArray()`, `value()`, `each()`, `pull()`, `pipe()`, `toAsyncIterator()`, and
+  `toNodeStream()` APIs.
+- Standalone and curried terminal exports. Terminal operations are instance
+  methods in 1.0.
+
 ## [0.34.0] - 2026-08-16
 
 ### Added

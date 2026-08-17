@@ -90,7 +90,7 @@ const runCase = async (selectedMode) => {
   }
 
   if (selectedMode === 'json-select' || selectedMode === 'json-select-sparse') {
-    _(input.jsonChunks).json({ path: '$.data.rows[*]' }).each(mark)
+    await _(input.jsonChunks).json({ path: '$.data.rows[*]' }).tap(mark).drain()
   } else if (selectedMode === 'jsonstream-select' || selectedMode === 'jsonstream-select-sparse') {
     await new Promise((resolve, reject) => {
       const parser = JSONStream.parse(['data', 'rows', true])
@@ -104,7 +104,7 @@ const runCase = async (selectedMode) => {
     const document = JSON.parse(input.json.toString('utf8'))
     for (const value of document.data.rows) mark(value)
   } else if (selectedMode === 'jsonl') {
-    _(input.jsonlChunks).jsonl().each(mark)
+    await _(input.jsonlChunks).jsonl().tap(mark).drain()
   } else if (selectedMode === 'json-stringify') {
     let outputChunks = 0
     const output = await _(input.values)
@@ -116,7 +116,7 @@ const runCase = async (selectedMode) => {
         if ((outputChunks & 8191) === 0) sampleMemory(baseline, peak)
       })
       .reduce((chunks) => chunks + 1, 0)
-      .value()
+      .single()
     count = input.values.length
     if (output !== count + 1) throw Error(`unexpected JSON output chunks: ${output}`)
   } else {
@@ -130,7 +130,7 @@ const runCase = async (selectedMode) => {
         if ((outputChunks & 8191) === 0) sampleMemory(baseline, peak)
       })
       .reduce((chunks) => chunks + 1, 0)
-      .value()
+      .single()
     count = output
   }
 

@@ -11,7 +11,7 @@ test('unordered promises', async () => {
     .massThen((x) => x * 2)
     .massThen((x) => x * 2)
     .resolve(2, false)
-    .toPromise()
+    .toArray()
 
   expect(res).toEqual([12, 8, 16])
 })
@@ -26,7 +26,7 @@ test('ordered promises', async () => {
     .massThen((x) => x * 2)
     .massThen((x) => x * 2)
     .resolve(3)
-    .toPromise()
+    .toArray()
 
   expect(res).toEqual([8, 12, 16])
 })
@@ -38,7 +38,7 @@ test('promises hl style', async () => {
   const res = await _([2, 3, 4])
     .map((x) => _(sleep(x)))
     .merge(3, true)
-    .toPromise()
+    .toArray()
 
   expect(res).toEqual([2, 3, 4])
 })

@@ -27,19 +27,18 @@ const writableWithSentinels = () => {
   }
 }
 
-test('pipe removes every listener it installs on a destination', async () => {
+test('pipeTo removes every listener it installs on a destination', async () => {
   const { destination, events, removeSentinels } = writableWithSentinels()
   const baseline = listenerSnapshot(destination, events)
 
-  _([1, 2, 3]).pipe(destination)
-  await finished(destination, { cleanup: true })
+  await _([1, 2, 3]).pipeTo(destination)
   await nextTurn()
 
   expect(listenerSnapshot(destination, events)).toEqual(baseline)
   removeSentinels()
 })
 
-test('destroying a destination early stops its source and removes pipe listeners', async () => {
+test('destroying a destination early aborts its source and removes pipeTo listeners', async () => {
   let close
   const closed = new Promise((resolve) => {
     close = resolve
@@ -60,23 +59,23 @@ test('destroying a destination early stops its source and removes pipe listeners
     next()
   })
 
-  source.pipe(destination)
+  const transfer = source.pipeTo(destination)
   await closed
+  await expect(transfer).rejects.toMatchObject({ code: 'ERR_STREAM_PREMATURE_CLOSE' })
   await nextTurn()
 
-  expect(source.state).toBe('destroyed')
+  expect(source.state).toBe('aborted')
   expect(produced).toBe(1)
   expect(listenerSnapshot(destination, events)).toEqual(baseline)
   destination.off('close', close)
 })
 
-test('pipe with end disabled releases destination listeners when its source ends', async () => {
+test('pipeTo with end disabled releases destination listeners when its source ends', async () => {
   const { destination, events, removeSentinels } = writableWithSentinels()
   const baseline = listenerSnapshot(destination, events)
   const source = _([1, 2, 3])
 
-  source.pipe(destination, { end: false })
-  await new Promise((resolve) => source.once('end', resolve))
+  await source.pipeTo(destination, { end: false })
   await nextTurn()
 
   expect(destination.writableEnded).toBe(false)
@@ -104,7 +103,7 @@ test('fork and merge release stream listeners after completion', async () => {
   const second = source.fork().map((value) => value * 3)
   const merged = _([first, second]).merge(2, false)
 
-  expect(await merged.toPromise()).toHaveLength(8)
+  expect(await merged.toArray()).toHaveLength(8)
   await nextTurn()
 
   for (const stream of [source, first, second, merged]) {

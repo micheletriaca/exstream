@@ -21,7 +21,7 @@ test('the portable runtime consumes async iterables without a Node stream', asyn
     },
   }
 
-  await expect(_(iterable).toPromise()).resolves.toEqual([1, 2])
+  await expect(_(iterable).toArray()).resolves.toEqual([1, 2])
 })
 
 test('the portable runtime forwards async iterator rejection', async () => {
@@ -34,7 +34,7 @@ test('the portable runtime forwards async iterator rejection', async () => {
     },
   }
 
-  await expect(_(iterable).toPromise()).rejects.toBe(reason)
+  await expect(_(iterable).toArray()).rejects.toBe(reason)
 })
 
 test('destroying the portable async iterable calls return', async () => {

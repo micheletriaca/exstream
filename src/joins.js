@@ -115,7 +115,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     }
   }
 
-  s.toPromise()
+  s.toArray()
     .then((subStreams) => {
       if (subStreams.length !== 2) {
         throw Error('.sortedJoin() can merge only 2 exstream instances')
@@ -244,8 +244,8 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     if (pullData) pullData()
   }).on('end', () => {
     w = n = () => {}
-    s1Transform.destroy()
-    s2Transform.destroy()
+    s1Transform?.destroy()
+    s2Transform?.destroy()
     w = n = pullData = a = b = bKey = aContext = bContext = cb1 = cb2 = null
   })
   return result

@@ -1,9 +1,5 @@
 const webCodecs = require('./web-codecs.js')
 
-const unsupported = (operation) => () => {
-  throw Error(`${operation} is not available in this runtime`)
-}
-
 const runtime = {
   asBytes: webCodecs.asUint8Array,
   bytesEqual: webCodecs.bytesEqual,
@@ -14,7 +10,6 @@ const runtime = {
   concatTextBytes: webCodecs.concatTextBytes,
   createBase64Encoder: webCodecs.createBase64Encoder,
   EventBase: class {},
-  createNodeTransform: unsupported('toNodeStream()'),
   finished: null,
   isNodeStream: () => false,
   isWebReadableStream: (value) =>

@@ -1,6 +1,6 @@
 const _ = require('../src/index.js')
 
-test('uniqBy keeps distinct composite keys without string coercion collisions', () => {
+test('uniqBy keeps distinct composite keys without string coercion collisions', async () => {
   const values = [
     { id: 1, first: 'a_', second: 'b' },
     { id: 2, first: 'a', second: '_b' },
@@ -9,7 +9,7 @@ test('uniqBy keeps distinct composite keys without string coercion collisions', 
     { id: 5, first: 'a_', second: 'b' },
   ]
 
-  expect(_(values).uniqBy(['first', 'second']).values()).toEqual(values.slice(0, 4))
+  expect(await _(values).uniqBy(['first', 'second']).toArray()).toEqual(values.slice(0, 4))
 })
 
 test.each([
@@ -26,7 +26,7 @@ test.each([
   const values = await _([rejected])
     .resolve()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(values).toEqual([])
   expect(errors).toHaveLength(1)
@@ -42,7 +42,7 @@ test('map preserves the source input when an async callback rejects with a primi
     .map(async () => Promise.reject('primitive failure'))
     .resolve()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(errors).toHaveLength(1)
   expect(errors[0]).toBeInstanceOf(Error)
@@ -59,7 +59,7 @@ test('resolve normalizes a cyclic rejection object without throwing while format
   await _([Promise.reject(reason)])
     .resolve()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(errors).toHaveLength(1)
   expect(errors[0]).toBeInstanceOf(Error)
@@ -119,10 +119,10 @@ test.each([
 })
 
 test('numeric strings remain accepted for historically coerced limits', async () => {
-  expect(_([1, 2, 3]).batch('2').values()).toEqual([[1, 2], [3]])
+  expect(await _([1, 2, 3]).batch('2').toArray()).toEqual([[1, 2], [3]])
   expect(
     await _([Promise.resolve(1), Promise.resolve(2)])
       .resolve('2')
-      .toPromise(),
+      .toArray(),
   ).toEqual([1, 2])
 })

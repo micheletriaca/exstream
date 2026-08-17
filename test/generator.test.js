@@ -10,7 +10,7 @@ test('async exstream', async () => {
       next()
     } else write(_.nil)
   })
-  const res = await sourceStream.tap(() => expect(sourceStream.paused).toBe(false)).toPromise()
+  const res = await sourceStream.tap(() => expect(sourceStream.paused).toBe(false)).toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
@@ -30,7 +30,7 @@ test('generator backpressure', async () => {
       return x
     })
     .resolve()
-    .toPromise()
+    .toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
 
@@ -44,7 +44,7 @@ test('recursive generator', async () => {
       }
     })
 
-  const res = await _(gen()).toPromise()
+  const res = await _(gen()).toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
@@ -57,7 +57,7 @@ test('switch source', async () => {
       } else next(_([6, 7, 8, 9, 10]))
     })
 
-  const res = await _(gen()).toPromise()
+  const res = await _(gen()).toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
@@ -71,11 +71,7 @@ test('switch source + backpressure', async () => {
     })
 
   const res = []
-  await new Promise((resolve) => {
-    _(gen())
-      .pipe(h.getSlowWritable(res, 1, 0))
-      .on('finish', resolve)
-  })
+  await _(gen()).pipeTo(h.getSlowWritable(res, 1, 0))
 
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })

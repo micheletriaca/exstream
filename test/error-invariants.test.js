@@ -25,8 +25,8 @@ test('normalized error-like objects preserve their supplied stack', () => {
   expect(wrapped.exstreamInput).toBe('input')
 })
 
-test('synchronous values rethrows an error record unchanged', () => {
+test('toArray rejects a synchronous error record unchanged', async () => {
   const reason = Error('synchronous failure')
 
-  expect(() => _([reason]).values()).toThrow(reason)
+  await expect(_([reason]).toArray()).rejects.toBe(reason)
 })

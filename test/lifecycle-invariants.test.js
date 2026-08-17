@@ -4,7 +4,7 @@ const { nextTurn } = require('./invariant-helpers.js')
 test('concurrent start calls consume a manually started source exactly once', async () => {
   const source = _([1, 2, 3])
   const end = vi.fn()
-  const result = source.fork(true).once('end', end).toPromise()
+  const result = source.fork(true).once('end', end).toArray()
 
   const firstStart = source.start()
   expect(source.start()).toBe(firstStart)
@@ -83,7 +83,9 @@ test('drain rejects an unhandled record error', async () => {
 test('functional drain consumes a stream without collecting its values', async () => {
   const values = []
 
-  await _.drain(_([1, 2]).tap((value) => values.push(value)))
+  await _([1, 2])
+    .tap((value) => values.push(value))
+    .drain()
 
   expect(values).toEqual([1, 2])
 })
@@ -183,7 +185,7 @@ test('aborting the only transformed branch propagates to its source', () => {
 test('aborting one reliable fork leaves a sibling attached', async () => {
   const source = _([1, 2, 3])
   const aborted = source.fork(true)
-  const siblingResult = source.fork(true).toPromise()
+  const siblingResult = source.fork(true).toArray()
 
   aborted.abort('branch stopped')
 
@@ -246,7 +248,7 @@ test('ending a completed stream does not restart its source or emit more events'
   const end = vi.fn()
   source.once('end', end)
 
-  expect(await source.toPromise()).toEqual([1, 2, 3])
+  expect(await source.toArray()).toEqual([1, 2, 3])
   source.end()
   source.destroy()
   await source.start()

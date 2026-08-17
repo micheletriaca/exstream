@@ -5,7 +5,7 @@ test('an external AbortSignal aborts a source and rejects its sink', async () =>
   const controller = new AbortController()
   const reason = Error('external cancellation')
   const source = _(null, { signal: controller.signal })
-  const result = source.toPromise()
+  const result = source.toArray()
 
   controller.abort(reason)
 
@@ -37,8 +37,8 @@ test('aborting one fork rejects its sink without cancelling a sibling', async ()
   const source = _([1, 2, 3])
   const cancelled = source.fork(true)
   const sibling = source.fork(true)
-  const cancelledResult = cancelled.toPromise()
-  const siblingResult = sibling.toPromise()
+  const cancelledResult = cancelled.toArray()
+  const siblingResult = sibling.toArray()
 
   cancelled.abort(reason)
 
@@ -64,7 +64,7 @@ test('map receives a signal that cancels pending work after downstream abort', a
       }),
   )
   const resolved = mapped.resolve()
-  const result = resolved.toPromise()
+  const result = resolved.toArray()
   await waitFor(() => taskSignal, 'map did not start its task')
 
   resolved.abort(reason)
@@ -88,7 +88,7 @@ test('context-aware async predicates and maps receive their branch signal', asyn
       signals.push(context.signal)
       return value
     })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([2, 3])
   expect(signals).toHaveLength(5)
@@ -98,10 +98,10 @@ test('context-aware async predicates and maps receive their branch signal', asyn
   }
 })
 
-test('normal completion does not abort the stream signal', () => {
+test('normal completion does not abort the stream signal', async () => {
   const source = _([1])
 
-  expect(source.values()).toEqual([1])
+  expect(await source.toArray()).toEqual([1])
   expect(source.signal.aborted).toBe(false)
   source.destroy()
   expect(source.signal.aborted).toBe(false)

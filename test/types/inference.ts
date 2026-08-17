@@ -156,12 +156,11 @@ type DeadLetter = Expect<
 >
 
 const webReadable: ReadableStream<number> = exstream([1]).toWebReadable()
-const asyncIterator: AsyncIterableIterator<number> = exstream([1]).toAsyncIterator()
+const asyncIterator: AsyncIterableIterator<number> = exstream([1])[Symbol.asyncIterator]()
 const pipeDestination: exstream.NodeWritableLike<number> = {} as exstream.NodeWritableLike<number>
 const pipeCompletion: Promise<void> = exstream([1]).pipeTo(pipeDestination)
-const curriedPipeCompletion: Promise<void> = exstream.pipeTo(pipeDestination)(exstream([1]))
 const errorOrigin: exstream.ErrorOrigin = exstream.errorInfo(Error('failure')).origin
-const nodeTransform: exstream.NodeTransformLike<unknown, number> = exstream([1]).toNodeStream()
+const nodeReadable: exstream.NodeReadableLike<number> = exstream([1]).toNodeReadable()
 
 exstream([{ a: 1 }]).map((value) => {
   // @ts-expect-error Direct mutation cannot add a field to the inferred object type.
@@ -175,7 +174,7 @@ void batchInput
 void contributingContext
 void webReadable
 void asyncIterator
-void nodeTransform
+void nodeReadable
 void typedErrorData
 type Used =
   | EnrichedValue
@@ -199,7 +198,6 @@ type Used =
   | AggregatedPipelineValue
   | NestedPipelineValue
   | typeof pipeCompletion
-  | typeof curriedPipeCompletion
   | typeof errorOrigin
   | ForkValue
   | ForkContext

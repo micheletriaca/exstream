@@ -23,7 +23,7 @@ test('resolve(n) never runs more than n promises concurrently', async () => {
         }),
     )
     .resolve(parallelism, false)
-    .toPromise()
+    .toArray()
 
   await waitFor(
     () => releases.length >= parallelism,
@@ -60,7 +60,7 @@ test('merge(n) never activates more than n source streams concurrently', async (
       write(_.nil)
     }),
   )
-  const resultPromise = _(streams).merge(parallelism, false).toPromise()
+  const resultPromise = _(streams).merge(parallelism, false).toArray()
 
   await waitFor(
     () => releases.length >= parallelism,
@@ -94,7 +94,7 @@ test('resolve preserves input order only when requested', async () => {
       return orderedGates[value].promise.then(() => value)
     })
     .resolve(3, true)
-    .toPromise()
+    .toArray()
   const unorderedResult = _(values)
     .map((value) => {
       unorderedStarted.push(value)
@@ -102,7 +102,7 @@ test('resolve preserves input order only when requested', async () => {
     })
     .resolve(3, false)
     .tap((value) => unorderedEmitted.push(value))
-    .toPromise()
+    .toArray()
 
   await waitFor(() => orderedStarted.length === 3 && unorderedStarted.length === 3)
 
@@ -145,7 +145,7 @@ test('ordered merge activates n streams but emits each complete stream in input 
   ])
     .merge(2, true)
     .tap((value) => emitted.push(value))
-    .toPromise()
+    .toArray()
 
   await waitFor(() => active === 2, 'ordered merge did not activate both streams')
   secondGate.resolve()

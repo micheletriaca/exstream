@@ -1,7 +1,7 @@
 const _ = require('../src/index.js')
 
 test('CSV maxRecordBytes stops the parser with a located error', async () => {
-  const result = _(['a,b\n12345,2\n']).csv({ maxRecordBytes: 5 }).toPromise()
+  const result = _(['a,b\n12345,2\n']).csv({ maxRecordBytes: 5 }).toArray()
 
   await expect(result).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_MAX_RECORD_BYTES',
@@ -14,7 +14,7 @@ test('CSV maxRecordBytes stops the parser with a located error', async () => {
 })
 
 test('CSV maxColumns reports the field and physical location', async () => {
-  const result = _(['a,b,c\n']).csv({ maxColumns: 2 }).toPromise()
+  const result = _(['a,b,c\n']).csv({ maxColumns: 2 }).toArray()
 
   await expect(result).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_MAX_COLUMNS',
@@ -26,7 +26,7 @@ test('CSV maxColumns reports the field and physical location', async () => {
 })
 
 test('CSV reports an unterminated quote at end of input', async () => {
-  const result = _(['id,value\n1,"first\nsecond']).csv({ header: true }).toPromise()
+  const result = _(['id,value\n1,"first\nsecond']).csv({ header: true }).toArray()
 
   await expect(result).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_UNTERMINATED_QUOTE',
@@ -38,7 +38,7 @@ test('CSV reports an unterminated quote at end of input', async () => {
 })
 
 test('CSV reports invalid characters after a closing quote', async () => {
-  const result = _(['"value"unexpected,next\n']).csv().toPromise()
+  const result = _(['"value"unexpected,next\n']).csv().toArray()
 
   await expect(result).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_PARSE',
@@ -53,7 +53,7 @@ test.each([
   [['"first\r\nsecond\nthird\rfourth"x\n']],
   [[...Buffer.from('"first\r\nsecond\nthird\rfourth"x\n')].map((byte) => Buffer.from([byte]))],
 ])('CSV locates errors after mixed newlines inside a quoted field', async (chunks) => {
-  const result = _(chunks).csv().toPromise()
+  const result = _(chunks).csv().toArray()
 
   await expect(result).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_PARSE',
@@ -64,11 +64,16 @@ test.each([
   })
 })
 
-test('CSV preserves its historical empty-line default and offers lossless empty records', () => {
+test('CSV preserves its historical empty-line default and offers lossless empty records', async () => {
   const input = 'a\n\n""\nb\n'
 
-  expect(_([input]).csv().values()).toEqual([['a'], [''], ['b']])
-  expect(_([input]).csv({ skipEmptyLines: false }).values()).toEqual([['a'], [''], [''], ['b']])
+  expect(await _([input]).csv().toArray()).toEqual([['a'], [''], ['b']])
+  expect(await _([input]).csv({ skipEmptyLines: false }).toArray()).toEqual([
+    ['a'],
+    [''],
+    [''],
+    ['b'],
+  ])
 })
 
 test('CSV parses UTF-16LE byte streams incrementally in Node', async () => {
@@ -77,7 +82,7 @@ test('CSV parses UTF-16LE byte streams incrementally in Node', async () => {
     bytes.subarray(index * 3, index * 3 + 3),
   )
 
-  await expect(_(chunks).csv({ encoding: 'utf16le', header: true }).toPromise()).resolves.toEqual([
+  await expect(_(chunks).csv({ encoding: 'utf16le', header: true }).toArray()).resolves.toEqual([
     { id: '1', name: '€' },
   ])
 })
@@ -101,21 +106,21 @@ test.each([
 test('CSV validates the result of a header function with location', async () => {
   const result = _(['a,b\n1,2\n'])
     .csv({ header: () => 'invalid' })
-    .toPromise()
+    .toArray()
 
   await expect(result).rejects.toBeInstanceOf(_.CsvParseError)
   await expect(result).rejects.toThrow('CSV header function must return an array at line 1')
 })
 
 test('CSV enforces limits while parsing quoted and fragmented records', async () => {
-  const tooWide = _(['"a",', '"b",', '"c"\n']).csv({ maxColumns: 2 }).toPromise()
+  const tooWide = _(['"a",', '"b",', '"c"\n']).csv({ maxColumns: 2 }).toArray()
   await expect(tooWide).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_MAX_COLUMNS',
     line: 1,
     record: 1,
   })
 
-  const tooLarge = _(['"12', '34', '56"\n']).csv({ maxRecordBytes: 5 }).toPromise()
+  const tooLarge = _(['"12', '34', '56"\n']).csv({ maxRecordBytes: 5 }).toArray()
   await expect(tooLarge).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_MAX_RECORD_BYTES',
     line: 1,
@@ -124,7 +129,7 @@ test('CSV enforces limits while parsing quoted and fragmented records', async ()
 })
 
 test('CSV handles lone CR and CRLF delimiters incrementally across chunks', async () => {
-  const values = await _(['a,b\r\n1,2\r3,4\n5,6\r7,8\r', '\n9,10\r11,12', '\r']).csv().toPromise()
+  const values = await _(['a,b\r\n1,2\r3,4\n5,6\r7,8\r', '\n9,10\r11,12', '\r']).csv().toArray()
 
   expect(values).toEqual([
     ['a', 'b'],
@@ -137,19 +142,19 @@ test('CSV handles lone CR and CRLF delimiters incrementally across chunks', asyn
   ])
 })
 
-test('CSV supports valid header callbacks, injected headers, and null options', () => {
+test('CSV supports valid header callbacks, injected headers, and null options', async () => {
   expect(
-    _(['a,b\n1,2\n'])
+    await _(['a,b\n1,2\n'])
       .csv({ header: (row) => row.map((cell) => `x-${cell}`) })
-      .values(),
+      .toArray(),
   ).toEqual([{ 'x-a': '1', 'x-b': '2' }])
   expect(
-    _(['1,2\n'])
+    await _(['1,2\n'])
       .csv({ header: ['a', 'b'] })
-      .values(),
+      .toArray(),
   ).toEqual([{ a: '1', b: '2' }])
-  expect(_(['1,2\n']).csv(null).values()).toEqual([['1', '2']])
-  expect(_(['a,b\n1,2\n']).csv({ header: [] }).values()).toEqual([{ a: '1', b: '2' }])
+  expect(await _(['1,2\n']).csv(null).toArray()).toEqual([['1', '2']])
+  expect(await _(['a,b\n1,2\n']).csv({ header: [] }).toArray()).toEqual([{ a: '1', b: '2' }])
 })
 
 test('CSV rejects non-coercible limits', () => {
@@ -158,21 +163,25 @@ test('CSV rejects non-coercible limits', () => {
   )
 })
 
-test('CSV accepts records exactly within byte and column limits on both parser paths', () => {
-  expect(_(['a,b\n']).csv({ maxColumns: 2, maxRecordBytes: 3 }).values()).toEqual([['a', 'b']])
-  expect(_(['"a","b"\n']).csv({ maxColumns: 2, maxRecordBytes: 7 }).values()).toEqual([['a', 'b']])
+test('CSV accepts records exactly within byte and column limits on both parser paths', async () => {
+  expect(await _(['a,b\n']).csv({ maxColumns: 2, maxRecordBytes: 3 }).toArray()).toEqual([
+    ['a', 'b'],
+  ])
+  expect(await _(['"a","b"\n']).csv({ maxColumns: 2, maxRecordBytes: 7 }).toArray()).toEqual([
+    ['a', 'b'],
+  ])
 })
 
 test('CSV rejects a quote that starts inside an unquoted field', async () => {
-  const result = _(['ab"c",d\n']).csv().toPromise()
+  const result = _(['ab"c",d\n']).csv().toArray()
 
   await expect(result).rejects.toThrow('Unexpected quote in unquoted CSV field')
 })
 
 test('CSV byte limits locate a multibyte UTF-8 value', async () => {
-  expect(_(['€\n']).csv({ maxRecordBytes: 3 }).values()).toEqual([['€']])
+  expect(await _(['€\n']).csv({ maxRecordBytes: 3 }).toArray()).toEqual([['€']])
 
-  await expect(_(['€\n']).csv({ maxRecordBytes: 2 }).toPromise()).rejects.toMatchObject({
+  await expect(_(['€\n']).csv({ maxRecordBytes: 2 }).toArray()).rejects.toMatchObject({
     code: 'EXSTREAM_CSV_MAX_RECORD_BYTES',
     column: 1,
   })
@@ -180,9 +189,9 @@ test('CSV byte limits locate a multibyte UTF-8 value', async () => {
 
 test('CSV ignores empty chunks and propagates source record errors', async () => {
   expect(
-    _([Buffer.alloc(0), Buffer.from('a,b\n')])
+    await _([Buffer.alloc(0), Buffer.from('a,b\n')])
       .csv()
-      .values(),
+      .toArray(),
   ).toEqual([['a', 'b']])
 
   const reason = Error('upstream CSV failure')
@@ -195,7 +204,7 @@ test('CSV ignores empty chunks and propagates source record errors', async () =>
     source
       .csv()
       .errors((error) => seen.push(error))
-      .toPromise(),
+      .toArray(),
   ).resolves.toEqual([])
   expect(seen).toEqual([reason])
 })

@@ -2,76 +2,69 @@ const _ = require('../src/index.js')
 const h = require('./helpers.js')
 
 test('merging basics', async () => {
-  const results = await new Promise((resolve) => {
-    _([_([1, 2]), _([3, 4])])
-      .merge(1)
-      .toArray(resolve)
-  })
+  const results = await _([_([1, 2]), _([3, 4])])
+    .merge(1)
+    .toArray()
 
   expect(results).toEqual([1, 2, 3, 4])
 })
 
 test('fork and merging - basics', async () => {
   const source = _([1, 2])
-  const results = await new Promise((resolve) => {
-    _([source.fork().map((i) => i * 2), source.fork().map((i) => i * 3)])
-      .merge()
-      .toArray(resolve)
-  })
+  const results = await _([source.fork().map((i) => i * 2), source.fork().map((i) => i * 3)])
+    .merge()
+    .toArray()
 
   expect(results).toEqual([2, 3, 4, 6])
 })
 
 test('fork and merging - preserve order', async () => {
   const source = _([1, 2], 'source')
-  const results = await new Promise((resolve) => {
-    _([source.fork().map((i) => i * 2), source.fork().map((i) => i * 3)], 'merge')
-      .merge(2, true)
-      .toArray(resolve)
-  })
+  const results = await _(
+    [source.fork().map((i) => i * 2), source.fork().map((i) => i * 3)],
+    'merge',
+  )
+    .merge(2, true)
+    .toArray()
 
   expect(results).toEqual([2, 4, 3, 6])
 })
 
 test('fork and merging with promises in first fork', async () => {
   const source = _([1, 2])
-  const results = await new Promise((resolve) => {
-    _([
-      source
-        .fork()
-        .map(async (i) => i * 2)
-        .resolve(),
-      source.fork().map((i) => i * 3),
-    ])
-      .merge(2, true)
-      .toArray(resolve)
-  })
+  const results = await _([
+    source
+      .fork()
+      .map(async (i) => i * 2)
+      .resolve(),
+    source.fork().map((i) => i * 3),
+  ])
+    .merge(2, true)
+    .toArray()
 
   expect(results).toEqual([2, 4, 3, 6])
 })
 
 test('fork and merging with promises in second fork', async () => {
   const source = _([1, 2])
-  const results = await new Promise((resolve) => {
-    _([
-      source.fork().map((i) => i * 2),
-      source
-        .fork()
-        .map(async (i) => i * 3)
-        .resolve(),
-    ])
-      .merge(2, true)
-      .toArray(resolve)
-  })
+  const results = await _([
+    source.fork().map((i) => i * 2),
+    source
+      .fork()
+      .map(async (i) => i * 3)
+      .resolve(),
+  ])
+    .merge(2, true)
+    .toArray()
 
   expect(results).toEqual([2, 4, 3, 6])
 })
 
-test('fork and merging - with toPromise', async () => {
+test('fork and merging - with toArray', async () => {
   const source = _([1, 2, 3, 4])
   const first = source.fork().map((i) => i * 2)
   const second = source.fork().map((i) => i * 3)
-  const results = await _([first, second]).merge(2, true).toPromise()
+  const results = await _([first, second]).merge(2, true).toArray()
   expect(results).toEqual([2, 4, 6, 8, 3, 6, 9, 12])
 })
 
@@ -87,21 +80,23 @@ test('fork and merging - promise in the source stream as well', async () => {
     .fork()
     .map(async (i) => i * 3)
     .resolve()
-  const results = await _([first, second]).merge(2, true).toPromise()
+  const results = await _([first, second]).merge(2, true).toArray()
   expect(results).toEqual([4, 6, 8, 10, 6, 9, 12, 15])
 })
 
 test('consuming fork in different "transactions" throw exception', async () => {
   const source = _([1, 2, 3])
-  source.fork().toArray(() => ({}))
+  await (() => ({}))(await source.fork().toArray())
   await new Promise((resolve) => setTimeout(resolve, 50))
 
   let ex = null
   try {
-    source
-      .fork()
-      .map((x) => x * 2)
-      .toArray(() => ({}))
+    await (() => ({}))(
+      await source
+        .fork()
+        .map((x) => x * 2)
+        .toArray(),
+    )
   } catch (e) {
     ex = e
   }
@@ -112,15 +107,15 @@ test('consuming fork in different "transactions" throw exception', async () => {
 
 test('consuming fork in different "transactions" with disable autostart', async () => {
   const source = _([1, 2, 3])
-  const firstResult = new Promise((resolve) => {
-    source.fork(true).toArray(resolve)
-  })
+  const firstResult = source.fork(true).toArray()
   const secondResult = new Promise((resolve) => {
-    setTimeout(() => {
-      source
-        .fork()
-        .map((x) => x * 2)
-        .toArray(resolve)
+    setTimeout(async () => {
+      await resolve(
+        await source
+          .fork()
+          .map((x) => x * 2)
+          .toArray(),
+      )
       source.start()
     }, 10)
   })
@@ -133,32 +128,37 @@ test('consuming fork in different "transactions" with disable autostart', async 
 test('consuming fork in setImmediate or nextTick works', async () => {
   const finished = vi.fn()
   const source = _([1, 2, 3])
-  const directResult = new Promise((resolve) => {
-    source.fork().toArray((res) => {
+  const directResult = source
+    .fork()
+    .toArray()
+    .then((res) => {
       finished()
-      resolve(res)
+      return res
     })
-  })
   const nextTickResult = new Promise((resolve) => {
-    process.nextTick(() => {
-      source
-        .fork()
-        .map((x) => x * 2)
-        .toArray((res) => {
-          finished()
-          resolve(res)
-        })
+    process.nextTick(async () => {
+      await ((res) => {
+        finished()
+        resolve(res)
+      })(
+        await source
+          .fork()
+          .map((x) => x * 2)
+          .toArray(),
+      )
     })
   })
   const immediateResult = new Promise((resolve) => {
-    setImmediate(() => {
-      source
-        .fork()
-        .map((x) => x * 2)
-        .toArray((res) => {
-          finished()
-          resolve(res)
-        })
+    setImmediate(async () => {
+      await ((res) => {
+        finished()
+        resolve(res)
+      })(
+        await source
+          .fork()
+          .map((x) => x * 2)
+          .toArray(),
+      )
     })
   })
 
@@ -189,32 +189,28 @@ test('take() in a fork', async () => {
       .resolve(),
   ])
     .merge(2, true)
-    .toPromise()
+    .toArray()
   expect(results).toEqual([4, 6, 8, 10, 6])
 })
 
-test('merging1', async () =>
-  new Promise((resolve) => {
-    const res = []
-    const s = _([1, 2, 3])
-    _([
-      s.fork().map((x) => x * 2 + 1),
-      s.fork().map((x) => x * 2 + 2),
-      s.fork().map((x) => x * 2 + 3),
-    ])
-      .merge(3, false)
-      .pipe(h.getSlowWritable(res, 5))
-      .on('finish', () => {
-        expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
-        resolve()
-      })
-  }))
+test('merging1', async () => {
+  const res = []
+  const s = _([1, 2, 3])
+  await _([
+    s.fork().map((x) => x * 2 + 1),
+    s.fork().map((x) => x * 2 + 2),
+    s.fork().map((x) => x * 2 + 3),
+  ])
+    .merge(3, false)
+    .pipeTo(h.getSlowWritable(res, 5))
+  expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
+})
 
 test('merging3', async () => {
   let excep = false
   await _([1, 2])
     .merge()
-    .toPromise()
+    .toArray()
     .catch(() => {
       excep = true
     })
@@ -241,14 +237,14 @@ test('merge a stream of streams', async () => {
   ])
     .map((x) => _(x).through(h.getSlowWritable(res, 0, 0), { writable: true }))
     .merge(1)
-    .toPromise()
+    .toArray()
   expect(res).toEqual([1, 2, 3, 4, 5, 6])
 })
 
 test('writable streams cannot be wrapped in an exstream instance', async () => {
   let ex = null
   await _(h.getSlowWritable([], 0, 0))
-    .toPromise()
+    .toArray()
     .catch((e) => void (ex = e))
   expect(ex).not.toBe(null)
 })
@@ -272,7 +268,7 @@ test('complex control flow with through, fork, merge and writable', async () => 
     s.fork().through(h.getSlowWritable(res2, 0, 0), { writable: true }),
   ])
     .merge()
-    .toPromise()
+    .toArray()
 
   expect(res).toEqual([2, 4, 6])
   expect(res3).toEqual([2, 4, 6])

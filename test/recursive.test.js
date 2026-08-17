@@ -29,12 +29,12 @@ const incrementAsync = ({ begin, end }) =>
 test('iterate', async () => {
   const values = await _(increment({ begin: 0, end: 10 }))
     // .tap(console.log)
-    .toPromise()
+    .toArray()
   expect(values).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
 test('iterateAsync', async () => {
-  const values = await _(incrementAsync({ begin: 0, end: 10 })).toPromise()
+  const values = await _(incrementAsync({ begin: 0, end: 10 })).toArray()
   expect(values).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
@@ -42,7 +42,7 @@ test('iteratePassingStream', async () => {
   const values = await _((push, next) => {
     push(1)
     next(_([1, 2, 3]))
-  }).values()
+  }).toArray()
   expect(values).toEqual([1, 1, 2, 3])
 })
 
@@ -56,7 +56,7 @@ test('iteratePassingGenerator', async () => {
     }
   }
 
-  const values = await _(gen(0)).values()
+  const values = await _(gen(0)).toArray()
   expect(values).toEqual([0, 1, 2, 3, 4])
 })
 
@@ -72,7 +72,7 @@ test('recursive passing a generator - another example', async () => {
     })
 
   const questions = [-1, 2, -3, -5]
-  const res = await _(generator(questions)).toPromise()
+  const res = await _(generator(questions)).toArray()
 
   expect(res).toEqual([-5, -3])
 })

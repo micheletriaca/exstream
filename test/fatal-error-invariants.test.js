@@ -6,8 +6,8 @@ test('a fatal error rejects every reliable branch and aborts the graph', async (
   const source = _()
   const first = source.fork(true)
   const second = source.fork(true)
-  const firstResult = first.toPromise()
-  const secondResult = second.toPromise()
+  const firstResult = first.toArray()
+  const secondResult = second.toArray()
 
   source.write(1)
   source.fail(reason)
@@ -24,7 +24,7 @@ test('a fatal error bypasses record error handlers', async () => {
   const reason = Error('not recoverable')
   const source = _()
   const errors = vi.fn()
-  const result = source.errors(errors).toPromise()
+  const result = source.errors(errors).toArray()
 
   source.fail(reason)
 
@@ -37,8 +37,8 @@ test('failing one branch aborts its source and every sibling', async () => {
   const source = _()
   const failed = source.fork(true)
   const sibling = source.fork(true)
-  const failedResult = failed.toPromise()
-  const siblingResult = sibling.toPromise()
+  const failedResult = failed.toArray()
+  const siblingResult = sibling.toArray()
 
   failed.fail(reason)
 
@@ -50,7 +50,7 @@ test('failing one branch aborts its source and every sibling', async () => {
 
 test('fatal non-Error reasons are normalized and preserve their input', async () => {
   const source = _()
-  const result = source.toPromise()
+  const result = source.toArray()
   const input = { id: 42 }
   const reason = { message: 'remote fatal', code: 'REMOTE_FATAL' }
 
@@ -89,8 +89,8 @@ test('fatal errors reach observers and release the whole graph', async () => {
   const reason = Error('observed fatal')
   const source = _()
   const observer = source.observe()
-  const mainResult = source.toPromise()
-  const observerResult = observer.toPromise()
+  const mainResult = source.toArray()
+  const observerResult = observer.toArray()
 
   source.fail(reason)
 
@@ -106,7 +106,7 @@ test.each([false, true])(
     const reason = Error('fatal substream')
     const substream = _()
     const merged = _([substream]).merge(1, preserveOrder)
-    const result = merged.toPromise()
+    const result = merged.toArray()
     await waitFor(() => substream.state === 'running', 'merge did not start its substream')
 
     substream.fail(reason)

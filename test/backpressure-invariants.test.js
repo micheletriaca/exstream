@@ -42,7 +42,7 @@ test('a slow reliable fork stops the source and bounds run-ahead', async () => {
   const fastResult = source
     .fork(true)
     .tap((value) => fastValues.push(value))
-    .toPromise()
+    .toArray()
   const slow = controlledConsumer(source.fork(true))
 
   await source.start()
@@ -91,9 +91,9 @@ test('a blocked observer does not slow the main flow', async () => {
       })
       .once('error', reject)
   })
-  source.observe().pipe(observerWritable)
+  source.observe().pipeTo(observerWritable)
 
-  const mainResult = await source.toPromise()
+  const mainResult = await source.toArray()
 
   expect(mainResult).toEqual(Array.from({ length: total }, (_, index) => index))
   expect(produced).toBe(total)

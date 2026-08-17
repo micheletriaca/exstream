@@ -6,8 +6,8 @@ const dataset = [
   { id: 3, value: '3', parent: { id: 'p3' } },
 ]
 
-test('keyBy', () => {
-  const res = _(dataset).keyBy('id').value()
+test('keyBy', async () => {
+  const res = await _(dataset).keyBy('id').single()
   expect(res).toEqual({
     1: { id: 1, value: '1', parent: { id: 'p1' } },
     2: { id: 2, value: '2', parent: { id: 'p2' } },
@@ -15,8 +15,8 @@ test('keyBy', () => {
   })
 })
 
-test('keyByNested', () => {
-  const res = _(dataset).keyBy('parent.id').value()
+test('keyByNested', async () => {
+  const res = await _(dataset).keyBy('parent.id').single()
   expect(res).toEqual({
     p1: { id: 1, value: '1', parent: { id: 'p1' } },
     p2: { id: 2, value: '2', parent: { id: 'p2' } },
@@ -24,10 +24,10 @@ test('keyByNested', () => {
   })
 })
 
-test('keyByFn', () => {
-  const res = _(dataset)
+test('keyByFn', async () => {
+  const res = await _(dataset)
     .keyBy((x) => x.parent.id)
-    .value()
+    .single()
   expect(res).toEqual({
     p1: { id: 1, value: '1', parent: { id: 'p1' } },
     p2: { id: 2, value: '2', parent: { id: 'p2' } },
@@ -35,27 +35,27 @@ test('keyByFn', () => {
   })
 })
 
-test('wrong / missing key', () => {
+test('wrong / missing key', async () => {
   const error = vi.fn()
-  const res = _(dataset).keyBy('wrong').errors(error).value()
+  const res = await _(dataset).keyBy('wrong').errors(error).single()
   // it fails because more than 1 item is keyed by _.nil
   expect(res).toBeUndefined()
   expect(error).toHaveBeenCalledTimes(1)
 })
 
-test('multiple values per key', () => {
+test('multiple values per key', async () => {
   const error = vi.fn()
-  _([...dataset, { id: 3, value: '4' }])
+  await _([...dataset, { id: 3, value: '4' }])
     .keyBy('id')
     .errors(error)
-    .value()
+    .single()
   expect(error).toHaveBeenCalledTimes(1)
 })
 
-test('key by null', () => {
-  const res = _([{ a: 1 }, { a: null }])
+test('key by null', async () => {
+  const res = await _([{ a: 1 }, { a: null }])
     .keyBy('a')
-    .value()
+    .single()
 
   expect(Object.keys(res)).toEqual(['1'])
   expect(JSON.stringify(res)).toBe('{"1":{"a":1}}')

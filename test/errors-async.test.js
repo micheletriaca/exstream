@@ -15,17 +15,17 @@ test('throw in async mapping', async () => {
         expect(error.message).toEqual('big booom in the async pipeline')
         push(error)
       })
-      .toPromise()
+      .toArray()
   } catch (error) {
     expect(error.message).toEqual('big booom in the async pipeline')
   }
 })
 
-test('throw in sync mapping', () => {
+test('throw in sync mapping', async () => {
   // if the flow is sync, the errors are immediately thrown
   expect.assertions(2)
   try {
-    __([1])
+    await __([1])
       .map(() => {
         throw new Error('big booom in the sync pipeline')
       })
@@ -33,7 +33,7 @@ test('throw in sync mapping', () => {
         expect(error.message).toEqual('big booom in the sync pipeline')
         push(error)
       })
-      .values()
+      .toArray()
   } catch (error) {
     expect(error.message).toEqual('big booom in the sync pipeline')
   }

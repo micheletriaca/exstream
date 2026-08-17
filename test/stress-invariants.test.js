@@ -33,11 +33,11 @@ test('reliable fan-out remains bounded with a slow writer over many records', as
     },
   })
   const slowDone = finished(slowWriter, { cleanup: true })
-  source.fork(true).pipe(slowWriter)
+  source.fork(true).pipeTo(slowWriter)
   const fastResult = source
     .fork(true)
     .tap((value) => fastValues.push(value))
-    .toPromise()
+    .toArray()
 
   await source.start()
   await slowDone
@@ -70,7 +70,7 @@ test('a late transform error drains through a backpressured writer without data 
       return value
     })
     .errors((error) => errors.push(error))
-    .pipe(destination)
+    .pipeTo(destination)
 
   await destinationDone
 
@@ -100,7 +100,7 @@ test('destroy terminates a backpressured fork/merge graph without later activity
   const first = source.fork(true).map((value) => `a${value}`)
   const second = source.fork(true).map((value) => `b${value}`)
   const merged = _([first, second]).merge(2, false)
-  merged.pipe(destination)
+  merged.pipeTo(destination)
 
   await source.start()
   await waitFor(() => callbacks.length === 1, 'destination did not apply backpressure')
@@ -126,7 +126,7 @@ test('repeated fork/merge lifecycles do not accumulate listeners', async () => {
     const second = source.fork().map((value) => value * 3)
     const merged = _([first, second]).merge(2, false)
 
-    expect(await merged.toPromise()).toHaveLength(6)
+    expect(await merged.toArray()).toHaveLength(6)
     for (const stream of [source, first, second, merged]) {
       expect(stream.eventNames()).toEqual([])
     }

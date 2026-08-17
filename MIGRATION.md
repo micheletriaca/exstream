@@ -1,4 +1,38 @@
-# TypeScript and module migration
+# Migrating to 1.0
+
+## Terminal operations
+
+Terminal methods now have one predictable contract: methods that represent
+completion return a promise, regardless of whether every upstream stage happens
+to be synchronous.
+
+| Before                                                         | 1.0                                                                 |
+| -------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `toPromise()`, `values()`, `valuesSync()`, `toArray(callback)` | `await toArray()`                                                   |
+| `value()`                                                      | `await single()`                                                    |
+| `toAsyncIterator()`                                            | iterate the stream directly with `for await`                        |
+| `toNodeStream()`                                               | `toNodeReadable()`                                                  |
+| `pipe(destination)`                                            | `await pipeTo(destination)`                                         |
+| `each(callback)`                                               | `tap(callback).drain()`                                             |
+| repeated `pull()` calls                                        | use the async iterator returned by `stream[Symbol.asyncIterator]()` |
+
+`drain()` and `pipeTo()` remain and always return `Promise<void>`.
+`toWebReadable()` remains the Web Streams adapter. Terminal methods are
+instance-only; their standalone and curried exports were removed.
+
+```js
+const rows = await exstream(source).map(normalize).toArray()
+const row = await exstream(source).find(matches).single()
+
+for await (const row of exstream(source).map(normalize)) {
+  await writeRow(row)
+}
+```
+
+`single()` resolves to `undefined` for an empty stream and rejects if a second
+value is produced. It consumes through the end to enforce that cardinality.
+
+## TypeScript and module migration in 0.33
 
 The 0.33 package keeps the existing CommonJS API and adds typed ESM, Node, core,
 and browser entry points. The packaging changes do not alter runtime pipeline
@@ -28,7 +62,7 @@ import webExstream from 'exstream.js/web'
 ```
 
 `core` and `web` select the portable runtime. Node-only conversion such as
-`toNodeStream()` is unavailable there.
+`toNodeReadable()` is unavailable there.
 
 ## Value inference
 

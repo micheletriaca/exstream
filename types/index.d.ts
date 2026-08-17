@@ -112,10 +112,6 @@ declare namespace exstream {
     off(event: string | symbol, listener: (...args: any[]) => void): this
   }
 
-  /** A Node transform returned by toNodeStream(). */
-  interface NodeTransformLike<Input = unknown, Output = Input>
-    extends NodeReadableLike<Output>, NodeWritableLike<Input> {}
-
   type GeneratorWrite<T> = (value: T | Error | DataValue<T> | Nil) => boolean
   type GeneratorNext<T> = (source?: StreamSource<T>) => void
   type StreamGenerator<T> = (write: GeneratorWrite<T>, next: GeneratorNext<T>) => void
@@ -318,9 +314,6 @@ declare namespace exstream {
     signal?: AbortSignal
     strategy?: QueuingStrategy<unknown>
   }
-  interface AsyncIteratorOptions {
-    signal?: AbortSignal
-  }
   interface ThroughOptions {
     /** Treat a Node stream as write-only. */
     writable?: boolean
@@ -430,6 +423,8 @@ declare namespace exstream {
     removeAllListeners(event?: string | symbol): this
     /** Sets the listener warning limit where the runtime supports it. */
     setMaxListeners(count: number): this
+    /** Iterates lazily with backpressure and cancels the branch when iteration stops early. */
+    [Symbol.asyncIterator](): AsyncIterableIterator<T>
 
     /** Writes one value. Error objects become error records; use writeData() to keep them as data. */
     write(value: T | Error | DataValue<T> | Nil): boolean
@@ -463,18 +458,6 @@ declare namespace exstream {
     consumeSync<U = T, NextContext extends object = C>(
       fn: SyncConsumer<T, U, C, NextContext>,
     ): Exstream<U, NextContext>
-    /** Reads the next value, using a callback when provided. */
-    pull(): Promise<T | Nil>
-    pull(
-      fn: (
-        error: ExstreamError<T> | null | undefined,
-        value: T | Nil,
-        context: C | undefined,
-      ) => void,
-    ): void
-    /** Runs a function for every value and starts the stream. */
-    each(fn: (value: T, context: C) => void): void
-
     /** Transforms every value and keeps the input beside the output. */
     map<U>(
       fn: (value: T, context: CallbackContext<T, C>) => U,
@@ -651,13 +634,6 @@ declare namespace exstream {
     /** Periodically yields to the event loop during long synchronous runs. */
     makeAsync(maxSyncExecutionTime: number): Exstream<T, C>
 
-    /** Passes values to a Node-style writable, a Web WritableStream or another Exstream. */
-    pipe<D extends NodeWritableLike<T>>(destination: D, options?: PipeOptions): D
-    pipe(destination: WritableStream<T>, options?: PipeOptions): Promise<WritableStream<T>>
-    pipe<U, NextContext extends object>(
-      destination: Exstream<U, NextContext> | Pipeline<T, U, NextContext>,
-      options?: PipeOptions,
-    ): Exstream<U, NextContext>
     /**
      * Writes every value to a destination and settles only when the transfer is complete.
      * Unhandled record errors, source failures, destination failures and cancellation reject the
@@ -694,16 +670,12 @@ declare namespace exstream {
       T extends Exstream<infer U, any> ? U : never,
       T extends Exstream<any, infer InnerC> ? InnerC : C
     >
-    /** Converts values to a Node Transform stream. */
-    toNodeStream(options?: object): NodeTransformLike<unknown, T>
+    /** Adapts this pipeline to a lazy Node readable stream. */
+    toNodeReadable(options?: object | null): NodeReadableLike<T>
     /** Converts values to a Web ReadableStream. */
     toWebReadable(options?: ToWebReadableOptions | null): ReadableStream<T>
-    /** Returns an async iterator that respects stream errors and cancellation. */
-    toAsyncIterator(options?: AsyncIteratorOptions | null): AsyncIterableIterator<T>
-    /** Collects all values and calls the callback. */
-    toArray(fn: (values: T[], context: AggregateContext<T[], C>) => void): void
-    /** Collects all values in a promise. */
-    toPromise(): Promise<T[]>
+    /** Collects every output value and settles when the pipeline completes. */
+    toArray(): Promise<T[]>
     /**
      * Runs this pipeline to completion while discarding every output value.
      * Use this terminal operation for side-effecting pipelines that have no writer, or whenever
@@ -711,12 +683,8 @@ declare namespace exstream {
      * demand and its promise settles when the pipeline finishes or encounters an unhandled error.
      */
     drain(): Promise<void>
-    /** Returns the only value, and fails when more than one value exists. */
-    value(): T | undefined | Promise<T | undefined>
-    /** Returns values synchronously and fails for an asynchronous stream. */
-    valuesSync(): T[]
-    /** Returns values now for a synchronous stream, or in a promise for an asynchronous stream. */
-    values(): T[] | Promise<T[]>
+    /** Returns the only value, undefined for empty input, and rejects when a second value arrives. */
+    single(): Promise<T | undefined>
 
     /** Keeps objects whose listed fields equal the provided values. */
     where(properties: Partial<T>): Exstream<T, C>
@@ -1371,61 +1339,6 @@ declare namespace exstream {
     buffer: number,
     stream: Exstream<readonly [Exstream<A, object>, Exstream<B, object>], C>,
   ): Exstream<SortedJoinResult<K, A, B>, AggregateContext<SortedJoinResult<K, A, B>, object>>
-  /** Calls a callback with all values from a stream. */
-  function toArray<T, C extends object>(
-    fn: (values: T[], context: AggregateContext<T[], C>) => void,
-    stream: Exstream<T, C>,
-  ): void
-  function toArray<T>(
-    fn: (values: T[], context: AggregateContext<T[], RecordContext<T>>) => void,
-  ): <C extends object>(stream: Exstream<T, C>) => void
-  /** Collects a stream into a promise. */
-  function toPromise<T, C extends object>(stream: Exstream<T, C>): Promise<T[]>
-  /**
-   * Runs a stream to completion and discards its output without collecting it in memory.
-   * Use this terminal operation when a pipeline has no writer; use `stream.start()` instead only
-   * to release a source whose automatic startup was disabled.
-   */
-  function drain<T, C extends object>(stream: Exstream<T, C>): Promise<void>
-  /** Writes a stream to a destination and rejects when any unhandled failure reaches the terminal. */
-  function pipeTo<T, C extends object>(
-    destination: NodeWritableLike<T> | WritableStream<T>,
-    options: PipeOptions | null,
-    stream: Exstream<T, C>,
-  ): Promise<void>
-  function pipeTo<T, C extends object>(
-    destination: NodeWritableLike<T> | WritableStream<T>,
-    stream: Exstream<T, C>,
-  ): Promise<void>
-  function pipeTo<T>(
-    destination: NodeWritableLike<T> | WritableStream<T>,
-    options?: PipeOptions | null,
-  ): <C extends object>(stream: Exstream<T, C>) => Promise<void>
-  /** Converts a stream to a Node Transform. */
-  function toNodeStream<T, C extends object>(
-    options: object | undefined,
-    stream: Exstream<T, C>,
-  ): NodeTransformLike<unknown, T>
-  function toNodeStream(
-    options?: object,
-  ): <T, C extends object>(stream: Exstream<T, C>) => NodeTransformLike<unknown, T>
-  /** Converts a stream to a Web ReadableStream. */
-  function toWebReadable<T, C extends object>(
-    options: ToWebReadableOptions | null,
-    stream: Exstream<T, C>,
-  ): ReadableStream<T>
-  function toWebReadable(
-    options?: ToWebReadableOptions | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => ReadableStream<T>
-  /** Converts a stream to an async iterator. */
-  function toAsyncIterator<T, C extends object>(
-    options: AsyncIteratorOptions | null,
-    stream: Exstream<T, C>,
-  ): AsyncIterableIterator<T>
-  function toAsyncIterator(
-    options?: AsyncIteratorOptions | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => AsyncIterableIterator<T>
-
   /** Returns true for Exstream instances. */
   function isExstream(value: unknown): value is Exstream<unknown, RecordContext<unknown>>
   /** Returns true for reusable Exstream pipelines. */

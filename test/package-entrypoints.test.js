@@ -40,8 +40,8 @@ test('published JSON named operators compose through CommonJS and ESM', () => {
       '--input-type=module',
       '--eval',
       `import exstream, { json, jsonl } from 'exstream.js/node'
-       const selected = exstream(['{"rows":[1,2]}']).through(json({ path: '$.rows[*]' })).values()
-       const output = await exstream(['1\\n2\\n']).through(jsonl()).jsonStringify().toPromise()
+       const selected = await exstream(['{"rows":[1,2]}']).through(json({ path: '$.rows[*]' })).toArray()
+       const output = await exstream(['1\\n2\\n']).through(jsonl()).jsonStringify().toArray()
        process.stdout.write(JSON.stringify({ output, selected }))`,
     ],
     { cwd: process.cwd(), encoding: 'utf8' },

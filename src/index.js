@@ -179,24 +179,6 @@ _.extend('asyncReduce', function (memo, fn) {
 _.extend('makeAsync', function (ms) {
   return _.makeAsync(ms, this)
 })
-_.extend('toArray', function (fn) {
-  return _.toArray(fn, this)
-})
-_.extend('toPromise', function () {
-  return _.toPromise(this)
-})
-_.extend('drain', function () {
-  return _.drain(this)
-})
-_.extend('toNodeStream', function (options) {
-  return _.toNodeStream(options, this)
-})
-_.extend('toWebReadable', function (options) {
-  return _.toWebReadable(options, this)
-})
-_.extend('toAsyncIterator', function (options) {
-  return _.toAsyncIterator(options, this)
-})
 _.extend('where', function (props) {
   return _.where(props, this)
 })
