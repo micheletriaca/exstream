@@ -856,7 +856,7 @@ class Exstream extends EventHub {
         if (settled) return
         settled = true
         cleanup()
-        if (sink && !sink.ended) sink.end()
+        sink.end()
         resolve()
       }
       const fail = (error, info) => {
@@ -865,7 +865,7 @@ class Exstream extends EventHub {
         annotateError(error, info)
         cleanup()
         abortDestination()
-        if (sink && !sink.ended) sink.abort(error)
+        sink.abort(error)
         reject(error)
       }
       const writeCompleted = (error) => {
@@ -1196,7 +1196,7 @@ class Exstream extends EventHub {
         if (settled) return
         sink.pause()
         scheduleMicrotask(() => {
-          if (!sink.ended) sink.abort(error)
+          sink.abort(error)
         })
         fail(error)
       }
@@ -1417,7 +1417,7 @@ class Exstream extends EventHub {
       sink = this.consumeSync((err, x) => {
         if (err) reject(err)
         else if (x === _.nil) {
-          if (sink.source) sink.source.#removeConsumer(sink)
+          sink.source.#removeConsumer(sink)
           resolve(records)
         } else records.push(dataFrame(x, sink._recordContext))
       })

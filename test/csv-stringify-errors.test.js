@@ -36,6 +36,14 @@ test('csvStringify maxRecordBytes includes delimiters and the line ending', asyn
   })
 })
 
+test('csvStringify accepts a record exactly at maxRecordBytes', async () => {
+  await expect(
+    _([['123', '45']])
+      .csvStringify({ maxRecordBytes: 7 })
+      .toArray(),
+  ).resolves.toEqual(['123,45\n'])
+})
+
 test('csvStringify counts an emitted header as a record for diagnostics', async () => {
   await expect(
     _([{ first: 'value', second: 'another' }])

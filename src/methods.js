@@ -357,7 +357,9 @@ _m.asyncFilter = _.curry((fn, s) => {
       const nextContext =
         usesContext && context === void 0 ? createContext(x, result.signal) : context
       try {
-        const res = usesContext ? await fn(x, nextContext) : await fn(x)
+        let res
+        if (usesContext) res = await fn(x, nextContext)
+        else res = await fn(x)
         if (res) push(null, x, nextContext)
         next()
       } catch (e) {
@@ -528,7 +530,6 @@ const asNonNegativeInteger = (value) => {
   return Number.isInteger(number) && number >= 0 ? number : null
 }
 
-/* v8 ignore next 23 -- V8 does not attribute these explicitly tested policy branches. */
 const normalizeMapAsyncRetry = (retry) => {
   if (retry === void 0 || retry === null) return { delay: 0, retries: 0, when: null }
   if (typeof retry !== 'object' || Array.isArray(retry)) {
@@ -553,7 +554,6 @@ const normalizeMapAsyncRetry = (retry) => {
   return { delay, retries, when }
 }
 
-/* v8 ignore next 8 -- V8 misses the valid path covered by timeout policy tests. */
 const normalizeMapAsyncTimeout = (timeout) => {
   if (timeout === void 0 || timeout === null) return null
   timeout = _.asNonNegativeFiniteNumber(timeout)
@@ -587,11 +587,9 @@ const createAttemptTimeoutCoordinator = () => {
   let timer
 
   const schedule = () => {
-    /* v8 ignore next -- Re-entrant and post-close scheduling are defensive no-ops. */
     if (closed || timer) return
     let deadline = Infinity
     for (const attempt of attempts) deadline = Math.min(deadline, attempt.deadline)
-    /* v8 ignore next -- A stale shared timer may legitimately find no active attempts. */
     if (deadline === Infinity) return
     scheduledDeadline = deadline
     timer = setTimeout(expire, Math.max(0, deadline - monotonicNow()))
@@ -642,7 +640,6 @@ const runMapAsyncAttempt = async ({
   value,
 }) => {
   if (baseSignal.aborted) throw baseSignal.reason
-  /* v8 ignore next -- Both timeout paths are exercised but V8 misses the async branch. */
   if (timeout === null) return usesContext ? fn(value, context) : fn(value)
 
   if (context === void 0) {
@@ -724,7 +721,6 @@ const runMapAsyncTask = async (
         throw error
       }
       if (baseSignal.aborted) throw baseSignal.reason
-      /* v8 ignore next -- Zero and positive delays are both covered in map-async.test.js. */
       if (delayMs > 0) await abortableDelay(delayMs, baseSignal)
     }
   }
@@ -732,7 +728,6 @@ const runMapAsyncTask = async (
 /* oxlint-enable no-await-in-loop */
 
 const validateMapAsyncSignal = (signal) => {
-  /* v8 ignore next -- Tests cover absent, valid, invalid, and pre-aborted signals. */
   if (signal === void 0) return
   if (
     !signal ||
@@ -784,9 +779,8 @@ const slidingConcurrentTransform = (s, options) => {
   }
 
   const handleTaskResult = (isError, value, task) => {
-    const index = tasks.indexOf(task)
     if (result.ended) {
-      if (index !== -1) tasks.splice(index, 1)
+      tasks.splice(tasks.indexOf(task), 1)
       return
     }
     if (isError && value.exstreamFatal) {
@@ -850,7 +844,7 @@ const slidingConcurrentTransform = (s, options) => {
   })
 
   result.once('abort', (reason) => {
-    if (!sink.ended) sink.abort(reason)
+    sink.abort(reason)
   })
   result.once('end', () => {
     outputNext = null
@@ -864,10 +858,8 @@ const slidingConcurrentTransform = (s, options) => {
 }
 
 _m.mapAsync = _.curry((fn, options, s) => {
-  /* v8 ignore next -- The public validation test exercises both paths. */
   if (!_.isFunction(fn)) throw Error('error in .mapAsync(). fn must be a function')
   if (options === null || options === void 0) options = {}
-  /* v8 ignore next -- Object, scalar, and array options are explicitly tested. */
   if (typeof options !== 'object' || Array.isArray(options)) {
     throw Error('error in .mapAsync(). options must be an object')
   }
@@ -879,7 +871,6 @@ _m.mapAsync = _.curry((fn, options, s) => {
     throw Error('error in .mapAsync(). concurrency must be a positive integer or Infinity')
   }
   const ordered = options.ordered === void 0 ? true : options.ordered
-  /* v8 ignore next -- Boolean and invalid ordered options are explicitly tested. */
   if (typeof ordered !== 'boolean') {
     throw Error('error in .mapAsync(). ordered must be a boolean')
   }

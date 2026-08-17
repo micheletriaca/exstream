@@ -175,7 +175,7 @@ const createParser = (options, push, fail) => {
   const consumeRaw = (text, nextCarriage, nextLineFeed) => {
     addRecordBytes(text)
     advance(text, nextCarriage, nextLineFeed)
-    if (text.length > 0) recordHasContent = true
+    recordHasContent = true
   }
 
   const consumePlain = (text) => {

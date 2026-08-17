@@ -24,6 +24,17 @@ test('pipeTo writes with backpressure and resolves only after the Node destinati
   expect(destination.writableFinished).toBe(true)
 })
 
+test('pipeTo ignores drain events when no write is waiting', async () => {
+  const values = []
+  const destination = collectingWritable(values)
+  const result = _([1]).pipeTo(destination)
+
+  destination.emit('drain')
+
+  await expect(result).resolves.toBeUndefined()
+  expect(values).toEqual([1])
+})
+
 test('pipeTo rejects an unhandled record error and does not finish partial output', async () => {
   const reason = Error('bad record')
   const values = []
