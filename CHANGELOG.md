@@ -14,6 +14,10 @@ authoritative record for earlier versions.
 - `mapAsync()` now treats `concurrency` as a sliding window of active work and
   completed results awaiting downstream demand. Each delivered result releases
   one slot immediately instead of refilling work in batches behind a slow sink.
+- `merge()` is now lazy and uses a dedicated sliding coordinator. Unordered
+  mode streams every active inner with bounded demand; ordered mode streams the
+  current inner while eagerly buffering later active inners as protocol frames,
+  preserving record errors, contexts, cancellation, and outer order.
 - Exstream instances implement `Symbol.asyncIterator` directly.
 - Node interoperability now uses the readable-only `toNodeReadable()` adapter;
   `toWebReadable()` remains the corresponding Web Streams adapter.

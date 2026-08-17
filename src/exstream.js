@@ -1341,89 +1341,211 @@ class Exstream extends EventHub {
       throw Error('error in .merge(). parallelism must be a positive integer or Infinity')
     }
 
-    const merged = new Exstream()
-    merged.setMaxListeners(parallelism * 2 + 1)
+    const slots = []
+    const ready = []
+    let outerEnded = false
+    let outerNext = null
+    let started = false
+    let cleaningUp = false
+    let pumping = false
+    let outerSink
+    let merged
 
-    let ss = this.map((subS) => {
-      if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
-      if (preserveOrder) return subS.#toRecordArray()
-      return new Promise((resolve) => {
-        let nextCallback
-        let fatalInProgress = false
-        const drainCallback = () => {
-          if (nextCallback) {
-            nextCallback()
-            nextCallback = null
-          }
+    const currentSlot = () => slots[0]
+    const hasReadyFrame = () =>
+      preserveOrder ? currentSlot()?.frames.length > 0 : ready.length > 0
+
+    const resumeOuter = () => {
+      if (outerEnded || slots.length >= parallelism || !outerNext) return
+      const next = outerNext
+      outerNext = null
+      next()
+    }
+
+    const releaseCompletedSlots = () => {
+      if (preserveOrder) {
+        while (currentSlot()?.ended && currentSlot().frames.length === 0) {
+          slots.shift()
         }
-        let subS2
-        subS2 = subS.consume((err, x, push, next) => {
-          if (x === _.nil) {
-            merged.off('end', endListener)
-            merged.off('drain', drainCallback)
-            resolve()
-          } else {
-            const context = subS2._recordContext
-            if (
-              !(err
-                ? merged.#writeControlRecord(ERROR, err, err.exstreamInput, false, context)
-                : context === void 0
-                  ? merged._writeData(x)
-                  : merged._writeData(x, false, context))
-            ) {
-              nextCallback = next
-            } else {
-              next()
-            }
-          }
-        })
-        subS2.once('fatal', (error, input) => {
-          fatalInProgress = true
-          merged.fail(error, input)
-        })
-        const endListener = () => {
-          if (!fatalInProgress) subS2.destroy()
+      } else {
+        for (let index = slots.length - 1; index >= 0; index--) {
+          const slot = slots[index]
+          if (slot.ended && slot.frames.length === 0) slots.splice(index, 1)
         }
-        merged.on('drain', drainCallback)
-        merged.once('end', endListener)
-        subS2.resume()
-      })
-    }).mapAsync((value) => value, {
-      concurrency: parallelism,
-      ordered: preserveOrder,
+      }
+      resumeOuter()
+    }
+
+    const completed = () => outerEnded && slots.length === 0
+
+    const queueFrame = (slot, frame, next) => {
+      const queued = { frame, next, slot }
+      slot.frames.push(queued)
+      if (!preserveOrder) ready.push(queued)
+    }
+
+    const takeReadyFrame = () => {
+      const queued = preserveOrder ? currentSlot().frames.shift() : ready.shift()
+      if (!preserveOrder) queued.slot.frames.shift()
+      return queued
+    }
+
+    const writeRecord = (error, value, context) => {
+      if (error) merged._writeError(error, context)
+      else if (context === void 0) merged._writeData(value)
+      else merged._writeData(value, false, context)
+    }
+
+    const writeFrame = (frame) => {
+      if (frame.type === ERROR) writeRecord(frame.error, null, frame.context)
+      else writeRecord(null, frame.value, frame.context)
+    }
+
+    const pump = () => {
+      if (pumping || cleaningUp || merged.ended) return
+      pumping = true
+      try {
+        releaseCompletedSlots()
+        while (!merged.paused && hasReadyFrame()) {
+          const queued = takeReadyFrame()
+          writeFrame(queued.frame)
+          if (merged.ended) return
+          if (queued.next) queued.next()
+          releaseCompletedSlots()
+        }
+        if (completed() && !merged.paused) merged.end()
+      } finally {
+        pumping = false
+      }
+    }
+
+    const acceptInnerRecord = (slot, error, value, context, next) => {
+      if (preserveOrder && slot !== currentSlot()) {
+        const frame = error
+          ? errorFrame(error, error.exstreamInput, false, context)
+          : dataFrame(value, context)
+        queueFrame(slot, frame, null)
+        next()
+      } else if (!pumping && !merged.paused) {
+        if (error) merged._writeError(error, context)
+        else if (context === void 0) merged._writeData(value)
+        else merged._writeData(value, false, context)
+        if (!merged.ended) next()
+      } else {
+        const frame = error
+          ? errorFrame(error, error.exstreamInput, false, context)
+          : dataFrame(value, context)
+        queueFrame(slot, frame, next)
+        pump()
+      }
+    }
+
+    const fail = (error, input) => {
+      if (!merged.ended) merged.fail(error, input)
+    }
+
+    const abort = (reason) => {
+      if (!cleaningUp && !merged.ended) merged.abort(reason)
+    }
+
+    const activateInner = (slot, inner) => {
+      try {
+        let sink
+        sink = inner.consume((error, value, push, next) => {
+          if (merged.ended) return
+          if (value === _.nil) {
+            push(null, _.nil)
+            return
+          }
+
+          const context = sink._recordContext
+          acceptInnerRecord(slot, error, value, context, next)
+        })
+        slot.sink = sink
+        sink.once('fatal', fail)
+        sink.once('abort', abort)
+        sink.once('end', () => {
+          if (merged.ended) return
+          slot.ended = true
+          pump()
+        })
+        sink.resume()
+      } catch (reason) {
+        const error = new ExstreamError(reason, inner, { origin: 'operator', stage: 'merge' })
+        slot.ended = true
+        queueFrame(slot, errorFrame(error, inner, false, slot.context), null)
+        if (slot.sink && !slot.sink.ended) slot.sink.destroy()
+        pump()
+      }
+    }
+
+    const addOuterFrame = (frame, context, next) => {
+      const slot = { context, ended: true, frames: [], sink: null }
+      slots.push(slot)
+      outerNext = next
+      queueFrame(slot, frame, null)
+      pump()
+    }
+
+    merged = new Exstream()
+    const startOrDrain = () => {
+      if (!started) {
+        started = true
+        outerSink.resume()
+      }
+      pump()
+    }
+    merged.on('drain', startOrDrain)
+
+    outerSink = this.consume((error, value, push, next) => {
+      if (merged.ended) return
+      const context = outerSink._recordContext
+      if (value === _.nil) {
+        outerNext = null
+        push(null, _.nil)
+      } else if (error) {
+        addOuterFrame(errorFrame(error, error.exstreamInput, false, context), context, next)
+      } else if (!_.isExstream(value)) {
+        const invalid = new ExstreamError(
+          Error('.merge() can merge ONLY exstream instances'),
+          value,
+          { origin: 'operator', stage: 'merge' },
+        )
+        addOuterFrame(errorFrame(invalid, value, false, context), context, next)
+      } else {
+        const slot = { context, ended: false, frames: [], sink: null }
+        slots.push(slot)
+        outerNext = next
+        activateInner(slot, value)
+        resumeOuter()
+      }
     })
 
-    ss = preserveOrder ? ss.flatten() : ss.errors((err) => merged.write(err))
-
-    if (preserveOrder)
-      return ss.consumeSync((err, frame, push) => {
-        if (err) push(err)
-        else if (frame === _.nil) push(null, _.nil)
-        else push(null, frame.value, frame.context)
-      })
-    const stopCoordinator = () => ss.destroy()
-    merged.once('end', stopCoordinator)
-    ss.once('end', () => {
-      merged.off('end', stopCoordinator)
-      merged.end()
-    }).resume()
+    outerSink.once('fatal', fail)
+    outerSink.once('abort', abort)
+    outerSink.once('end', () => {
+      if (merged.ended) return
+      outerEnded = true
+      pump()
+    })
+    merged.once('abort', (reason) => {
+      cleaningUp = true
+      if (!outerSink.ended) outerSink.abort(reason)
+      for (const slot of slots) {
+        if (slot.sink && !slot.sink.ended) slot.sink.abort(reason)
+      }
+    })
+    merged.once('end', () => {
+      cleaningUp = true
+      outerNext = null
+      if (!outerSink.ended) outerSink.destroy()
+      for (const slot of slots) {
+        if (slot.sink && !slot.sink.ended) slot.sink.destroy()
+      }
+      slots.length = 0
+      ready.length = 0
+    })
     return merged
-  }
-
-  #toRecordArray = () => {
-    const records = []
-    return new Promise((resolve, reject) => {
-      let sink
-      sink = this.consumeSync((err, x) => {
-        if (err) reject(err)
-        else if (x === _.nil) {
-          sink.source.#removeConsumer(sink)
-          resolve(records)
-        } else records.push(dataFrame(x, sink._recordContext))
-      })
-      sink.once('error', reject)
-      sink.resume()
-    })
   }
 }
 
