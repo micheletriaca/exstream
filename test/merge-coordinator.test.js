@@ -22,6 +22,120 @@ test.each([false, true])(
   },
 )
 
+test.each([false, true])(
+  'merge invokes stream factories lazily and within its activation window (ordered: %s)',
+  async (ordered) => {
+    const releases = [deferred(), deferred(), deferred()]
+    const invoked = []
+    const factories = releases.map((release, index) => () => {
+      invoked.push(index)
+      return _(async (write) => {
+        await release.promise
+        write(index)
+        write(_.nil)
+      })
+    })
+    const merged = _(factories).merge(2, ordered)
+
+    await nextTurn()
+    expect(invoked).toEqual([])
+
+    const completion = merged.toArray()
+    await waitFor(() => invoked.length === 2, 'merge did not invoke its initial factory window')
+    expect(invoked).toEqual([0, 1])
+
+    releases[0].resolve()
+    await waitFor(() => invoked.length === 3, 'merge did not invoke the next factory')
+    releases[1].resolve()
+    releases[2].resolve()
+
+    const result = await completion
+    expect(result.toSorted()).toEqual([0, 1, 2])
+    if (ordered) expect(result).toEqual([0, 1, 2])
+  },
+)
+
+test('merge accepts direct streams and stream factories in the same outer stream', async () => {
+  await expect(
+    _([_([1]), () => _([2])])
+      .merge(2, true)
+      .toArray(),
+  ).resolves.toEqual([1, 2])
+})
+
+test('a throwing stream factory becomes a contextual record error and releases its slot', async () => {
+  const reason = Error('factory failed')
+  const errors = []
+  const contexts = []
+  const result = await _([
+    () => {
+      throw reason
+    },
+    () => _([2]),
+  ])
+    .withContext(() => ({ source: 'outer factory' }))
+    .merge(1, true)
+    .errors((error, _push, context) => {
+      errors.push(error)
+      contexts.push(context)
+    })
+    .toArray()
+
+  expect(result).toEqual([2])
+  expect(errors).toEqual([reason])
+  expect(contexts).toEqual([expect.objectContaining({ source: 'outer factory' })])
+})
+
+test.each([
+  ['a non-stream value', () => 42],
+  ['a promise', async () => _([1])],
+  ['a rejected promise', () => Promise.reject(Error('async factory failed'))],
+])(
+  'a factory returning %s becomes a record error and does not block merge',
+  async (_name, factory) => {
+    const errors = []
+    const result = await _([factory, () => _([2])])
+      .merge(1)
+      .errors((error) => errors.push(error))
+      .toArray()
+
+    expect(result).toEqual([2])
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toContain('factory must return an exstream instance')
+  },
+)
+
+test('destroying merge does not invoke stream factories still outside the window', async () => {
+  const release = deferred()
+  const invoked = []
+  let active
+  const merged = _([
+    () => {
+      invoked.push(0)
+      active = _(async (write) => {
+        await release.promise
+        write(0)
+        write(_.nil)
+      })
+      return active
+    },
+    () => {
+      invoked.push(1)
+      return _([1])
+    },
+  ]).merge(1)
+  const completion = merged.drain()
+
+  await waitFor(() => invoked.length === 1, 'merge did not invoke the first factory')
+  merged.destroy()
+  await nextTurn()
+
+  expect(invoked).toEqual([0])
+  expect(active.state).toBe('destroyed')
+  release.resolve()
+  await completion.catch(() => {})
+})
+
 test('ordered merge streams the current inner before it ends', async () => {
   const release = deferred()
   const produced = []

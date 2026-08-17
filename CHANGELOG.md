@@ -17,7 +17,9 @@ authoritative record for earlier versions.
 - `merge()` is now lazy and uses a dedicated sliding coordinator. Unordered
   mode streams every active inner with bounded demand; ordered mode streams the
   current inner while eagerly buffering later active inners as protocol frames,
-  preserving record errors, contexts, cancellation, and outer order.
+  preserving record errors, contexts, cancellation, and outer order. Outer
+  values may also be zero-argument stream factories, invoked only when an
+  activation slot is available.
 - Exstream instances implement `Symbol.asyncIterator` directly.
 - Node interoperability now uses the readable-only `toNodeReadable()` adapter;
   `toWebReadable()` remains the corresponding Web Streams adapter.

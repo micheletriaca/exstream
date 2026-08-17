@@ -146,6 +146,12 @@ type ForkContext = Expect<Equal<Context<typeof contextualFork>, Context<typeof c
 const merged = exstream([exstream([1]), exstream([2])]).merge(2, true)
 type MergedValue = Expect<Equal<Value<typeof merged>, number>>
 
+const factoryMerged = exstream([() => exstream([1]), () => exstream(['two'])]).merge(2, true)
+export type FactoryMergedValue = Expect<Equal<Value<typeof factoryMerged>, number | string>>
+
+const mixedMerged = exstream([exstream([1]), () => exstream(['two'])]).merge()
+export type MixedMergedValue = Expect<Equal<Value<typeof mixedMerged>, number | string>>
+
 const routed = exstream([{ id: 1 }]).routeErrors()
 type RoutedOutput = Expect<Equal<Value<typeof routed.output>, { id: number }>>
 type DeadLetter = Expect<

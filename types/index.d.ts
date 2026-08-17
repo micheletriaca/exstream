@@ -36,6 +36,12 @@ declare namespace exstream {
   type PropertyKeyOf<T> = Extract<keyof T, PropertyKey>
   type Falsy = false | 0 | '' | null | undefined
   type FlatValue<T> = T extends string ? T : T extends Iterable<infer U> ? U : T
+  /** Creates an inner stream only when merge activates its slot. */
+  type StreamFactory<T, C extends object> = () => Exstream<T, C>
+  type MergeValue<T> =
+    T extends Exstream<infer U, any> ? U : T extends StreamFactory<infer U, any> ? U : never
+  type MergeContext<T, Fallback extends object> =
+    T extends Exstream<any, infer C> ? C : T extends StreamFactory<any, infer C> ? C : Fallback
   type ContextAddition<T> = Awaited<T> extends object ? Awaited<T> : object
   type ValueOf<S> = S extends Exstream<infer T, any> ? T : never
   type ContextOf<S> = S extends Exstream<infer T, infer C> ? CallbackContext<T, C> : never
@@ -653,14 +659,11 @@ declare namespace exstream {
       options?: ThroughOptions,
     ): Exstream<U, NextContext>
     through(target?: null | undefined, options?: ThroughOptions): Exstream<T, C>
-    /** Merges the Exstreams carried by this stream. */
+    /** Merges the Exstreams or lazy stream factories carried by this stream. */
     merge(
       parallelism?: number,
       preserveOrder?: boolean,
-    ): Exstream<
-      T extends Exstream<infer U, any> ? U : never,
-      T extends Exstream<any, infer InnerC> ? InnerC : C
-    >
+    ): Exstream<MergeValue<T>, MergeContext<T, C>>
     /** Adapts this pipeline to a lazy Node readable stream. */
     toNodeReadable(options?: object | null): NodeReadableLike<T>
     /** Converts values to a Web ReadableStream. */

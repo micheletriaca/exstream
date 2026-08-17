@@ -1487,6 +1487,47 @@ class Exstream extends EventHub {
       pump()
     }
 
+    const addOuterError = (reason, input, context, next) => {
+      const error = new ExstreamError(reason, input, { origin: 'operator', stage: 'merge' })
+      addOuterFrame(errorFrame(error, input, false, context), context, next)
+    }
+
+    const activateOuterValue = (value, context, next) => {
+      let inner = value
+      if (_.isFunction(value)) {
+        try {
+          inner = value()
+        } catch (reason) {
+          addOuterError(reason, value, context, next)
+          return
+        }
+        if (!_.isExstream(inner)) {
+          if (_.isPromise(inner)) inner.catch(noCancel)
+          addOuterError(
+            Error('error in .merge(). a stream factory must return an exstream instance'),
+            inner,
+            context,
+            next,
+          )
+          return
+        }
+      } else if (!_.isExstream(inner)) {
+        addOuterError(
+          Error('.merge() can merge ONLY exstream instances or stream factories'),
+          value,
+          context,
+          next,
+        )
+        return
+      }
+
+      const slot = { context, ended: false, frames: [], sink: null }
+      slots.push(slot)
+      outerNext = next
+      activateInner(slot, inner)
+      resumeOuter()
+    }
+
     merged = new Exstream()
     const startOrDrain = () => {
       if (!started) {
@@ -1505,19 +1546,8 @@ class Exstream extends EventHub {
         push(null, _.nil)
       } else if (error) {
         addOuterFrame(errorFrame(error, error.exstreamInput, false, context), context, next)
-      } else if (!_.isExstream(value)) {
-        const invalid = new ExstreamError(
-          Error('.merge() can merge ONLY exstream instances'),
-          value,
-          { origin: 'operator', stage: 'merge' },
-        )
-        addOuterFrame(errorFrame(invalid, value, false, context), context, next)
       } else {
-        const slot = { context, ended: false, frames: [], sink: null }
-        slots.push(slot)
-        outerNext = next
-        activateInner(slot, value)
-        resumeOuter()
+        activateOuterValue(value, context, next)
       }
     })
 
