@@ -15,6 +15,9 @@ to be synchronous.
 | `pipe(destination)`                                            | `await pipeTo(destination)`                                         |
 | `each(callback)`                                               | `tap(callback).drain()`                                             |
 | repeated `pull()` calls                                        | use the async iterator returned by `stream[Symbol.asyncIterator]()` |
+| `resolve(concurrency, ordered)`                                | `mapAsync((value) => value, { concurrency, ordered })`              |
+| `massThen(fn)`                                                 | perform the asynchronous transformation in `mapAsync(fn)`           |
+| `massCatch(fn)`                                                | catch inside `mapAsync()` or handle the resulting stream error      |
 
 `drain()` and `pipeTo()` remain and always return `Promise<void>`.
 `toWebReadable()` remains the Web Streams adapter. Terminal methods are
@@ -99,6 +102,5 @@ a callback opts into it exactly as before.
 ## Stricter feedback
 
 The declarations expose invalid assumptions that JavaScript previously allowed,
-such as calling `resolve()` on non-promise values or reading a field removed by
-`omit()`. These are compile-time diagnostics only; they do not add runtime checks
-or change error handling.
+such as reading a field removed by `omit()`. These are compile-time diagnostics
+only; they do not add runtime checks or change error handling.

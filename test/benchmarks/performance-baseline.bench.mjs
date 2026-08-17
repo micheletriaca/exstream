@@ -56,11 +56,11 @@ bench(
 )
 
 bench(
-  'resolve(32) with fulfilled promises (2k records)',
+  'mapAsync(32) with fulfilled promises (2k records)',
   async () => {
     const result = await _(asyncValues)
       .map((value) => Promise.resolve(value * 2))
-      .resolve(32, false)
+      .mapAsync((value) => value, { concurrency: 32, ordered: false })
       .toArray()
     if (result.length !== asyncValues.length)
       throw Error(`unexpected result length: ${result.length}`)

@@ -59,7 +59,7 @@ test('reduce1 in async chain', async () => {
       await h.sleep(10)
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
     .reduce1((memo, x) => memo + x)
     .toArray()
 

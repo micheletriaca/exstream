@@ -23,6 +23,8 @@ authoritative record for earlier versions.
 - The overlapping `toPromise()`, `values()`, `valuesSync()`, callback
   `toArray()`, `value()`, `each()`, `pull()`, `pipe()`, `toAsyncIterator()`, and
   `toNodeStream()` APIs.
+- `resolve()`, `massThen()`, and `massCatch()`; use `mapAsync()` for asynchronous
+  transformations, concurrency, and ordering.
 - Standalone and curried terminal exports. Terminal operations are instance
   methods in 1.0.
 

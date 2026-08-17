@@ -154,7 +154,7 @@ test('error in map', async () => {
   )
 })
 
-test('error in resolve', async () => {
+test('error in mapAsync', async () => {
   let error = null
   const res = await _([1, 2, 3])
     .map(async (x) => {
@@ -162,7 +162,7 @@ test('error in resolve', async () => {
       if (x === 2) throw Error("can't be 2")
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
     .errors((err) => {
       error = err
     })
@@ -172,23 +172,22 @@ test('error in resolve', async () => {
   expect(res).toEqual([1, 3])
 })
 
-test('error in promise chain', async () => {
+test('error recovery in mapAsync', async () => {
   let errorCatched = false
   const res = await _([1, 2, 3, 4, 5, 6])
-    .map(async (x) => {
-      await h.sleep(10)
-      return x
-    })
-    .massThen((x) => {
-      if (x === 2) throw Error('err2')
-      return x
-    })
-    .massCatch(() => 2)
-    .massThen((x) => {
-      if (x === 5) throw Error('err5')
-      return x
-    })
-    .resolve(3)
+    .mapAsync(
+      async (x) => {
+        await h.sleep(10)
+        try {
+          if (x === 2) throw Error('err2')
+        } catch {
+          return 2
+        }
+        if (x === 5) throw Error('err5')
+        return x
+      },
+      { concurrency: 3 },
+    )
     .errors(() => {
       errorCatched = true
     })
@@ -217,7 +216,7 @@ test('error in wrapped promise contains exstreamInput', async () => {
       },
       { wrap: true },
     )
-    .resolve()
+    .mapAsync((value) => value)
     .errors((e) => {
       if (e.exstreamInput === 2) catched()
     })
@@ -243,7 +242,7 @@ test('async task errors - single() with multiple values', async () => {
   try {
     await _([1, 2, 3, 4, 5, 6])
       .map(async (x) => x * 2)
-      .resolve()
+      .mapAsync((value) => value)
       .batch(3)
       .single()
   } catch (e) {
@@ -296,7 +295,7 @@ test('error propagation', async () => {
     .sortedGroupBy((x) => x)
     .last()
     .findWhere()
-    .resolve()
+    .mapAsync((value) => value)
     .slice(1, 3)
     .makeAsync(10)
     .errors((err) => errs.push(err))
@@ -307,21 +306,11 @@ test('error propagation', async () => {
   expect(errs[2].message).toBe('NOO')
 })
 
-test('resolve non promises', async () => {
-  const errs = []
-  _([1, 2, 3])
-    .resolve()
-    .errors((e) => errs.push(e))
-    .resume()
-  expect(errs.length).toBe(3)
-  expect(errs[0].message).toBe('error in .resolve(). item must be a promise')
-})
-
-test('resolve promises errors', async () => {
+test('mapAsync handles promise errors', async () => {
   const errs = []
   await _([1, 2, 3])
     .map(async () => Promise.reject(Error('NOO')))
-    .resolve(1, false)
+    .mapAsync((value) => value, { concurrency: 1, ordered: false })
     .errors((e) => errs.push(e))
     .toArray()
   expect(errs.length).toBe(3)
@@ -472,7 +461,7 @@ test('async errors in stream of streams', async () => {
       .map(async () => {
         throw Error('an error')
       })
-      .resolve(),
+      .mapAsync((value) => value),
     _([4, 5, 6]),
   ])
     .merge()

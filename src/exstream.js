@@ -153,7 +153,7 @@ class Exstream extends EventHub {
     } else if (_.isAsyncIterable(xs)) {
       this.#pipeAsyncIterable(xs)
     } else if (_.isPromise(xs)) {
-      return new Exstream([xs]).resolve()
+      return new Exstream([xs]).mapAsync((value) => value)
     } else if (_.isFunction(xs)) {
       this.#generator = xs
     } else {
@@ -1344,11 +1344,7 @@ class Exstream extends EventHub {
     const merged = new Exstream()
     merged.setMaxListeners(parallelism * 2 + 1)
 
-    const pipeline = preserveOrder
-      ? new Exstream().resolve(parallelism, preserveOrder).flatten()
-      : new Exstream().errors((err) => merged.write(err)).resolve(parallelism, preserveOrder)
-
-    const ss = this.map((subS) => {
+    let ss = this.map((subS) => {
       if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
       if (preserveOrder) return subS.#toRecordArray()
       return new Promise((resolve) => {
@@ -1392,7 +1388,12 @@ class Exstream extends EventHub {
         merged.once('end', endListener)
         subS2.resume()
       })
-    }).through(pipeline)
+    }).mapAsync((value) => value, {
+      concurrency: parallelism,
+      ordered: preserveOrder,
+    })
+
+    ss = preserveOrder ? ss.flatten() : ss.errors((err) => merged.write(err))
 
     if (preserveOrder)
       return ss.consumeSync((err, frame, push) => {

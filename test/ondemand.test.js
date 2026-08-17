@@ -18,7 +18,7 @@ test('basic', async () => {
 test('basic async', async () => {
   const xs = _([1, 2, 3])
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
   const iterator = xs[Symbol.asyncIterator]()
   expect(await iterator.next()).toEqual({ done: false, value: 1 })
   expect(await iterator.next()).toEqual({ done: false, value: 2 })
@@ -32,7 +32,7 @@ test('basic error handling', async () => {
       if (x === 2) throw Error('NOO')
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
   const iterator = xs[Symbol.asyncIterator]()
   expect(await iterator.next()).toEqual({ done: false, value: 1 })
   await expect(iterator.next()).rejects.toThrow('NOO')
@@ -42,7 +42,7 @@ test('basic error handling', async () => {
 /*
 test('testPerformance - batched async iteration', async () => {
   const x = Array(50000).fill(0).map((x, i) => i)
-  const xs = _(x).map(async x => x).resolve().batch(10000)
+  const xs = _(x).map(async x => x).mapAsync((value) => value).batch(10000)
   let k
   console.time('t')
   for (let i = 0; i < 5; i++) {
@@ -53,7 +53,7 @@ test('testPerformance - batched async iteration', async () => {
 })
 test('testPerformance - values', async () => {
   const x = Array(50000).fill(0).map((x, i) => i)
-  const xs = _(x).map(async x => x).resolve()
+  const xs = _(x).map(async x => x).mapAsync((value) => value)
   console.time('t')
   const k = (await xs.toArray())[49999]
   console.timeEnd('t')

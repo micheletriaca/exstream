@@ -47,7 +47,7 @@ test('drain waits for asynchronous work to finish', async () => {
   const values = []
   let finished = false
   const draining = _([pendingValue])
-    .resolve()
+    .mapAsync((value) => value)
     .tap((value) => values.push(value))
     .drain()
     .then(() => (finished = true))

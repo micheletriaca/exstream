@@ -117,7 +117,7 @@ test('map wrap', async () => {
 test('async map wrap', async () => {
   const res = await _(k)
     .map(async (x) => x * 2, { wrap: true })
-    .resolve()
+    .mapAsync((value) => value)
     .toArray()
 
   expect(res.length).toEqual(k2.length)
@@ -269,7 +269,7 @@ test('synchronous reduce', async () => {
 test('async values', async () => {
   const res = await _([1, 2, 3, 4, 5, 6])
     .map(async (x) => x * 2)
-    .resolve()
+    .mapAsync((value) => value)
     .batch(3)
     .toArray()
   expect(res).toEqual([
@@ -281,7 +281,7 @@ test('async values', async () => {
 test('async value', async () => {
   const res = await _([1, 2, 3, 4, 5, 6])
     .map(async (x) => x * 2)
-    .resolve()
+    .mapAsync((value) => value)
     .reduce1((a, b) => a + b)
     .single()
   expect(res).toBe(42)
@@ -471,7 +471,7 @@ test('toNodeReadable', () => {
 test('consume xs stream as an async iterator', async () => {
   const s = _([1, 2, 3])
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
   const res = []
   for await (const x of s) {
     res.push(x)
@@ -578,7 +578,7 @@ test('stopWhenAsync', async () => {
       await h.sleep(10)
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
     .map((x) => x * 2)
     .stopWhen((x) => x === 10)
     .toArray()

@@ -37,7 +37,7 @@ test('piping an error after promise', async () => {
   const res = []
   const result = _([1])
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
     .map(() => {
       throw Error('an error')
     })
@@ -50,7 +50,7 @@ test('pipeTo rejects an error after an asynchronous stage', async () => {
   const res = []
   const result = _([1])
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
     .map(() => {
       throw Error('an error')
     })

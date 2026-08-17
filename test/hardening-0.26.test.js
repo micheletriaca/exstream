@@ -19,12 +19,12 @@ test.each([
   ['null', null],
   ['undefined', undefined],
   ['function', function rejectedFunction() {}],
-])('resolve normalizes a Promise rejected with a %s', async (label, reason) => {
+])('mapAsync normalizes a Promise rejected with a %s', async (label, reason) => {
   const errors = []
   const rejected = Promise.reject(reason)
 
   const values = await _([rejected])
-    .resolve()
+    .mapAsync((value) => value)
     .errors((error) => errors.push(error))
     .toArray()
 
@@ -40,7 +40,7 @@ test('map preserves the source input when an async callback rejects with a primi
 
   await _([42])
     .map(async () => Promise.reject('primitive failure'))
-    .resolve()
+    .mapAsync((value) => value)
     .errors((error) => errors.push(error))
     .toArray()
 
@@ -51,13 +51,13 @@ test('map preserves the source input when an async callback rejects with a primi
   expect(errors[0].exstreamInput).toBe(42)
 })
 
-test('resolve normalizes a cyclic rejection object without throwing while formatting it', async () => {
+test('mapAsync normalizes a cyclic rejection object without throwing while formatting it', async () => {
   const reason = {}
   reason.self = reason
   const errors = []
 
   await _([Promise.reject(reason)])
-    .resolve()
+    .mapAsync((value) => value)
     .errors((error) => errors.push(error))
     .toArray()
 
@@ -68,11 +68,6 @@ test('resolve normalizes a cyclic rejection object without throwing while format
 })
 
 test.each([
-  [
-    'resolve parallelism',
-    () => _([]).resolve(0),
-    'error in .resolve(). parallelism must be a positive integer or Infinity',
-  ],
   [
     'merge parallelism',
     () => _([]).merge(-1),
@@ -122,7 +117,7 @@ test('numeric strings remain accepted for historically coerced limits', async ()
   expect(await _([1, 2, 3]).batch('2').toArray()).toEqual([[1, 2], [3]])
   expect(
     await _([Promise.resolve(1), Promise.resolve(2)])
-      .resolve('2')
+      .mapAsync((value) => value, { concurrency: '2' })
       .toArray(),
   ).toEqual([1, 2])
 })

@@ -9,14 +9,17 @@ const sourceInput = vi.fn()
 
 const innerPipeline = _.pipeline()
   .map(query1)
-  .resolve()
+  .mapAsync((value) => value)
   // .tap(item => console.log(item))
   .filter((result) => result === '1')
 
 const mainFlow = (param) => {
   const source = _([param]).through(innerPipeline)
 
-  const fork1 = source.fork().map(query2).resolve()
+  const fork1 = source
+    .fork()
+    .map(query2)
+    .mapAsync((value) => value)
 
   const fork2 = source.fork()
 
@@ -48,7 +51,7 @@ test('zero results from main pipe -> nothing goes through forks', async () => {
 test('pipeline with fork', async () => {
   const p = _.pipeline()
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
 
   const s = _([1, 2, 3]).through(p)
   const forks = [
@@ -56,7 +59,7 @@ test('pipeline with fork', async () => {
     s
       .fork()
       .map(async (x) => x * 3)
-      .resolve(),
+      .mapAsync((value) => value),
   ]
   const res = await _(forks).merge().toArray()
   expect(res).toEqual([2, 3, 4, 6, 6, 9])
@@ -65,7 +68,7 @@ test('pipeline with fork', async () => {
 test('pipeline with pipe and multiple through', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
-    .resolve()
+    .mapAsync((value) => value)
   const res = []
 
   await _([1, 2, 3])
@@ -79,7 +82,7 @@ test('pipeline with pipe and multiple through', async () => {
 test('pipeline in through', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
-    .resolve()
+    .mapAsync((value) => value)
   const res = []
 
   await _([1, 2, 3])
@@ -93,7 +96,7 @@ test('pipeline in through', async () => {
 test('pipeline as node stream toArray', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
-    .resolve()
+    .mapAsync((value) => value)
 
   const res = await _([1, 2, 3]).through(p.generateStream()).toArray()
 
@@ -107,7 +110,7 @@ test('error propagation in async chain', async () => {
     .flatten()
     .map((x) => ({ a: x.a === 1 ? x.b.c : x.a }))
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
     .errors((e) => errs.push(e))
     .toArray()
   expect(res).toEqual([{ a: 0 }, { a: 2 }])

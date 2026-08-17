@@ -63,7 +63,7 @@ test('map receives a signal that cancels pending work after downstream abort', a
         })
       }),
   )
-  const resolved = mapped.resolve()
+  const resolved = mapped.mapAsync((value) => value)
   const result = resolved.toArray()
   await waitFor(() => taskSignal, 'map did not start its task')
 

@@ -10,7 +10,7 @@ test('throw in async mapping', async () => {
       .map(async () => {
         throw new Error('big booom in the async pipeline')
       })
-      .resolve()
+      .mapAsync((value) => value)
       .errors((error, push) => {
         expect(error.message).toEqual('big booom in the async pipeline')
         push(error)

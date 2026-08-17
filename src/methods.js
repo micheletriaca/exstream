@@ -506,23 +506,6 @@ _m.uniqBy = _.curry((cfg, s) => {
   return result
 })
 
-_m.massThen = _.curry((fn, s) =>
-  fn.length >= 2
-    ? s.map((x, context) => x.then((value) => fn(value, context)))
-    : s.map((x) => x.then(fn)),
-)
-
-_m.massCatch = _.curry((fn, s) =>
-  fn.length >= 2
-    ? s.map((x, context) => x.catch((error) => fn(error, context)))
-    : s.map((x) => x.catch(fn)),
-)
-
-const emitConcurrentResult = (task, error, value) => {
-  if (task.context === void 0) task.push(error, value)
-  else task.push(error, value, task.context)
-}
-
 class MapAsyncTimeoutError extends Error {
   constructor(timeout, attempt) {
     super(`mapAsync attempt ${attempt} timed out after ${timeout} ms`)
@@ -774,73 +757,6 @@ const linkAbortSignal = (result, signal) => {
   }
 }
 
-const concurrentTransform = (s, options) => {
-  const { concurrency, createTask, ordered, requirePromise, signal } = options
-  const tasks = []
-  let sourceEnded = false
-  let result
-
-  const handleTaskResult = (isError, value, task) => {
-    const index = tasks.indexOf(task)
-    /* v8 ignore next -- A late task completion after abort is covered explicitly. */
-    if (result.ended) {
-      if (index !== -1) tasks.splice(index, 1)
-      return
-    }
-    /* v8 ignore next -- Fatal and record failures are both exercised through mapAsync. */
-    if (isError && value.exstreamFatal) {
-      result.fail(value, value.exstreamInput)
-      return
-    }
-    task.error = isError ? value : null
-    task.result = value
-    task.settled = true
-
-    if (ordered) {
-      while (tasks[0] && tasks[0].settled) {
-        const ready = tasks.shift()
-        emitConcurrentResult(ready, ready.error, ready.result)
-      }
-    } else {
-      tasks.splice(index, 1)
-      emitConcurrentResult(task, task.error, task.result)
-    }
-
-    if (sourceEnded && tasks.length === 0) task.push(null, _.nil)
-    else if (!ordered || index === 0) task.next()
-  }
-
-  result = s.consume((error, value, push, next) => {
-    if (error) {
-      push(error)
-      next()
-    } else if (value === _.nil) {
-      if (tasks.length === 0) push(null, _.nil)
-      else sourceEnded = true
-    } else {
-      let context = result._recordContext
-      const taskResult = createTask(value, context, result)
-      context = taskResult.context
-      const promise = taskResult.value
-
-      if (requirePromise && !_.isPromise(promise)) {
-        push(new ExstreamError(Error('error in .resolve(). item must be a promise'), value))
-        next()
-        return
-      }
-
-      const task = { context, next, push, settled: false }
-      tasks.push(task)
-      Promise.resolve(promise)
-        .then((resolved) => handleTaskResult(false, resolved, task))
-        .catch((reason) => handleTaskResult(true, new ExstreamError(reason, value), task))
-      if (tasks.length < concurrency) next()
-    }
-  })
-  linkAbortSignal(result, signal)
-  return result
-}
-
 const slidingConcurrentTransform = (s, options) => {
   const { concurrency, createTask, ordered, signal } = options
   const tasks = []
@@ -946,19 +862,6 @@ const slidingConcurrentTransform = (s, options) => {
   linkAbortSignal(result, signal)
   return result
 }
-
-_m.resolve = _.curry((parallelism, preserveOrder, s) => {
-  parallelism = _.asPositiveInteger(parallelism, true)
-  if (parallelism === null) {
-    throw Error('error in .resolve(). parallelism must be a positive integer or Infinity')
-  }
-  return concurrentTransform(s, {
-    concurrency: parallelism,
-    createTask: (value, context) => ({ context, value }),
-    ordered: preserveOrder,
-    requirePromise: true,
-  })
-})
 
 _m.mapAsync = _.curry((fn, options, s) => {
   /* v8 ignore next -- The public validation test exercises both paths. */

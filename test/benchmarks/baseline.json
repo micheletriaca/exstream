@@ -58,7 +58,7 @@
             },
             {
               "id": "479933160_2",
-              "name": "resolve(32) with fulfilled promises (2k records)",
+              "name": "mapAsync(32) with fulfilled promises (2k records)",
               "rank": 1,
               "rme": 0.7643845846771328,
               "samples": [],

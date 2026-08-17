@@ -332,7 +332,7 @@ test('join with async source', async () => {
       await sleep(0)
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
   const s2 = _([
     { id: 'child1', parent: 2 },
     { id: 'child2', parent: 2 },
@@ -375,7 +375,7 @@ test('join that starts later', async () => {
       await sleep(0)
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
   const s2 = _([
     { id: 'child1', parent: 2 },
     { id: 'child2', parent: 2 },

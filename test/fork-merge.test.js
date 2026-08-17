@@ -36,7 +36,7 @@ test('fork and merging with promises in first fork', async () => {
     source
       .fork()
       .map(async (i) => i * 2)
-      .resolve(),
+      .mapAsync((value) => value),
     source.fork().map((i) => i * 3),
   ])
     .merge(2, true)
@@ -52,7 +52,7 @@ test('fork and merging with promises in second fork', async () => {
     source
       .fork()
       .map(async (i) => i * 3)
-      .resolve(),
+      .mapAsync((value) => value),
   ])
     .merge(2, true)
     .toArray()
@@ -71,15 +71,15 @@ test('fork and merging - with toArray', async () => {
 test('fork and merging - promise in the source stream as well', async () => {
   const source = _([1, 2, 3, 4])
     .map(async (i) => i + 1)
-    .resolve()
+    .mapAsync((value) => value)
   const first = source
     .fork()
     .map(async (i) => i * 2)
-    .resolve()
+    .mapAsync((value) => value)
   const second = source
     .fork()
     .map(async (i) => i * 3)
-    .resolve()
+    .mapAsync((value) => value)
   const results = await _([first, second]).merge(2, true).toArray()
   expect(results).toEqual([4, 6, 8, 10, 6, 9, 12, 15])
 })
@@ -176,17 +176,17 @@ test('consuming fork in setImmediate or nextTick works', async () => {
 test('take() in a fork', async () => {
   const source = _([1, 2, 3, 4])
     .map(async (i) => i + 1)
-    .resolve()
+    .mapAsync((value) => value)
   const results = await _([
     source
       .fork()
       .map(async (i) => i * 2)
-      .resolve(),
+      .mapAsync((value) => value),
     source
       .fork()
       .take(1)
       .map(async (i) => i * 3)
-      .resolve(),
+      .mapAsync((value) => value),
   ])
     .merge(2, true)
     .toArray()

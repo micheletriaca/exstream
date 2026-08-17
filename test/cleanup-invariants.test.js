@@ -112,7 +112,7 @@ test('fork and merge release stream listeners after completion', async () => {
   }
 })
 
-test('destroy prevents pending resolve work from starting more tasks', async () => {
+test('destroy prevents pending mapAsync work from starting more tasks', async () => {
   const started = []
   const releases = []
   const received = []
@@ -124,7 +124,7 @@ test('destroy prevents pending resolve work from starting more tasks', async () 
           releases.push(() => resolve(value))
         }),
     )
-    .resolve(2, false)
+    .mapAsync((value) => value, { concurrency: 2, ordered: false })
   resolved
     .consumeSync((err, value, push) => {
       if (err) push(err)
@@ -133,7 +133,7 @@ test('destroy prevents pending resolve work from starting more tasks', async () 
     })
     .resume()
 
-  await waitFor(() => started.length === 2, 'resolve() did not fill its initial window')
+  await waitFor(() => started.length === 2, 'mapAsync() did not fill its initial window')
   resolved.destroy()
   for (const release of releases) release()
   await nextTurn()

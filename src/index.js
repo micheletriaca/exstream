@@ -95,15 +95,6 @@ _.extend('collect', function () {
 _.extend('batch', function (size) {
   return _.batch(size, this)
 })
-_.extend('massThen', function (fn) {
-  return _.massThen(fn, this)
-})
-_.extend('massCatch', function (fn) {
-  return _.massCatch(fn, this)
-})
-_.extend('resolve', function (parallelism = 1, preserveOrder = true) {
-  return _.resolve(parallelism, preserveOrder, this)
-})
 _.extend('mapAsync', function (fn, options = null) {
   return _.mapAsync(fn, options, this)
 })

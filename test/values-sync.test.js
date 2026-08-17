@@ -35,7 +35,7 @@ test('toArray rejects synchronous transformation errors', async () => {
 })
 
 test.each([
-  ['resolve', () => _([Promise.resolve(1)]).resolve()],
+  ['mapAsync', () => _([Promise.resolve(1)]).mapAsync((value) => value)],
   ['mapAsync', () => _([1]).mapAsync(async (value) => value)],
   ['generator', () => _((write) => write(_.nil))],
   ['Node readable', () => _(Readable.from([1]))],
@@ -82,13 +82,16 @@ test('streams are directly async iterable', async () => {
   expect(values).toEqual([1, 2, 3])
 })
 
-test('legacy and duplicated terminals are not exposed', () => {
+test('removed methods are not exposed', () => {
   const stream = _([])
 
   for (const name of [
     'each',
+    'massCatch',
+    'massThen',
     'pull',
     'pipe',
+    'resolve',
     'toAsyncIterator',
     'toNodeStream',
     'toPromise',
@@ -101,7 +104,10 @@ test('legacy and duplicated terminals are not exposed', () => {
 
   for (const name of [
     'drain',
+    'massCatch',
+    'massThen',
     'pipeTo',
+    'resolve',
     'toArray',
     'toAsyncIterator',
     'toNodeReadable',

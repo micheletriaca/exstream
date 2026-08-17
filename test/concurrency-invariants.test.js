@@ -3,7 +3,7 @@ vi.setConfig({ testTimeout: 2000 })
 const _ = require('../src/index.js')
 const { deferred, waitFor } = require('./invariant-helpers.js')
 
-test('resolve(n) never runs more than n promises concurrently', async () => {
+test('mapAsync never runs more than the configured concurrency', async () => {
   const parallelism = 3
   const values = Array.from({ length: 12 }, (_, index) => index)
   const releases = []
@@ -22,12 +22,12 @@ test('resolve(n) never runs more than n promises concurrently', async () => {
           })
         }),
     )
-    .resolve(parallelism, false)
+    .mapAsync((value) => value, { concurrency: parallelism, ordered: false })
     .toArray()
 
   await waitFor(
     () => releases.length >= parallelism,
-    'resolve() did not start the initial promise window',
+    'mapAsync() did not start the initial promise window',
   )
   expect(releases).toHaveLength(parallelism)
   expect(active).toBe(parallelism)
@@ -80,7 +80,7 @@ test('merge(n) never activates more than n source streams concurrently', async (
   expect([...result].sort((a, b) => a - b)).toEqual(values)
 })
 
-test('resolve preserves input order only when requested', async () => {
+test('mapAsync preserves input order only when requested', async () => {
   const values = [0, 1, 2, 3, 4]
   const orderedGates = values.map(() => deferred())
   const unorderedGates = values.map(() => deferred())
@@ -93,14 +93,14 @@ test('resolve preserves input order only when requested', async () => {
       orderedStarted.push(value)
       return orderedGates[value].promise.then(() => value)
     })
-    .resolve(3, true)
+    .mapAsync((value) => value, { concurrency: 3, ordered: true })
     .toArray()
   const unorderedResult = _(values)
     .map((value) => {
       unorderedStarted.push(value)
       return unorderedGates[value].promise.then(() => value)
     })
-    .resolve(3, false)
+    .mapAsync((value) => value, { concurrency: 3, ordered: false })
     .tap((value) => unorderedEmitted.push(value))
     .toArray()
 

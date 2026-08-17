@@ -36,7 +36,6 @@ declare namespace exstream {
   type PropertyKeyOf<T> = Extract<keyof T, PropertyKey>
   type Falsy = false | 0 | '' | null | undefined
   type FlatValue<T> = T extends string ? T : T extends Iterable<infer U> ? U : T
-  type ResolvedValue<T> = T extends PromiseLike<infer U> ? Awaited<U> : never
   type ContextAddition<T> = Awaited<T> extends object ? Awaited<T> : object
   type ValueOf<S> = S extends Exstream<infer T, any> ? T : never
   type ContextOf<S> = S extends Exstream<infer T, infer C> ? CallbackContext<T, C> : never
@@ -519,14 +518,6 @@ declare namespace exstream {
     /** Groups values into arrays of the requested maximum size. */
     batch(size: number): Exstream<T[], AggregateOutputContext<C, T[]>>
 
-    /** Applies then() to every promise in the stream. */
-    massThen<U>(fn: (value: ResolvedValue<T>, context: C) => U): Exstream<Promise<Awaited<U>>, C>
-    /** Applies catch() to every promise in the stream. */
-    massCatch<U>(
-      fn: (error: unknown, context: C) => U,
-    ): Exstream<Promise<ResolvedValue<T> | Awaited<U>>, C>
-    /** Waits for promises, with optional parallelism and ordered output. */
-    resolve(parallelism?: number, preserveOrder?: boolean): Exstream<ResolvedValue<T>, C>
     /** Runs an asynchronous transform with concurrency, ordering, retry and timeout controls. */
     mapAsync<U>(
       fn: (value: T, context: C) => U | PromiseLike<U>,
@@ -774,11 +765,6 @@ declare namespace exstream {
     collect(): Pipeline<Input, Output[], AggregateContext<Output[], C>>
     /** Adds a fixed-size batching step. */
     batch(size: number): Pipeline<Input, Output[], AggregateContext<Output[], C>>
-    /** Adds promise resolution. */
-    resolve(
-      parallelism?: number,
-      preserveOrder?: boolean,
-    ): Pipeline<Input, ResolvedValue<Output>, C>
     /** Adds recoverable-error handling. */
     errors<U = Output>(
       fn: (error: ExstreamError<Output>, push: Push<U, C>, context: C) => void,
@@ -1038,34 +1024,6 @@ declare namespace exstream {
   function batch(
     size: number,
   ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T[], AggregateContext<T[], C>>
-  /** Builds a curried promise success handler. */
-  function massThen<T, U, C extends object>(
-    fn: (value: ResolvedValue<T>, context: C) => U,
-    stream: Exstream<T, C>,
-  ): Exstream<Promise<Awaited<U>>, C>
-  function massThen<T, U>(
-    fn: (value: ResolvedValue<T>, context: RecordContext<T>) => U,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<Promise<Awaited<U>>, C>
-  /** Builds a curried promise failure handler. */
-  function massCatch<T, U, C extends object>(
-    fn: (error: unknown, context: C) => U,
-    stream: Exstream<T, C>,
-  ): Exstream<Promise<ResolvedValue<T> | Awaited<U>>, C>
-  function massCatch<U>(
-    fn: (error: unknown, context: object) => U,
-  ): <T, C extends object>(
-    stream: Exstream<T, C>,
-  ) => Exstream<Promise<ResolvedValue<T> | Awaited<U>>, C>
-  /** Builds a curried promise resolution operator. */
-  function resolve<T, C extends object>(
-    parallelism: number,
-    preserveOrder: boolean,
-    stream: Exstream<T, C>,
-  ): Exstream<ResolvedValue<T>, C>
-  function resolve(
-    parallelism?: number,
-    preserveOrder?: boolean,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<ResolvedValue<T>, C>
   /** Builds a curried concurrent asynchronous transform. */
   function mapAsync<T, U, C extends object>(
     fn: (value: T, context: C) => U | PromiseLike<U>,

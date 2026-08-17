@@ -94,7 +94,7 @@ test('concurrent promise resolution keeps input and output contexts correlated',
       context.resolved = value * 10
       return value * 2
     })
-    .resolve(4, false)
+    .mapAsync((value) => value, { concurrency: 4, ordered: false })
     .map((value, context) => ({
       correlationId: context.correlationId,
       input: context.input,
@@ -279,7 +279,7 @@ test('asyncReduce receives a lazily-created record context', async () => {
   expect(result).toEqual([{ inputs: [1, 2], total: 3 }])
 })
 
-test('ordered resolve keeps contexts correlated when promises settle out of order', async () => {
+test('ordered mapAsync keeps contexts correlated when promises settle out of order', async () => {
   const resolvers = []
   const result = _([1, 2])
     .withContext((value) => ({ correlationId: `row-${value}` }))
@@ -290,7 +290,7 @@ test('ordered resolve keeps contexts correlated when promises settle out of orde
           context.started = true
         }),
     )
-    .resolve(2, true)
+    .mapAsync((value) => value, { concurrency: 2, ordered: true })
     .map((value, context) => ({
       correlationId: context.correlationId,
       input: context.input,
@@ -299,7 +299,7 @@ test('ordered resolve keeps contexts correlated when promises settle out of orde
     }))
     .toArray()
 
-  await waitFor(() => resolvers.length === 2, 'resolve did not start both promises')
+  await waitFor(() => resolvers.length === 2, 'mapAsync did not start both promises')
   resolvers[1]()
   await Promise.resolve()
   resolvers[0]()
@@ -403,13 +403,15 @@ test('withContext without an initializer still establishes input and signal', as
   expect(result.value).toBe(1)
 })
 
-test('context is preserved through reject and contextual promise handlers', async () => {
+test('context is preserved through reject and mapAsync', async () => {
   const recovered = await _([1, 2])
     .withContext((value) => ({ correlationId: `row-${value}` }))
     .reject((value, context) => value === 1 && context.correlationId === 'row-1')
-    .map((value, context) => Promise.resolve({ value, correlationId: context.correlationId }))
-    .massThen((result, context) => ({ ...result, input: context.input }))
-    .resolve()
+    .mapAsync(async (value, context) => ({
+      value,
+      correlationId: context.correlationId,
+      input: context.input,
+    }))
     .toArray()
 
   expect(recovered).toEqual([{ value: 2, correlationId: 'row-2', input: 2 }])
@@ -431,7 +433,7 @@ test('contextual map preserves context in sync and async wrap mode', async () =>
     .map((value, context) => Promise.resolve(value + Number(context.input === value)), {
       wrap: true,
     })
-    .resolve()
+    .mapAsync((value) => value)
     .map((value, context) => ({
       correlationId: context.correlationId,
       input: value.input,
@@ -443,20 +445,20 @@ test('contextual map preserves context in sync and async wrap mode', async () =>
   expect(async).toEqual([{ input: 2, output: 3, correlationId: 'async' }])
 })
 
-test('context survives async legacy operators and contextual rejection recovery', async () => {
+test('context survives async operators and contextual rejection recovery', async () => {
   const errors = []
   const result = await _([1, 2])
     .withContext((value) => ({ correlationId: `row-${value}` }))
     .ratelimit(10, 0)
-    .map((value) => {
-      if (value === 1) return Promise.reject(Error('rejected'))
-      return Promise.resolve(value)
+    .mapAsync(async (value, context) => {
+      try {
+        if (value === 1) throw Error('rejected')
+        return value
+      } catch (error) {
+        errors.push({ correlationId: context.correlationId, message: error.message })
+        return context.input
+      }
     })
-    .massCatch((error, context) => {
-      errors.push({ correlationId: context.correlationId, message: error.message })
-      return context.input
-    })
-    .resolve()
     .map((value, context) => ({ correlationId: context.correlationId, value }))
     .toArray()
 

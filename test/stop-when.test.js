@@ -14,7 +14,7 @@ test('stopWhenAsync', async () => {
       await h.sleep(10)
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
     .map((x) => x * 2)
     .stopWhen((x) => x === 10)
     .toArray()
