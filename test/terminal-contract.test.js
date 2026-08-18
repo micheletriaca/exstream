@@ -1,7 +1,7 @@
 const { Readable } = require('stream')
 const _ = require('../src/index.js')
 
-test('toArray always returns a promise for a synchronous pipeline', async () => {
+test('toArray returns a promise for a synchronous pipeline', async () => {
   const result = _([1, 2, 3])
     .map((value) => value * 2)
     .filter((value) => value > 2)
