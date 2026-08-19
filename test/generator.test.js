@@ -1,3 +1,4 @@
+const { AsyncLocalStorage } = require('node:async_hooks')
 const _ = require('../src')
 const h = require('./helpers')
 
@@ -12,6 +13,29 @@ test('async exstream', async () => {
   })
   const res = await sourceStream.tap(() => expect(sourceStream.paused).toBe(false)).toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+})
+
+test('async sources preserve AsyncLocalStorage across cooperative yields', async () => {
+  const storage = new AsyncLocalStorage()
+  const context = { traceId: 'cooperative-source' }
+  let consumed = 0
+  let contextMismatches = 0
+
+  async function* source() {
+    for (let index = 0; index < 20_000; index += 1) yield index
+  }
+
+  await storage.run(context, () =>
+    _(source())
+      .tap(() => {
+        consumed += 1
+        if (storage.getStore() !== context) contextMismatches += 1
+      })
+      .drain(),
+  )
+
+  expect(consumed).toBe(20_000)
+  expect(contextMismatches).toBe(0)
 })
 
 test('generator backpressure', async () => {

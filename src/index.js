@@ -11,8 +11,7 @@ const { errorInfo } = require('./error-info.js')
 
 const _ = (module.exports = Object.assign(
   (xs, options) => new Exstream(xs, options),
-  { BufferOverflowError, data: dataValue, errorInfo },
-  utils,
+  { BufferOverflowError, data: dataValue, errorInfo, nil: utils.nil },
   csv,
   json,
   joins,
@@ -20,8 +19,9 @@ const _ = (module.exports = Object.assign(
   methods,
 ))
 
-_.extend = (name, fn) => {
+_.extend = (name, fn, options = null) => {
   Exstream.prototype[name] = fn
+  methods.registerPipelineOperator(name, !options || options.pipeline !== false)
 }
 _.extend('errors', function (fn) {
   return _.errors(fn, this)
@@ -32,9 +32,13 @@ _.extend('skipErrors', function (predicate = null) {
 _.extend('failOnError', function () {
   return _.failOnError(this)
 })
-_.extend('routeErrors', function () {
-  return _.routeErrors(this)
-})
+_.extend(
+  'routeErrors',
+  function () {
+    return _.routeErrors(this)
+  },
+  { pipeline: false },
+)
 _.extend('stopOnError', function (fn) {
   return _.stopOnError(fn, this)
 })
@@ -187,4 +191,5 @@ _.extend(
   function (joinKeyOrFnA, joinKeyOrFnB, type = 'inner', sortDirection = 'asc', buffer = 1) {
     return _.sortedJoin(joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, this)
   },
+  { pipeline: false },
 )

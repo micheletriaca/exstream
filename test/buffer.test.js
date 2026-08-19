@@ -1,4 +1,5 @@
 const _ = require('../src/index.js')
+const { kDestroy } = require('../src/stream-control.js')
 
 test('buffer limit exposes current and peak usage', () => {
   const source = _(null, { bufferLimit: 2 })
@@ -16,7 +17,7 @@ test('buffer limit exposes current and peak usage', () => {
   expect(() => source.write(3)).toThrow(_.BufferOverflowError)
   expect(source.buffered).toBe(2)
 
-  source.destroy()
+  source[kDestroy]()
   expect(source.buffered).toBe(0)
   expect(source.peakBuffered).toBe(2)
 })
@@ -106,7 +107,7 @@ test('an observer destroyed early remains detached from source lifecycle', async
   const source = _([1, 2, 3])
   const observer = source.observe()
 
-  observer.destroy()
+  observer[kDestroy]()
 
   expect(await source.toArray()).toEqual([1, 2, 3])
   expect(source.state).toBe('ended')

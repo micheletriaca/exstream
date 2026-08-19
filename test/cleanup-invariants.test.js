@@ -3,6 +3,7 @@ vi.setConfig({ testTimeout: 2000 })
 const { finished } = require('stream/promises')
 const { Writable } = require('stream')
 const _ = require('../src/index.js')
+const { kDestroy, kResume } = require('../src/stream-control.js')
 const { nextTurn, waitFor } = require('./invariant-helpers.js')
 
 const listenerSnapshot = (emitter, events) =>
@@ -125,16 +126,15 @@ test('destroy prevents pending mapAsync work from starting more tasks', async ()
         }),
     )
     .mapAsync((value) => value, { concurrency: 2, ordered: false })
-  resolved
-    .consumeSync((err, value, push) => {
-      if (err) push(err)
-      else if (value === _.nil) push(null, _.nil)
-      else received.push(value)
-    })
-    .resume()
+  const sink = resolved.consumeSync((err, value, push) => {
+    if (err) push(err)
+    else if (value === _.nil) push(null, _.nil)
+    else received.push(value)
+  })
+  sink[kResume]()
 
   await waitFor(() => started.length === 2, 'mapAsync() did not fill its initial window')
-  resolved.destroy()
+  resolved[kDestroy]()
   for (const release of releases) release()
   await nextTurn()
   await nextTurn()
@@ -149,10 +149,10 @@ test('destroy clears a pending ratelimit timer', () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   try {
     const limited = _([1, 2]).ratelimit(1, 1000)
-    limited.resume()
+    limited[kResume]()
 
     expect(vi.getTimerCount()).toBe(1)
-    limited.destroy()
+    limited[kDestroy]()
     expect(vi.getTimerCount()).toBe(0)
   } finally {
     vi.useRealTimers()
@@ -165,10 +165,10 @@ test('destroy cancels a pending makeAsync turn', () => {
   clock.mockReturnValueOnce(0).mockReturnValueOnce(1)
   try {
     const asynchronous = _([1, 2]).makeAsync(0)
-    asynchronous.resume()
+    asynchronous[kResume]()
 
     expect(vi.getTimerCount()).toBe(1)
-    asynchronous.destroy()
+    asynchronous[kDestroy]()
     expect(vi.getTimerCount()).toBe(0)
   } finally {
     clock.mockRestore()

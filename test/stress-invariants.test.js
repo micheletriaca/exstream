@@ -3,6 +3,7 @@ vi.setConfig({ testTimeout: 5000 })
 const { finished } = require('stream/promises')
 const { Writable } = require('stream')
 const _ = require('../src/index.js')
+const { kDestroy } = require('../src/stream-control.js')
 const { nextTurn, waitFor } = require('./invariant-helpers.js')
 
 test('reliable fan-out remains bounded with a slow writer over many records', async () => {
@@ -104,7 +105,7 @@ test('destroy terminates a backpressured fork/merge graph without later activity
 
   await source.start()
   await waitFor(() => callbacks.length === 1, 'destination did not apply backpressure')
-  merged.destroy()
+  merged[kDestroy]()
   const producedAtDestroy = produced
   callbacks[0]()
 

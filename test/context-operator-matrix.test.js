@@ -1,4 +1,5 @@
 const _ = require('../src/index.js')
+const { kResume } = require('../src/stream-control.js')
 
 test('tap receives a lazily-created record context before a terminal drain', async () => {
   const contexts = []
@@ -310,7 +311,7 @@ test('low-level consume callbacks retain their explicit context arguments', asyn
     if (value === _.nil) push(null, _.nil)
     else syncResult.push([value, context.correlationId])
   })
-  syncSink.resume()
+  syncSink[kResume]()
 
   const asyncResult = []
   const asyncSink = _([2])
@@ -323,7 +324,7 @@ test('low-level consume callbacks retain their explicit context arguments', asyn
         next()
       }
     })
-  asyncSink.resume()
+  asyncSink[kResume]()
   await new Promise((resolve) => asyncSink.once('end', resolve))
 
   expect(syncResult).toEqual([[1, 'sync']])

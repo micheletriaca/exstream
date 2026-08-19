@@ -1,10 +1,11 @@
 const _ = require('./utils')
 const { EventHub } = require('./event-hub.js')
 const { runtime } = require('./runtime.js')
-const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
+const { createCooperativeScheduler, scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
 const { forkContext } = require('./context')
 const { annotateError } = require('./error-info.js')
+const { kAbort, kDestroy, kFail, kPause, kResume } = require('./stream-control.js')
 
 const signalActive = Symbol('exstream signal active')
 const noCancel = () => undefined
@@ -79,6 +80,8 @@ class Exstream extends EventHub {
   #overflowPolicy = 'error'
   #sourceData = null
   #generator = null
+  #scheduleGeneratorContinuation = createCooperativeScheduler()
+  #cancelGeneratorContinuation = noCancel
 
   #consumeFn = null
   #consumeSyncFn = null
@@ -197,7 +200,7 @@ class Exstream extends EventHub {
     ) {
       throw Error('signal must be an AbortSignal')
     }
-    const abortFromSignal = () => this.abort(signal.reason)
+    const abortFromSignal = () => this[kAbort](signal.reason)
     if (signal.aborted) abortFromSignal()
     else {
       signal.addEventListener('abort', abortFromSignal, { once: true })
@@ -280,11 +283,6 @@ class Exstream extends EventHub {
   write(x) {
     if (this.#nilPushed) throw Error('Cannot write to stream after nil')
     return this._write(x)
-  }
-
-  writeData(value) {
-    if (this.#nilPushed) throw Error('Cannot write to stream after nil')
-    return this._writeData(value)
   }
 
   #enqueue = (type, value, input, fatal, context) => {
@@ -379,7 +377,7 @@ class Exstream extends EventHub {
     let syncNext = true
     const next = () => {
       this.#nextCalled = true
-      if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
+      if (this.paused && !syncNext) scheduleMicrotask(() => this[kResume](true))
     }
     const push = context === void 0 ? this.#push : this.#contextualPush(context)
     if (context === void 0) {
@@ -394,7 +392,7 @@ class Exstream extends EventHub {
       }
     }
     syncNext = false
-    if (!this.#nextCalled) this.pause(true)
+    if (!this.#nextCalled) this[kPause](true)
   }
 
   #contextualPush =
@@ -477,7 +475,7 @@ class Exstream extends EventHub {
       if (context === void 0) this._writeData(value)
       else this._writeData(value, false, context)
     } catch (error) {
-      this.abort(error)
+      this[kAbort](error)
     }
   }
 
@@ -486,7 +484,7 @@ class Exstream extends EventHub {
     try {
       this.#writeControlRecord(type, value, input, fatal, context)
     } catch (error) {
-      this.abort(error)
+      this[kAbort](error)
     }
   }
 
@@ -526,12 +524,14 @@ class Exstream extends EventHub {
     if (source) {
       source.#removeConsumer(this)
       if (propagateUpstream && source.#consumers.length === 0) {
-        if (terminalState === 'aborted') source.abort(this.#abortReason)
-        else source.destroy()
+        if (terminalState === 'aborted') source[kAbort](this.#abortReason)
+        else source[kDestroy]()
       }
     }
     if (this.#observedSource) this.#observedSource.#removeObserver(this)
     this.#generator = null
+    this.#cancelGeneratorContinuation()
+    this.#cancelGeneratorContinuation = noCancel
     this.#sourceData = null
     this.removeAllListeners()
     this.#destroyers.forEach((x) => x())
@@ -544,7 +544,7 @@ class Exstream extends EventHub {
     this.#terminate('ended')
   }
 
-  destroy() {
+  [kDestroy]() {
     return this.ended ? void 0 : this.#destroyActive()
   }
 
@@ -554,9 +554,9 @@ class Exstream extends EventHub {
     annotateError(reason, { origin: 'lifecycle', stage: 'destroy' })
     this.#cancelSignal(reason)
     this.#terminate('destroyed', true)
-  }
+  };
 
-  abort(reason) {
+  [kAbort](reason) {
     if (this.ended || this.#state === 'ending') return
     if (reason === void 0) {
       reason = Error('The operation was aborted')
@@ -590,9 +590,9 @@ class Exstream extends EventHub {
     if (this.#signalAbortReason !== signalActive) return false
     this.#signalAbortReason = reason
     return this.#abortController ? this.#abortController.abort(reason) : true
-  }
+  };
 
-  fail(reason, input) {
+  [kFail](reason, input) {
     const error = new ExstreamError(reason, input, { origin: 'operator', stage: 'fail' })
     error.exstreamFatal = true
     let root = this
@@ -610,7 +610,7 @@ class Exstream extends EventHub {
 
   #propagateFailure = (error, input) => {
     this.#failing = true
-    this.pause(true)
+    this[kPause](true)
     this.#emitErrorIfHandled(error)
     this.emit('fatal', error, input)
     const consumers = this.#consumers
@@ -689,10 +689,16 @@ class Exstream extends EventHub {
         this.#buffer = []
         this.#buffered = 0
         this.#consumers = []
-        this.destroy()
+        this[kDestroy]()
         me = otherStream
       }
-      if (me.paused && (!syncNext || otherStream)) scheduleNextTurn(() => me.resume(true))
+      if (me.paused && (!syncNext || otherStream)) {
+        const schedule = otherStream ? scheduleNextTurn : me.#scheduleGeneratorContinuation
+        me.#cancelGeneratorContinuation = schedule(() => {
+          me.#cancelGeneratorContinuation = noCancel
+          me[kResume](true)
+        })
+      }
     }
 
     const w = (x) => {
@@ -707,18 +713,18 @@ class Exstream extends EventHub {
       syncNext = true
       this.#generator(w, next)
       syncNext = false
-      if (!this.#nextGenCalled) this.pause(true)
+      if (!this.#nextGenCalled) this[kPause](true)
     } while (!this.paused && !this.#nilPushed)
-  }
+  };
 
-  pause(fromInside = false) {
+  [kPause](fromInside = false) {
     this.paused = true
     if (fromInside) this.pausedFromInside = true
     else this.pausedFromOutside = true
-    if (this.source) this.source.pause()
+    if (this.source) this.source[kPause]()
   }
 
-  resume(fromInside = false) {
+  [kResume](fromInside = false) {
     if (fromInside) this.pausedFromInside = false
     else this.pausedFromOutside = false
     if (this.pausedFromInside || this.pausedFromOutside) return
@@ -743,11 +749,11 @@ class Exstream extends EventHub {
   }
 
   #checkBackPressure = () => {
-    if (!this.#consumers.length) return this.pause()
+    if (!this.#consumers.length) return this[kPause]()
     for (let i = 0, len = this.#consumers.length; i < len; i++) {
-      if (this.#consumers[i].paused) return this.pause()
+      if (this.#consumers[i].paused) return this[kPause]()
     }
-    this.resume()
+    this[kResume]()
   }
 
   consume(fn) {
@@ -808,15 +814,92 @@ class Exstream extends EventHub {
     ) {
       return Promise.reject(Error('error in .pipeTo(). signal must be an AbortSignal'))
     }
+    if (_.isExstreamDestination(destination)) {
+      return this.#pipeExstreamDestination(destination, options)
+    }
     if (runtime.isWebWritableStream(destination)) {
       return this.#pipeWebWritable(destination, options).then(() => undefined)
     }
     if (!destination || typeof destination.write !== 'function' || !runtime.finished) {
       return Promise.reject(
-        Error('error in .pipeTo(). destination must be a Node writable or WritableStream'),
+        Error(
+          'error in .pipeTo(). destination must be an Exstream Destination, ' +
+            'Node writable, or WritableStream',
+        ),
       )
     }
     return this.#pipeNodeWritable(destination, options)
+  }
+
+  #pipeExstreamDestination = (destination, options) => {
+    const externalSignal = options.signal
+    const transferController = new AbortController()
+    const sourceSignal = this.signal
+    let externallyAborted = false
+    let externalAbortReason
+
+    const abortTransfer = (signal) => {
+      if (!transferController.signal.aborted) transferController.abort(signal.reason)
+    }
+    const abortFromSource = () => abortTransfer(sourceSignal)
+    const abortFromExternal = () => {
+      annotateError(externalSignal.reason, { origin: 'lifecycle', stage: 'abort' })
+      externallyAborted = true
+      externalAbortReason = externalSignal.reason
+      abortTransfer(externalSignal)
+      this[kAbort](externalSignal.reason)
+    }
+    const cleanup = () => {
+      sourceSignal.removeEventListener('abort', abortFromSource)
+      if (externalSignal !== void 0) {
+        externalSignal.removeEventListener('abort', abortFromExternal)
+      }
+    }
+    const fail = (error) => {
+      annotateError(error, { origin: 'sink', stage: 'destination' })
+      if (!transferController.signal.aborted) transferController.abort(error)
+      this[kAbort](error)
+      throw error
+    }
+
+    sourceSignal.addEventListener('abort', abortFromSource, { once: true })
+
+    if (externalSignal !== void 0) {
+      if (externalSignal.aborted) abortFromExternal()
+      else externalSignal.addEventListener('abort', abortFromExternal, { once: true })
+    }
+
+    let result
+    if (externalSignal && externalSignal.aborted) {
+      result = Promise.reject(externalSignal.reason)
+    } else {
+      try {
+        result = destination._run(this, { signal: transferController.signal })
+        if (!result || typeof result.then !== 'function') {
+          const error = Error('error running destination: run must return a promise')
+          error.code = 'EXSTREAM_DESTINATION_NO_PROMISE'
+          result = Promise.reject(error)
+        }
+      } catch (error) {
+        result = Promise.reject(error)
+      }
+    }
+
+    const completion = Promise.resolve(result).then(
+      () => {
+        if (externallyAborted) throw externalAbortReason
+        if (this.state === 'aborted') throw this.abortReason
+        if (this.ended) return undefined
+        const error = Error('Destination completed before consuming its source')
+        error.code = 'EXSTREAM_DESTINATION_INCOMPLETE'
+        throw error
+      },
+      (error) => {
+        throw externallyAborted ? externalAbortReason : error
+      },
+    )
+
+    return completion.catch(fail).finally(cleanup)
   }
 
   #pipeNodeWritable = (destination, options) =>
@@ -865,7 +948,7 @@ class Exstream extends EventHub {
         annotateError(error, info)
         cleanup()
         abortDestination()
-        sink.abort(error)
+        sink[kAbort](error)
         reject(error)
       }
       const writeCompleted = (error) => {
@@ -937,7 +1020,7 @@ class Exstream extends EventHub {
       destination.emit('pipe', this)
       scheduleNextTurn(() => {
         try {
-          sink.resume()
+          sink[kResume]()
         } catch (error) {
           fail(error)
         }
@@ -1053,7 +1136,7 @@ class Exstream extends EventHub {
         else request.resolve({ done: true, value: void 0 })
       } else if (error) terminalError = error
     }
-    const abortFromSignal = () => sink.abort(signal.reason)
+    const abortFromSignal = () => sink[kAbort](signal.reason)
 
     sink = this.consumeSync((error, value) => {
       if (closed) return
@@ -1062,14 +1145,14 @@ class Exstream extends EventHub {
         return
       }
 
-      sink.pause()
+      sink[kPause]()
       const request = pending
       pending = null
       if (error) {
         closed = true
         cleanup()
         request.reject(error)
-        sink.destroy()
+        sink[kDestroy]()
       } else {
         request.resolve({ done: false, value })
       }
@@ -1092,7 +1175,7 @@ class Exstream extends EventHub {
       }
       return new Promise((resolve, reject) => {
         pending = { reject, resolve }
-        sink.resume()
+        sink[kResume]()
       })
     }
 
@@ -1105,11 +1188,11 @@ class Exstream extends EventHub {
       return(value) {
         terminalError = null
         finish()
-        sink.destroy()
+        sink[kDestroy]()
         return Promise.resolve({ done: true, value })
       },
       throw(error) {
-        sink.abort(error)
+        sink[kAbort](error)
         terminalError = null
         return Promise.reject(error)
       },
@@ -1194,9 +1277,9 @@ class Exstream extends EventHub {
       }
       const rejectRecord = (error) => {
         if (settled) return
-        sink.pause()
+        sink[kPause]()
         scheduleMicrotask(() => {
-          sink.abort(error)
+          sink[kAbort](error)
         })
         fail(error)
       }
@@ -1223,7 +1306,7 @@ class Exstream extends EventHub {
       })
       sink.once('error', fail).once('abort', fail).once('end', succeed)
       try {
-        sink.resume()
+        sink[kResume]()
       } catch (error) {
         fail(error)
       }
@@ -1249,9 +1332,9 @@ class Exstream extends EventHub {
       }
       const rejectRecord = (error) => {
         if (settled) return
-        sink.pause()
+        sink[kPause]()
         scheduleMicrotask(() => {
-          if (!sink.ended) sink.abort(error)
+          if (!sink.ended) sink[kAbort](error)
         })
         fail(error)
       }
@@ -1269,7 +1352,7 @@ class Exstream extends EventHub {
       })
       sink.once('error', fail).once('abort', fail).once('end', succeed)
       try {
-        sink.resume()
+        sink[kResume]()
       } catch (error) {
         fail(error)
       }
@@ -1312,18 +1395,18 @@ class Exstream extends EventHub {
       const s = new Exstream()
       s.readable = false
       s.source = this
-      s.resume()
+      s[kResume]()
       s.#addOnceListener('error', target, (e) => {
         s.write(e)
         scheduleNextTurn(() => s.end())
       })
       s.#addOnceListener('finish', target, () => {
         s.emit('finish')
-        scheduleNextTurn(() => s.destroy())
+        scheduleNextTurn(() => s[kDestroy]())
       })
       s.#addOnceListener('close', target, () => {
         s.emit('close')
-        scheduleNextTurn(() => s.destroy())
+        scheduleNextTurn(() => s[kDestroy]())
       })
       return s
     } else if (_.isFunction(target)) {
@@ -1441,11 +1524,11 @@ class Exstream extends EventHub {
     }
 
     const fail = (error, input) => {
-      if (!merged.ended) merged.fail(error, input)
+      if (!merged.ended) merged[kFail](error, input)
     }
 
     const abort = (reason) => {
-      if (!cleaningUp && !merged.ended) merged.abort(reason)
+      if (!cleaningUp && !merged.ended) merged[kAbort](reason)
     }
 
     const activateInner = (slot, inner) => {
@@ -1469,12 +1552,12 @@ class Exstream extends EventHub {
           slot.ended = true
           pump()
         })
-        sink.resume()
+        sink[kResume]()
       } catch (reason) {
         const error = new ExstreamError(reason, inner, { origin: 'operator', stage: 'merge' })
         slot.ended = true
         queueFrame(slot, errorFrame(error, inner, false, slot.context), null)
-        if (slot.sink && !slot.sink.ended) slot.sink.destroy()
+        if (slot.sink && !slot.sink.ended) slot.sink[kDestroy]()
         pump()
       }
     }
@@ -1532,7 +1615,7 @@ class Exstream extends EventHub {
     const startOrDrain = () => {
       if (!started) {
         started = true
-        outerSink.resume()
+        outerSink[kResume]()
       }
       pump()
     }
@@ -1560,17 +1643,17 @@ class Exstream extends EventHub {
     })
     merged.once('abort', (reason) => {
       cleaningUp = true
-      if (!outerSink.ended) outerSink.abort(reason)
+      if (!outerSink.ended) outerSink[kAbort](reason)
       for (const slot of slots) {
-        if (slot.sink && !slot.sink.ended) slot.sink.abort(reason)
+        if (slot.sink && !slot.sink.ended) slot.sink[kAbort](reason)
       }
     })
     merged.once('end', () => {
       cleaningUp = true
       outerNext = null
-      if (!outerSink.ended) outerSink.destroy()
+      if (!outerSink.ended) outerSink[kDestroy]()
       for (const slot of slots) {
-        if (slot.sink && !slot.sink.ended) slot.sink.destroy()
+        if (slot.sink && !slot.sink.ended) slot.sink[kDestroy]()
       }
       slots.length = 0
       ready.length = 0

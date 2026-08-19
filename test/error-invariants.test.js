@@ -1,12 +1,13 @@
 const _ = require('../src/index.js')
 const { ExstreamError } = require('../src/exstream.js')
+const { kResume } = require('../src/stream-control.js')
 
 test('errors without consumers are emitted by the source stream', () => {
   const source = _()
   const reason = Error('unhandled stream error')
   const error = vi.fn()
   source.once('error', error)
-  source.resume()
+  source[kResume]()
 
   source.write(reason)
 

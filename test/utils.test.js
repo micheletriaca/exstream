@@ -1,4 +1,4 @@
-const _ = require('../src/index.js')
+const _ = require('../src/utils.js')
 
 test('partial', () => {
   const add = (...args) => args.reduce((memo, x) => x + memo, 0)

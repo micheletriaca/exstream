@@ -1,5 +1,6 @@
 const { Exstream, ExstreamError } = require('./exstream')
 const { aggregateContexts, appendContext, createContext } = require('./context')
+const { kDestroy, kResume } = require('./stream-control.js')
 
 const _ = require('./utils.js')
 const _a = require('./methods')
@@ -165,7 +166,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
               }
 
               if (!s2Started) {
-                pullData = () => s2Transform.resume()
+                pullData = () => s2Transform[kResume]()
                 s2Started = true
               }
 
@@ -226,7 +227,7 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
         }
       })
 
-      pullData = () => s1Transform.resume()
+      pullData = () => s1Transform[kResume]()
       n && n()
       return void 0
     })
@@ -244,8 +245,8 @@ _m.sortedJoin = _.curry((joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer
     if (pullData) pullData()
   }).on('end', () => {
     w = n = () => {}
-    s1Transform?.destroy()
-    s2Transform?.destroy()
+    if (s1Transform) s1Transform[kDestroy]()
+    if (s2Transform) s2Transform[kDestroy]()
     w = n = pullData = a = b = bKey = aContext = bContext = cb1 = cb2 = null
   })
   return result

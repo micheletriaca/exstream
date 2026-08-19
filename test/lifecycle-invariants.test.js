@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const { nextTurn } = require('./invariant-helpers.js')
+const { kAbort, kDestroy, kPause, kResume } = require('../src/stream-control.js')
 
 test('concurrent start calls consume a manually started source exactly once', async () => {
   const source = _([1, 2, 3])
@@ -24,7 +25,7 @@ test('start is not a terminal consumer', async () => {
 
   expect(values).toEqual([])
   expect(output.paused).toBe(true)
-  output.destroy()
+  output[kDestroy]()
 })
 
 test('drain consumes and discards a terminal pipeline', async () => {
@@ -109,10 +110,10 @@ test('destroy is terminal and later lifecycle calls cannot change it', async () 
   const end = vi.fn()
   source.once('end', end)
 
-  source.destroy()
+  source[kDestroy]()
   source.end()
-  source.abort('too late')
-  source.resume()
+  source[kAbort]('too late')
+  source[kResume]()
   await source.start()
 
   expect(source.state).toBe('destroyed')
@@ -135,9 +136,9 @@ test('abort is idempotent and preserves the first reason', async () => {
   const end = vi.fn()
   source.once('abort', abort).once('end', end)
 
-  source.abort('first reason')
-  source.abort('second reason')
-  source.destroy()
+  source[kAbort]('first reason')
+  source[kAbort]('second reason')
+  source[kDestroy]()
   await source.start()
 
   expect(source.state).toBe('aborted')
@@ -151,7 +152,7 @@ test('abort is idempotent and preserves the first reason', async () => {
 test('abort creates an AbortError when no reason is provided', () => {
   const source = _()
 
-  source.abort()
+  source[kAbort]()
 
   expect(source.state).toBe('aborted')
   expect(source.abortReason).toBeInstanceOf(Error)
@@ -174,7 +175,7 @@ test('aborting the only transformed branch propagates to its source', () => {
   const source = _([1, 2, 3])
   const transformed = source.map((value) => value * 2)
 
-  transformed.abort(reason)
+  transformed[kAbort](reason)
 
   expect(transformed.state).toBe('aborted')
   expect(transformed.abortReason).toBe(reason)
@@ -187,7 +188,7 @@ test('aborting one reliable fork leaves a sibling attached', async () => {
   const aborted = source.fork(true)
   const siblingResult = source.fork(true).toArray()
 
-  aborted.abort('branch stopped')
+  aborted[kAbort]('branch stopped')
 
   expect(aborted.state).toBe('aborted')
   expect(source.state).toBe('idle')
@@ -200,16 +201,15 @@ test('repeated end calls flush buffered values and emit end exactly once', async
   const values = []
   const end = vi.fn()
   const source = _().once('end', end)
-  source
-    .consumeSync((err, value, push) => {
-      if (err) push(err)
-      else if (value === _.nil) push(null, _.nil)
-      else values.push(value)
-    })
-    .resume()
+  const sink = source.consumeSync((err, value, push) => {
+    if (err) push(err)
+    else if (value === _.nil) push(null, _.nil)
+    else values.push(value)
+  })
+  sink[kResume]()
 
   source.write(1)
-  source.pause()
+  source[kPause]()
   source.write(2)
   source.end()
   source.end()
@@ -223,19 +223,18 @@ test('repeated destroy calls discard buffered values and emit end exactly once',
   const values = []
   const end = vi.fn()
   const source = _().once('end', end)
-  source
-    .consumeSync((err, value, push) => {
-      if (err) push(err)
-      else if (value === _.nil) push(null, _.nil)
-      else values.push(value)
-    })
-    .resume()
+  const sink = source.consumeSync((err, value, push) => {
+    if (err) push(err)
+    else if (value === _.nil) push(null, _.nil)
+    else values.push(value)
+  })
+  sink[kResume]()
 
   source.write(1)
-  source.pause()
+  source[kPause]()
   source.write(2)
-  source.destroy()
-  source.destroy()
+  source[kDestroy]()
+  source[kDestroy]()
   source.end()
   await nextTurn()
 
@@ -250,7 +249,7 @@ test('ending a completed stream does not restart its source or emit more events'
 
   expect(await source.toArray()).toEqual([1, 2, 3])
   source.end()
-  source.destroy()
+  source[kDestroy]()
   await source.start()
   await nextTurn()
 

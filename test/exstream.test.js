@@ -1,6 +1,7 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const EventEmitter = require('events').EventEmitter
+const { kResume } = require('../src/stream-control.js')
 
 test('stream initialization', () => {
   const x = _([1, 2, 3])
@@ -31,7 +32,7 @@ test('consume stream', () => {
   }).on('end', () => {
     expect(y).toEqual([1, 2, 3])
   })
-  x.resume()
+  x[kResume]()
 })
 
 test('write', () => {
@@ -54,7 +55,7 @@ test('write', () => {
         expect(y).toEqual([1, 2, 3, 4])
         resolve()
       })
-    z.resume()
+    z[kResume]()
     x.write(1)
     x.write(2)
     x.write(3)

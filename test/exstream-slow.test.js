@@ -2,6 +2,7 @@ vi.setConfig({ testTimeout: 2000 })
 
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
+const { kResume } = require('../src/stream-control.js')
 
 test('backpressure', () => {
   const x = _([1, 2, 3])
@@ -23,7 +24,7 @@ test('backpressure', () => {
         expect(y).toEqual([1, 2, 3])
         resolve()
       })
-    z.resume()
+    z[kResume]()
   })
 })
 

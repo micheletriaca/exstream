@@ -1,5 +1,5 @@
 const { EventEmitter } = require('events')
-const { finished, Readable } = require('stream')
+const { Duplex, finished, Readable } = require('stream')
 const { StringDecoder } = require('string_decoder')
 const { configureRuntime } = require('./runtime.js')
 
@@ -35,6 +35,7 @@ configureRuntime({
   concatBytes: (chunks, totalLength) => Buffer.concat(chunks, totalLength),
   concatTextBytes,
   createBase64Encoder: () => new StringDecoder('base64'),
+  duplexFromTransform: (transform) => Duplex.from(transform),
   EventBase: EventEmitter,
   finished,
   createStringDecoder: (encoding) => new StringDecoder(encoding),

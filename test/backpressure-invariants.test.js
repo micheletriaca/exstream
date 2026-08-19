@@ -2,13 +2,14 @@ vi.setConfig({ testTimeout: 2000 })
 
 const { Writable } = require('stream')
 const _ = require('../src/index.js')
+const { kResume } = require('../src/stream-control.js')
 const { waitFor } = require('./invariant-helpers.js')
 
 const controlledConsumer = (stream) => {
   const releases = []
   const values = []
   const done = new Promise((resolve, reject) => {
-    stream
+    const sink = stream
       .consume((err, value, push, next) => {
         if (err) {
           push(err)
@@ -22,7 +23,7 @@ const controlledConsumer = (stream) => {
       })
       .once('error', reject)
       .once('end', resolve)
-      .resume()
+    sink[kResume]()
   })
   return { done, releases, values }
 }
@@ -40,12 +41,12 @@ test('a slow reliable fork stops the source and bounds run-ahead', async () => {
   })
   const fastValues = []
   const fastResult = source
-    .fork(true)
+    .fork()
     .tap((value) => fastValues.push(value))
     .toArray()
-  const slow = controlledConsumer(source.fork(true))
+  const slow = controlledConsumer(source.fork())
 
-  await source.start()
+  //await source.start()
 
   for (let index = 0; index < total; index++) {
     await waitFor(() => slow.releases.length > index, `slow fork did not receive item ${index}`)

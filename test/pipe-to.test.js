@@ -262,7 +262,7 @@ test.each([null, {}, { aborted: false, addEventListener() {}, removeEventListene
 
 test('pipeTo rejects invalid destinations', async () => {
   await expect(_([1]).pipeTo(null)).rejects.toThrow(
-    'destination must be a Node writable or WritableStream',
+    'destination must be an Exstream Destination, Node writable, or WritableStream',
   )
 })
 

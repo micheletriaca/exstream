@@ -1,4 +1,5 @@
 declare const exstreamDataValue: unique symbol
+declare const exstreamDestinationInput: unique symbol
 declare const exstreamLazyContext: unique symbol
 
 declare function exstream<T, C extends object>(
@@ -116,6 +117,10 @@ declare namespace exstream {
     on(event: string | symbol, listener: (...args: any[]) => void): this
     off(event: string | symbol, listener: (...args: any[]) => void): this
   }
+
+  /** Minimal shape returned when a reusable pipeline becomes a Node Transform stream. */
+  interface NodeTransformLike<Input = unknown, Output = Input>
+    extends NodeReadableLike<Output>, NodeWritableLike<Input> {}
 
   type GeneratorWrite<T> = (value: T | Error | DataValue<T> | Nil) => boolean
   type GeneratorNext<T> = (source?: StreamSource<T>) => void
@@ -309,15 +314,34 @@ declare namespace exstream {
     /** Leaves the destination open after a successful transfer. */
     preventClose?: boolean
   }
+  interface DestinationPipeOptions {
+    /** Cancels the destination and its source branch when this signal aborts. */
+    signal?: AbortSignal
+  }
+  interface DestinationContext {
+    /** Cancels when the transfer or its source branch is aborted. */
+    readonly signal: AbortSignal
+  }
   /** Describes where an error first entered an Exstream pipeline. */
   interface ErrorInfo<Input = unknown> {
     readonly origin: ErrorOrigin
     readonly stage?: string
     readonly input?: Input
   }
+
+  /** A reusable terminal consumer accepted by pipeTo(). */
+  interface Destination<Input = unknown> {
+    readonly __exstream_destination__: true
+    /** @internal Keeps the consumed value type available for inference. */
+    readonly [exstreamDestinationInput]: (input: Input) => void
+  }
   interface ToWebReadableOptions {
     signal?: AbortSignal
     strategy?: QueuingStrategy<unknown>
+  }
+  interface ExtendOptions {
+    /** Set false when the extension cannot be recorded in a reusable pipeline. */
+    pipeline?: boolean
   }
   interface ThroughOptions {
     /** Treat a Node stream as write-only. */
@@ -431,10 +455,8 @@ declare namespace exstream {
     /** Iterates lazily with backpressure and cancels the branch when iteration stops early. */
     [Symbol.asyncIterator](): AsyncIterableIterator<T>
 
-    /** Writes one value. Error objects become error records; use writeData() to keep them as data. */
+    /** Writes one value. Error objects become error records; wrap them with data() to keep them as data. */
     write(value: T | Error | DataValue<T> | Nil): boolean
-    /** Writes one value as data, including Error objects. */
-    writeData(value: T): boolean
     /**
      * Starts a source whose automatic startup was disabled, typically with `fork(true)`.
      * This releases the producer once downstream consumers are ready; it is not a terminal
@@ -444,16 +466,6 @@ declare namespace exstream {
     start(): Promise<void>
     /** Ends this stream after its buffered values. */
     end(): void
-    /** Stops this stream and releases its resources. */
-    destroy(): void
-    /** Cancels this stream and its connected work. */
-    abort(reason?: unknown): void
-    /** Ends the pipeline with a fatal error. */
-    fail(reason: unknown, input?: unknown): void
-    /** Pauses value delivery. */
-    pause(fromInside?: boolean): this
-    /** Resumes value delivery. */
-    resume(fromInside?: boolean): this
 
     /** Creates a custom asynchronous operator. Call next() when ready for another value. */
     consume<U = T, NextContext extends object = C>(
@@ -640,6 +652,8 @@ declare namespace exstream {
       destination: NodeWritableLike<T> | WritableStream<T>,
       options?: PipeOptions,
     ): Promise<void>
+    /** Runs a reusable Exstream destination against this source. */
+    pipeTo(destination: Destination<T>, options?: DestinationPipeOptions): Promise<void>
     /** Creates an independent consuming branch. Context objects are copied at the boundary. */
     fork(disableAutostart?: boolean): Exstream<T, C>
     /** Creates a non-blocking branch that may drop buffered values by policy. */
@@ -706,6 +720,10 @@ declare namespace exstream {
     readonly __exstream_pipeline__: true
     /** Creates a fresh stream containing this pipeline's operators. */
     generateStream(): Exstream<Output, C>
+    /** Closes this operator definition into a reusable terminal destination. */
+    drain(): Destination<Input>
+    /** Creates a native Node Transform with this pipeline as its writable-to-readable body. */
+    toNodeTransform(): NodeTransformLike<Input, Output>
     /** Adds a value transform to this reusable pipeline. */
     map<U>(
       fn: (value: Output, context: C) => U,
@@ -786,6 +804,10 @@ declare namespace exstream {
     slice(start: number, end?: number): Pipeline<Input, Output, C>
     /** Adds a maximum output count. */
     take(count: number): Pipeline<Input, Output, C>
+    /** Adds first-value selection. */
+    head(): Pipeline<Input, Output, C>
+    /** Adds last-value selection. */
+    last(): Pipeline<Input, Output, C>
     /** Adds an initial skip count. */
     drop(count: number): Pipeline<Input, Output, C>
     /** Adds a synchronous reducer. */
@@ -873,6 +895,13 @@ declare namespace exstream {
 
   /** Creates a reusable pipeline definition. */
   function pipeline<T = unknown>(): Pipeline<T, T, RecordContext<T>>
+  /** Creates a reusable terminal destination with high-level Exstream lifecycle access. */
+  function destination<T = unknown>(
+    run: (
+      source: Exstream<T, LazyRecordContext<T>>,
+      context: DestinationContext,
+    ) => PromiseLike<void>,
+  ): Destination<T>
   /** Creates a stream from repeated events. */
   function fromEvent<Args extends unknown[], T = Args extends [infer Only] ? Only : Args>(
     target: EventTargetLike | EventEmitterLike,
@@ -882,7 +911,11 @@ declare namespace exstream {
   /** Wraps a value so Error objects are treated as data. */
   function data<T>(value: T): DataValue<T>
   /** Adds a method to every Exstream instance. */
-  function extend(name: string, fn: (this: Exstream<any, any>, ...args: any[]) => unknown): void
+  function extend(
+    name: string,
+    fn: (this: Exstream<any, any>, ...args: any[]) => unknown,
+    options?: ExtendOptions | null,
+  ): void
 
   /** Builds a curried map operator. Pass a stream as the last argument to run it immediately. */
   function map<T, U, C extends object>(
@@ -1300,62 +1333,8 @@ declare namespace exstream {
     buffer: number,
     stream: Exstream<readonly [Exstream<A, object>, Exstream<B, object>], C>,
   ): Exstream<SortedJoinResult<K, A, B>, AggregateContext<SortedJoinResult<K, A, B>, object>>
-  /** Returns true for Exstream instances. */
-  function isExstream(value: unknown): value is Exstream<unknown, RecordContext<unknown>>
-  /** Returns true for reusable Exstream pipelines. */
-  function isExstreamPipeline(value: unknown): value is Pipeline
-  /** Returns true unless the value is null or undefined. */
-  function isDefined<T>(value: T | null | undefined): value is T
-  /** Returns true when an object owns the requested field. */
-  function has<K extends PropertyKey>(value: unknown, property: K): value is Record<K, unknown>
-  /** Returns true for synchronous iterables. */
-  function isIterable<T = unknown>(value: unknown): value is Iterable<T>
-  /** Returns true for native promises. */
-  function isPromise<T = unknown>(value: unknown): value is Promise<T>
-  /** Returns true for asynchronous iterables. */
-  function isAsyncIterable<T = unknown>(value: unknown): value is AsyncIterable<T>
-  /** Returns true for functions. */
-  function isFunction(value: unknown): value is (...args: any[]) => unknown
-  /** Returns true for strings. */
-  function isString(value: unknown): value is string
-  /** Returns true for Error objects. */
-  function isError(value: unknown): value is Error
-  /** Returns true for Node-style streams. */
-  function isNodeStream(value: unknown): value is NodeReadableLike | NodeWritableLike
   /** Returns Exstream provenance metadata without replacing the original error. */
   function errorInfo<Input = unknown>(error: unknown): ErrorInfo<Input>
-  /** Converts a valid positive integer, or returns null. */
-  function asPositiveInteger(value: unknown, allowInfinity?: boolean): number | null
-  /** Converts a valid non-negative finite number, or returns null. */
-  function asNonNegativeFiniteNumber(value: unknown): number | null
-  /** Escapes special characters for use inside a regular expression. */
-  function escapeRegExp(text: string): string
-  /** Pre-fills the first arguments of a function. */
-  function partial<F extends (...args: any[]) => any>(
-    fn: F,
-    ...args: any[]
-  ): (...rest: any[]) => ReturnType<F>
-  /** Curries a function up to the requested argument count. */
-  function ncurry<F extends (...args: any[]) => any>(count: number, fn: F, ...args: any[]): unknown
-  /** Curries a function using its declared argument count. */
-  function curry<F extends (...args: any[]) => any>(fn: F, ...args: any[]): unknown
-  /** Splits a dot or bracket field path into its parts. */
-  function splitFieldPath(path: string): string[]
-  /** Reads a value by path, returning the default when it is missing. */
-  function traverse<T, D = undefined>(
-    value: T,
-    path: readonly string[],
-    defaultValue?: D,
-    index?: number,
-  ): unknown | D
-  /** Builds a function that reads one field path. */
-  function makeGetter<T = unknown, D = undefined>(
-    path: string,
-    defaultValue?: D,
-  ): (value: T) => unknown | D
-  /** Reads one field path from an object. */
-  function get<T, K extends PropertyKeyOf<T>>(object: T, field: K): T[K]
-  function get<D = undefined>(object: unknown, fieldPath: string, defaultValue?: D): unknown | D
 }
 
 export = exstream

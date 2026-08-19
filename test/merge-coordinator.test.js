@@ -2,6 +2,7 @@ vi.setConfig({ testTimeout: 3000 })
 
 const _ = require('../src/index.js')
 const { deferred, nextTurn, waitFor } = require('./invariant-helpers.js')
+const { kAbort, kDestroy, kResume } = require('../src/stream-control.js')
 
 test.each([false, true])(
   'merge is lazy before a terminal starts it (ordered: %s)',
@@ -127,7 +128,7 @@ test('destroying merge does not invoke stream factories still outside the window
   const completion = merged.drain()
 
   await waitFor(() => invoked.length === 1, 'merge did not invoke the first factory')
-  merged.destroy()
+  merged[kDestroy]()
   await nextTurn()
 
   expect(invoked).toEqual([0])
@@ -358,7 +359,7 @@ test('an inner that cannot accept a consumer becomes a record error without bloc
     .merge(1, false)
     .errors((error) => errors.push(error))
     .toArray()
-  reservedConsumer.destroy()
+  reservedConsumer[kDestroy]()
 
   expect(result).toEqual([2])
   expect(errors).toHaveLength(1)
@@ -423,7 +424,7 @@ test('destroying an ordered merge destroys every active inner', async () => {
   const completion = merged.drain()
 
   await waitFor(() => started === 2, 'the ordered merge did not activate both inners')
-  merged.destroy()
+  merged[kDestroy]()
   await nextTurn()
   await nextTurn()
   const statesAfterDestroy = inners.map((inner) => inner.state)
@@ -446,7 +447,7 @@ test.each([false, true])(
       () => first.state === 'running' && second.state === 'running',
       'the merge did not activate both inners',
     )
-    first.abort(reason)
+    first[kAbort](reason)
 
     await expect(completion).rejects.toBe(reason)
     expect(merged.state).toBe('aborted')
@@ -515,12 +516,12 @@ test('outer record errors obey unordered downstream backpressure', async () => {
     if (value === _.nil) push(null, _.nil)
     else if (error) received++
   })
-  sink.resume()
+  sink[kResume]()
 
   await waitFor(() => received === 1, 'the first outer error did not reach the consumer')
   for (let turn = 0; turn < 10; turn++) await nextTurn()
   const transformedWhileBlocked = transformed
-  merged.destroy()
+  merged[kDestroy]()
   await nextTurn()
 
   expect(transformedWhileBlocked).toBe(2)

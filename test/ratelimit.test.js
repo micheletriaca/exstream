@@ -1,9 +1,10 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
+const { kAbort, kDestroy } = require('../src/stream-control.js')
 
 test('ratelimit', async () => {
   const s = _(h.randomStringGenerator(Infinity)).ratelimit(2, 5)
-  setTimeout(() => s.destroy(), 20)
+  setTimeout(() => s[kDestroy](), 20)
   const res = await s.toArray()
   expect(res.length).toBeGreaterThanOrEqual(6)
   expect(res.length).toBeLessThanOrEqual(12)
@@ -22,7 +23,7 @@ test('generator slower than ratelimit', () =>
     ).ratelimit(2, 10)
     s.pipeTo(h.getSlowWritable(res, 0, 20))
     setTimeout(() => {
-      s.destroy()
+      s[kDestroy]()
       resolve()
       expect(res.length).toBeGreaterThanOrEqual(3)
       expect(res.length).toBeLessThanOrEqual(5)
@@ -54,7 +55,7 @@ test('abort clears a pending ratelimit timer', async () => {
     const result = limited.toArray()
 
     expect(vi.getTimerCount()).toBe(1)
-    limited.abort(reason)
+    limited[kAbort](reason)
 
     await expect(result).rejects.toBe(reason)
     expect(vi.getTimerCount()).toBe(0)

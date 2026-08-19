@@ -7,6 +7,44 @@ test('the explicit Node package entry preserves EventEmitter compatibility', () 
   expect(node([1])).toBeInstanceOf(EventEmitter)
 })
 
+test('the package surface excludes internal utilities and lifecycle controls', () => {
+  const node = require('exstream.js/node')
+  const stream = node()
+  const internalUtilities = [
+    'asNonNegativeFiniteNumber',
+    'asPositiveInteger',
+    'curry',
+    'escapeRegExp',
+    'get',
+    'has',
+    'isAsyncIterable',
+    'isDefined',
+    'isError',
+    'isExstream',
+    'isExstreamDestination',
+    'isExstreamPipeline',
+    'isFunction',
+    'isIterable',
+    'isNodeStream',
+    'isPromise',
+    'isString',
+    'makeGetter',
+    'ncurry',
+    'partial',
+    'splitFieldPath',
+    'traverse',
+  ]
+  const lifecycleControls = ['abort', 'destroy', 'fail', 'pause', 'resume', 'writeData']
+
+  expect(internalUtilities.filter((name) => name in node)).toEqual([])
+  expect(lifecycleControls.filter((name) => name in stream)).toEqual([])
+  expect(typeof stream.consume).toBe('function')
+  expect(typeof stream.consumeSync).toBe('function')
+  expect(typeof stream.start).toBe('function')
+  expect(typeof stream.write).toBe('function')
+  expect(typeof stream.end).toBe('function')
+})
+
 test('CommonJS and ESM load the same Node export', async () => {
   const result = execFileSync(
     process.execPath,

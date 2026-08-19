@@ -165,8 +165,36 @@ const webReadable: ReadableStream<number> = exstream([1]).toWebReadable()
 const asyncIterator: AsyncIterableIterator<number> = exstream([1])[Symbol.asyncIterator]()
 const pipeDestination: exstream.NodeWritableLike<number> = {} as exstream.NodeWritableLike<number>
 const pipeCompletion: Promise<void> = exstream([1]).pipeTo(pipeDestination)
+const batchDestination = exstream
+  .pipeline<number>()
+  .batch(200)
+  .mapAsync(async (batch) => {
+    const values: number[] = batch
+    void values
+  })
+  .drain()
+const destinationCompletion: Promise<void> = exstream([1, 2]).pipeTo(batchDestination)
+const customDestination: exstream.Destination<number> = exstream.destination<number>(
+  async (source, { signal }) => {
+    const destinationSignal: AbortSignal = signal
+    await source.map((value) => value * 2).drain()
+    void destinationSignal
+  },
+)
+const customDestinationCompletion: Promise<void> = exstream([1]).pipeTo(customDestination)
+// @ts-expect-error This destination consumes numbers, not strings.
+exstream(['one']).pipeTo(batchDestination)
 const errorOrigin: exstream.ErrorOrigin = exstream.errorInfo(Error('failure')).origin
 const nodeReadable: exstream.NodeReadableLike<number> = exstream([1]).toNodeReadable()
+const nodeTransform: exstream.NodeTransformLike<number, string> = exstream
+  .pipeline<number>()
+  .map((value) => String(value))
+  .toNodeTransform()
+nodeTransform.write(1)
+// @ts-expect-error A reusable pipeline has no source to expose as a Node readable.
+exstream.pipeline<number>().toNodeReadable()
+// @ts-expect-error An instantiated Exstream is readable, not a reusable Node transform definition.
+exstream([1]).toNodeTransform()
 
 exstream([{ a: 1 }]).map((value) => {
   // @ts-expect-error Direct mutation cannot add a field to the inferred object type.
@@ -180,7 +208,10 @@ void batchInput
 void contributingContext
 void webReadable
 void asyncIterator
+void destinationCompletion
+void customDestinationCompletion
 void nodeReadable
+void nodeTransform
 void typedErrorData
 type Used =
   | EnrichedValue

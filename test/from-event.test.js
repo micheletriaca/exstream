@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events')
 const _ = require('../src/index.js')
 const { nextTurn } = require('./invariant-helpers.js')
+const { kDestroy } = require('../src/stream-control.js')
 
 test('fromEvent consumes EventEmitter payloads and unsubscribes on end', async () => {
   const emitter = new EventEmitter()
@@ -193,7 +194,7 @@ test('fromEvent destruction unsubscribes every source listener', () => {
   const emitter = new EventEmitter()
   const source = _.fromEvent(emitter, 'row', { end: 'complete', error: 'failed' })
 
-  source.destroy()
+  source[kDestroy]()
 
   expect(emitter.eventNames()).toEqual([])
 })

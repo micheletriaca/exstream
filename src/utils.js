@@ -2,7 +2,8 @@ const _ = (module.exports = {})
 const { runtime } = require('./runtime.js')
 _.nil = Symbol('exstream nil')
 _.isExstream = (x) => x && !!x.__exstream__
-_.isExstreamPipeline = (x) => !!x.__exstream_pipeline__
+_.isExstreamPipeline = (x) => !!(x && x.__exstream_pipeline__)
+_.isExstreamDestination = (x) => !!(x && x.__exstream_destination__)
 _.isDefined = (x) => x !== null && x !== void 0
 _.has = (x, prop) => _.isDefined(x) && Object.hasOwnProperty.call(x, prop)
 _.isIterable = (x) => _.isDefined(x) && typeof x[Symbol.iterator] === 'function'

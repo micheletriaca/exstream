@@ -1,4 +1,4 @@
-import exstream, { map, nil } from 'exstream.js'
+import exstream, { destination, map, nil } from 'exstream.js'
 import coreExstream from 'exstream.js/core'
 import nodeExstream from 'exstream.js/node'
 import webExstream from 'exstream.js/web'
@@ -11,7 +11,29 @@ const node: number[] = await nodeExstream([1, 2]).toArray()
 const web: number[] = await webExstream([1, 2]).toArray()
 const mapped: number[] = await map((value: number) => value * 2, null, exstream([1, 2])).toArray()
 const drained: void = await exstream([1, 2]).drain()
+const reusableDestination = destination<number>(async (source) => source.drain())
+const written: void = await exstream([1, 2]).pipeTo(reusableDestination)
+const transform = exstream.pipeline<number>().map(String).toNodeTransform()
 const end: typeof nil = nil
+const writable = exstream<number | Error>()
+writable.write(1)
+writable.write(exstream.data(Error('ordinary value')))
+writable.end()
+
+// @ts-expect-error lifecycle controls are internal implementation details
+writable.pause()
+// @ts-expect-error lifecycle controls are internal implementation details
+writable.resume()
+// @ts-expect-error lifecycle controls are internal implementation details
+writable.fail(Error('failure'))
+// @ts-expect-error lifecycle controls are internal implementation details
+writable.destroy()
+// @ts-expect-error cancellation is supplied through AbortSignal
+writable.abort()
+// @ts-expect-error Error data uses write(exstream.data(error))
+writable.writeData(Error('ordinary value'))
+// @ts-expect-error generic helpers are not package exports
+exstream.curry((value: number) => value)
 
 void root
 void core
@@ -19,4 +41,6 @@ void node
 void web
 void mapped
 void drained
+void written
+void transform
 void end

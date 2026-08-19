@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const { deferred, nextTurn, waitFor } = require('./invariant-helpers.js')
+const { kDestroy, kResume } = require('../src/stream-control.js')
 
 test('a ReadableStream is consumed with transformations and source backpressure', async () => {
   let next = 0
@@ -36,9 +37,9 @@ test('destroying a ReadableStream source cancels and unlocks its reader', async 
     },
   })
   const source = _(readable)
-  source.resume()
+  source[kResume]()
 
-  source.destroy()
+  source[kDestroy]()
   await nextTurn()
 
   expect(cancelReason.name).toBe('AbortError')

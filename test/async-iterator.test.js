@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const { deferred, nextTurn } = require('./invariant-helpers.js')
+const { kFail } = require('../src/stream-control.js')
 
 test('Symbol.asyncIterator returns a self-iterable pull-based async iterator', async () => {
   const iterator = _([1, 2, 3])[Symbol.asyncIterator]()
@@ -96,7 +97,7 @@ test('a fatal graph failure rejects a pending iterator read with the same reason
   const iterator = source[Symbol.asyncIterator]()
   const pending = iterator.next()
 
-  source.fail(reason, 'input')
+  source[kFail](reason, 'input')
 
   await expect(pending).rejects.toBe(reason)
   await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })

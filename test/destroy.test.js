@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
+const { kDestroy, kPause, kResume } = require('../src/stream-control.js')
 
 test('an early destination end aborts a pipeTo source', async () => {
   const res = []
@@ -39,7 +40,7 @@ test('fork end propagation', () =>
     const s1 = s.fork().take(3)
     const s2 = s.fork()
     const s3 = _([s1, s2]).merge(2, false)
-    s3.resume()
+    s3[kResume]()
     s1.once('end', () => {
       expect(s.ended).toBe(false)
       expect(s1.ended).toBe(true)
@@ -140,7 +141,7 @@ test('explicit end', async () =>
     })
 
     setTimeout(() => s.end(), 30)
-    s2.resume()
+    s2[kResume]()
   }))
 
 test('destroy test', () => {
@@ -149,15 +150,15 @@ test('destroy test', () => {
   s.consumeSync((err, x, push) => {
     if (x === _.nil) push(null, _.nil)
     else res.push(err || x)
-  }).resume()
+  })[kResume]()
   s.write('1')
   s.write('2')
   expect(res).toEqual(['1', '2'])
-  s.pause()
+  s[kPause]()
   s.write('3')
   s.write('4')
   expect(res).toEqual(['1', '2'])
-  s.destroy()
+  s[kDestroy]()
   process.nextTick(() => expect(res).toEqual(['1', '2']))
 })
 
@@ -167,11 +168,11 @@ test('graceful end', () => {
   s.consumeSync((err, x, push) => {
     if (x === _.nil) push(null, _.nil)
     else res.push(err || x)
-  }).resume()
+  })[kResume]()
   s.write('1')
   s.write('2')
   expect(res).toEqual(['1', '2'])
-  s.pause()
+  s[kPause]()
   s.write('3')
   s.write('4')
   expect(res).toEqual(['1', '2'])

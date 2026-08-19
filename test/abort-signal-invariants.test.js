@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const { nextTurn, waitFor } = require('./invariant-helpers.js')
+const { kAbort, kDestroy } = require('../src/stream-control.js')
 
 test('an external AbortSignal aborts a source and rejects its sink', async () => {
   const controller = new AbortController()
@@ -40,7 +41,7 @@ test('aborting one fork rejects its sink without cancelling a sibling', async ()
   const cancelledResult = cancelled.toArray()
   const siblingResult = sibling.toArray()
 
-  cancelled.abort(reason)
+  cancelled[kAbort](reason)
 
   await expect(cancelledResult).rejects.toBe(reason)
   expect(cancelled.signal.reason).toBe(reason)
@@ -67,7 +68,7 @@ test('map receives a signal that cancels pending work after downstream abort', a
   const result = resolved.toArray()
   await waitFor(() => taskSignal, 'map did not start its task')
 
-  resolved.abort(reason)
+  resolved[kAbort](reason)
 
   await expect(result).rejects.toBe(reason)
   expect(taskSignal.aborted).toBe(true)
@@ -103,7 +104,7 @@ test('normal completion does not abort the stream signal', async () => {
 
   expect(await source.toArray()).toEqual([1])
   expect(source.signal.aborted).toBe(false)
-  source.destroy()
+  source[kDestroy]()
   expect(source.signal.aborted).toBe(false)
 })
 
@@ -111,8 +112,8 @@ test('abort without a reason creates one stable AbortError', () => {
   const source = _(null)
   const signal = source.signal
 
-  source.abort()
-  source.abort(Error('ignored second reason'))
+  source[kAbort]()
+  source[kAbort](Error('ignored second reason'))
 
   expect(source.state).toBe('aborted')
   expect(source.abortReason).toBe(signal.reason)
@@ -123,7 +124,7 @@ test('destroy aborts a signal that was already observed', () => {
   const source = _(null)
   const signal = source.signal
 
-  source.destroy()
+  source[kDestroy]()
 
   expect(source.state).toBe('destroyed')
   expect(signal.aborted).toBe(true)

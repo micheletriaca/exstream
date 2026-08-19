@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const { deferred, waitFor } = require('./invariant-helpers.js')
+const { kAbort } = require('../src/stream-control.js')
 
 test('mapAsync never invokes more than concurrency operations', async () => {
   const concurrency = 3
@@ -268,7 +269,7 @@ test('mapAsync ignores a task that completes after the graph was aborted', async
   const result = resultStream.toArray()
 
   await started.promise
-  resultStream.abort(reason)
+  resultStream[kAbort](reason)
   await expect(result).rejects.toBe(reason)
 
   gate.resolve()

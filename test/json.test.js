@@ -1,4 +1,5 @@
 const _ = require('../src/index.js')
+const { kAbort } = require('../src/stream-control.js')
 
 const chunk = (text, size) =>
   Array.from({ length: Math.ceil(text.length / size) }, (_, index) =>
@@ -271,7 +272,7 @@ test('jsonStringify exposes branch cancellation to an asynchronous finalizer', a
   const pending = output.toArray()
 
   await finalizerStarted
-  output.abort(reason)
+  output[kAbort](reason)
 
   await expect(pending).rejects.toBe(reason)
   expect(finalizerSignal.aborted).toBe(true)

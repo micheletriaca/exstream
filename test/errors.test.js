@@ -1,6 +1,7 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 const { Readable, Writable } = require('stream')
+const { kResume } = require('../src/stream-control.js')
 
 test('error in source stream - exstream generator', async () => {
   let i = 0
@@ -334,7 +335,7 @@ test('toArray rejects the first unhandled record error', async () => {
   const res = []
   const result = _([1, 2, 3, 'NOO', 'NOO', 4])
     .map((x) => {
-      if (_.isString(x)) throw Error(x)
+      if (typeof x === 'string') throw Error(x)
       else return x
     })
     .tap((x) => res.push(x))
@@ -390,12 +391,12 @@ test('async filter errors', async () => {
 
 test('stream in error without consumers emits an error event', async () => {
   const error = await new Promise((resolve) => {
-    _([1])
+    const sink = _([1])
       .map(() => {
         throw Error('an error')
       })
       .on('error', resolve)
-      .resume()
+    sink[kResume]()
   })
 
   expect(error).not.toBe(null)

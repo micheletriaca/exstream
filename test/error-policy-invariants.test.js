@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const { waitFor } = require('./invariant-helpers.js')
+const { kFail } = require('../src/stream-control.js')
 
 test('skipErrors drops every record error and preserves ordinary data', async () => {
   const errors = [Error('first'), Error('second')]
@@ -210,7 +211,7 @@ test('fatal failures bypass routeErrors and abort both outputs', async () => {
   const outputResult = output.toArray()
   const deadLetterResult = deadLetters.toArray()
 
-  source.fail(reason, 'input')
+  source[kFail](reason, 'input')
 
   await expect(outputResult).rejects.toBe(reason)
   await expect(deadLetterResult).rejects.toBe(reason)

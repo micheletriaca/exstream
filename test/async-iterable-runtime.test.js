@@ -1,6 +1,7 @@
 const _ = require('../src/index.js')
 const { configureRuntime, runtime } = require('../src/runtime.js')
 const { nextTurn } = require('./invariant-helpers.js')
+const { kDestroy, kResume } = require('../src/stream-control.js')
 
 let readableFromAsyncIterable
 
@@ -49,9 +50,9 @@ test('destroying the portable async iterable calls return', async () => {
   }
   const source = _(iterable)
 
-  source.resume()
+  source[kResume]()
   await nextTurn()
-  source.destroy()
+  source[kDestroy]()
 
   expect(returned).toHaveBeenCalledOnce()
 })
@@ -64,5 +65,5 @@ test('destroying a portable async iterator without return is safe', () => {
   }
   const source = _(iterable)
 
-  expect(() => source.destroy()).not.toThrow()
+  expect(() => source[kDestroy]()).not.toThrow()
 })
