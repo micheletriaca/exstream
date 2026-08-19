@@ -19,13 +19,36 @@ to be synchronous.
 | `massThen(fn)`                                                 | perform the asynchronous transformation in `mapAsync(fn)`           |
 | `massCatch(fn)`                                                | catch inside `mapAsync()` or handle the resulting stream error      |
 
-`drain()` and `pipeTo()` remain and always return `Promise<void>`.
+On an Exstream instance, `drain()` and `pipeTo()` remain and return
+`Promise<void>`.
 `toWebReadable()` remains the Web Streams adapter. Terminal methods are
-instance-only; their standalone and curried exports were removed.
+instance-only; their standalone and curried exports were removed. A pipeline
+definition may now use `drain()` to create a reusable `Destination`:
+
+```js
+const writer = exstream.pipeline().batch(200).mapAsync(postBatch).drain()
+await exstream(rows).pipeTo(writer)
+```
+
+A source-backed Exstream still uses `toNodeReadable()`. A reusable pipeline has
+no source to expose, so use `toNodeTransform()` when a Node API expects a native
+transform:
+
+```js
+const normalize = exstream.pipeline().map(normalizeOrder)
+await nodePipeline(input, normalize.toNodeTransform(), output)
+```
+
+Calling instance-only methods such as `toNodeReadable()`, `toArray()`, `fork()`,
+or `merge()` on a pipeline definition now fails immediately. Custom methods
+added with `extend()` remain pipeline operators unless registered with
+`{ pipeline: false }`.
 
 ```js
 const rows = await exstream(source).map(normalize).toArray()
-const row = await exstream(source).find(matches).single()
+const total = await exstream(source)
+  .reduce((sum, row) => sum + row.amount, 0)
+  .single()
 
 for await (const row of exstream(source).map(normalize)) {
   await writeRow(row)
@@ -34,6 +57,42 @@ for await (const row of exstream(source).map(normalize)) {
 
 `single()` resolves to `undefined` for an empty stream and rejects if a second
 value is produced. It consumes through the end to enforce that cardinality.
+
+## Lifecycle and manual sources
+
+Backpressure and graph shutdown controls are no longer exposed on every stream
+instance. `pause()`, `resume()`, `fail()`, `destroy()`, and `abort()` were
+internal state-machine operations whose behavior depended on where a stream sat
+inside its graph. Use terminal demand for normal execution and pass an
+`AbortSignal` when work must be cancelled externally:
+
+```js
+const controller = new AbortController()
+const completion = exstream(source, { signal: controller.signal }).pipeTo(destination)
+
+controller.abort(new Error('job cancelled'))
+await completion
+```
+
+Manual writable sources still use `write()` and `end()`. `writeData()` was
+removed because `write(data(value))` already expresses the same operation,
+including when the value is an `Error`:
+
+```js
+const source = exstream()
+source.write(1)
+source.write(exstream.data(new Error('ordinary value')))
+source.end()
+```
+
+`consume()` and `consumeSync()` remain the low-level extension points for
+building custom operators. `start()` remains available while the explicit
+multi-branch startup contract is reviewed for 1.0.
+
+Generic helpers and internal type guards previously copied onto the package
+export are no longer public. Applications should use JavaScript and platform
+primitives directly; for example, use `typeof value === 'string'`,
+`Object.hasOwn()`, and native function composition.
 
 ## TypeScript and module migration in 0.33
 
@@ -65,7 +124,7 @@ import webExstream from 'exstream.js/web'
 ```
 
 `core` and `web` select the portable runtime. Node-only conversion such as
-`toNodeReadable()` is unavailable there.
+`toNodeReadable()` and `toNodeTransform()` are unavailable there.
 
 ## Value inference
 

@@ -125,11 +125,36 @@ try {
 }
 ```
 
+Application writers can stay inside the Exstream API. Closing a reusable
+pipeline with `drain()` creates a destination that `pipeTo()` can run:
+
+```javascript
+const ordersApi = exstream
+  .pipeline()
+  .batch(200)
+  .mapAsync(postOrders, { concurrency: 4, ordered: false })
+  .drain()
+
+await exstream(orders).pipeTo(ordersApi)
+```
+
 The promise resolves only after the destination finishes. It rejects on an
 unhandled record error, source or destination failure, structural format error,
 or cancellation. A failed destination cancels its own fork; reliable sibling
-branches can continue. The older `pipe()` remains available for Node-compatible
-event-driven piping.
+branches can continue. Node and Web writable streams remain supported directly.
+
+A reusable operator chain can also become a native Node `Transform` when it
+must sit inside `node:stream` infrastructure:
+
+```javascript
+import { pipeline as nodePipeline } from 'node:stream/promises'
+
+const normalize = exstream.pipeline().map(normalizeOrder).jsonlStringify()
+await nodePipeline(input, normalize.toNodeTransform(), output)
+```
+
+Use `toNodeReadable()` on an Exstream that already has a source;
+`toNodeTransform()` belongs to source-free reusable pipeline definitions.
 
 Record context is opt-in. `withContext()` and `extendContext()` attach metadata
 such as correlation IDs or loaded dependencies to one record. Context is copied

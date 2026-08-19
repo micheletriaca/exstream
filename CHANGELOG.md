@@ -9,6 +9,18 @@ authoritative record for earlier versions.
 
 ### Changed
 
+- Reusable pipelines expose `toNodeTransform()` as a native Node `Transform`
+  adapter. It snapshots the operator definition, preserves Node backpressure and
+  cancellation in both directions, and keeps input/output types distinct.
+- Pipeline definitions now reject instance-only, terminal, adapter, and
+  graph-specific methods immediately instead of recording invalid operator
+  chains. `extend()` registers custom methods for pipelines by default and
+  accepts `{ pipeline: false }` for instance-only extensions.
+- Reusable pipelines can now be closed with `drain()` into a typed
+  `Destination<Input>`. `pipeTo()` runs these high-level destinations with the
+  same backpressure, error, and cancellation semantics as the connected graph;
+  `destination()` adds per-run resource setup and cleanup without requiring a
+  Node writable or Web `WritableStream` implementation.
 - Terminal completion now has a uniform Promise contract through `toArray()`,
   `single()`, `drain()`, and `pipeTo()`.
 - `mapAsync()` now treats `concurrency` as a sliding window of active work and
@@ -23,6 +35,15 @@ authoritative record for earlier versions.
 - Exstream instances implement `Symbol.asyncIterator` directly.
 - Node interoperability now uses the readable-only `toNodeReadable()` adapter;
   `toWebReadable()` remains the corresponding Web Streams adapter.
+- `mapAsync()` failures now record the `mapAsync` operator stage before
+  cancellation propagates through the graph.
+
+### Fixed
+
+- Async iterables and Web `ReadableStream` sources now continue through
+  microtasks within a bounded execution slice, then yield through `setImmediate`
+  in Node or a cancellable `MessageChannel` task in browsers. This removes the
+  per-record task cost without starving timers, I/O, rendering, or cancellation.
 
 ### Removed
 
@@ -33,6 +54,15 @@ authoritative record for earlier versions.
   transformations, concurrency, and ordering.
 - Standalone and curried terminal exports. Terminal operations are instance
   methods in 1.0.
+- Public `pause()`, `resume()`, `fail()`, `destroy()`, and `abort()` lifecycle
+  controls. Backpressure and graph shutdown are now owned by terminals,
+  adapters, and `AbortSignal` instead of exposing scheduler internals on every
+  stream instance.
+- `writeData()`; wrap values with `data()` and pass them to `write()` when an
+  `Error` must travel as ordinary data.
+- Generic utility and internal type-guard exports such as `curry()`, `get()`,
+  `isIterable()`, and `isExstream()`. They remain implementation details rather
+  than part of the 1.0 package contract.
 
 ## [0.34.0] - 2026-08-16
 
