@@ -7,7 +7,21 @@ authoritative record for earlier versions.
 
 ## [Unreleased]
 
+### Added
+
+- `defer(factory)` creates a source whose synchronous or asynchronous factory is
+  invoked once, only after graph activation and downstream demand. It delays
+  resource acquisition such as `fetch()` and `createReadStream()` rather than
+  merely delaying reads from an already-created source.
+
 ### Changed
+
+- Source adapters now acquire iterable iterators, async iterators, Web readers,
+  and Node readable iterators on demand rather than during `exstream(source)`.
+- `StreamOptions.start` selects automatic activation (the default) or an
+  explicit manual graph-building phase. `start()` activates the root graph and
+  freezes reliable fork registration, including when called through a
+  transformed branch.
 
 - Reusable pipelines expose `toNodeTransform()` as a native Node `Transform`
   adapter. It snapshots the operator definition, preserves Node backpressure and
@@ -63,6 +77,8 @@ authoritative record for earlier versions.
 - Generic utility and internal type-guard exports such as `curry()`, `get()`,
   `isIterable()`, and `isExstream()`. They remain implementation details rather
   than part of the 1.0 package contract.
+- The positional `fork(true)` autostart switch. Use `{ start: 'manual' }` on the
+  source and call `start()` after every reliable branch is registered.
 
 ## [0.34.0] - 2026-08-16
 

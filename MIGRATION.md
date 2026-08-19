@@ -86,8 +86,31 @@ source.end()
 ```
 
 `consume()` and `consumeSync()` remain the low-level extension points for
-building custom operators. `start()` remains available while the explicit
-multi-branch startup contract is reviewed for 1.0.
+building custom operators.
+
+The `fork(true)` boolean was removed. Configure manual activation on the source,
+attach reliable forks in as many turns as needed, and close the graph-building
+phase with `start()`:
+
+```js
+const source = exstream(input, { start: 'manual' })
+const first = source.fork().pipeTo(firstDestination)
+
+await discoverSecondDestination()
+const second = source.fork().pipeTo(secondDestination)
+
+await source.start()
+await Promise.all([first, second])
+```
+
+`start()` is idempotent and may be called on a transformed branch; activation
+belongs to the root source graph. It supplies no demand and does not wait for
+completion.
+
+Source adapters now acquire iterators and platform readers on demand. When even
+creating the source must be delayed, use `defer(() => source)`. This distinction
+matters for calls such as `fetch()` and `createReadStream()`, which have already
+started or acquired resources if their result is passed directly.
 
 Generic helpers and internal type guards previously copied onto the package
 export are no longer public. Applications should use JavaScript and platform

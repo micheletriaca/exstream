@@ -47,6 +47,20 @@ Input is pulled only as fast as the slowest reliable consumer can accept it.
 `mapAsync()` bounds active work and preserves order by default. The context
 signal is cancelled when work for that record and branch is no longer useful.
 
+Source adapters acquire iterators and readers only when downstream demand
+starts the graph. Use `defer()` when creating the source itself has side effects:
+
+```javascript
+const orders = exstream.defer(async () => {
+  const response = await fetch('/orders.jsonl')
+  return response.body
+})
+```
+
+The factory runs once per Exstream, after activation. For reliable forks that
+must be registered in different turns, create the source with
+`{ start: 'manual' }`, attach every branch, then call `start()`.
+
 ## Why Exstream
 
 - **End-to-end backpressure.** Pressure propagates through transforms, forks,
@@ -109,6 +123,17 @@ slices and expressions require buffering or a different tool.
 `fork()` is reliable: every branch participates in backpressure. `observe()` is
 non-blocking and accepts an explicit buffer limit and overflow policy for work
 such as metrics or sampling.
+
+```javascript
+const source = exstream.defer(() => openOrders(), { start: 'manual' })
+const database = source.fork().pipeTo(databaseWriter)
+
+await discoverAuditDestination()
+const audit = source.fork().jsonlStringify().pipeTo(auditWriter)
+
+await source.start()
+await Promise.all([database, audit])
+```
 
 Errors produced while handling one record remain recoverable with `errors()`,
 `skipErrors()` or `routeErrors()`. `failOnError()` promotes the first record
