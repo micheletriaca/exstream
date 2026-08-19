@@ -20,174 +20,174 @@ const _ = (module.exports = Object.assign(
   methods,
 ))
 
-_.extend = (name, fn, options = null) => {
+const installMethod = (name, fn, options = null) => {
   Exstream.prototype[name] = fn
   methods.registerPipelineOperator(name, !options || options.pipeline !== false)
 }
-_.extend('errors', function (fn) {
+installMethod('errors', function (fn) {
   return _.errors(fn, this)
 })
-_.extend('skipErrors', function (predicate = null) {
+installMethod('skipErrors', function (predicate = null) {
   return _.skipErrors(predicate, this)
 })
-_.extend('failOnError', function () {
+installMethod('failOnError', function () {
   return _.failOnError(this)
 })
-_.extend(
+installMethod(
   'routeErrors',
   function () {
     return _.routeErrors(this)
   },
   { pipeline: false },
 )
-_.extend('stopOnError', function (fn) {
+installMethod('stopOnError', function (fn) {
   return _.stopOnError(fn, this)
 })
-_.extend('map', function (fn, options = null) {
+installMethod('map', function (fn, options = null) {
   return _.map(fn, options, this)
 })
-_.extend('withContext', function (fn = null) {
+installMethod('withContext', function (fn = null) {
   return _.withContext(fn, this)
 })
-_.extend('extendContext', function (fn) {
+installMethod('extendContext', function (fn) {
   return _.extendContext(fn, this)
 })
-_.extend('flatMap', function (fn) {
+installMethod('flatMap', function (fn) {
   return _.flatMap(fn, this)
 })
-_.extend('tap', function (fn) {
+installMethod('tap', function (fn) {
   return _.tap(fn, this)
 })
-_.extend('compact', function () {
+installMethod('compact', function () {
   return _.compact(this)
 })
-_.extend('find', function (fn) {
+installMethod('find', function (fn) {
   return _.find(fn, this)
 })
-_.extend('pluck', function (field, defaultValue) {
+installMethod('pluck', function (field, defaultValue) {
   return _.pluck(field, defaultValue, this)
 })
-_.extend('pick', function (fields) {
+installMethod('pick', function (fields) {
   return _.pick(fields, this)
 })
-_.extend('omit', function (fields) {
+installMethod('omit', function (fields) {
   return _.omit(fields, this)
 })
-_.extend('filter', function (fn) {
+installMethod('filter', function (fn) {
   return _.filter(fn, this)
 })
-_.extend('reject', function (fn) {
+installMethod('reject', function (fn) {
   return _.reject(fn, this)
 })
-_.extend('asyncFilter', function (fn) {
+installMethod('asyncFilter', function (fn) {
   return _.asyncFilter(fn, this)
 })
-_.extend('stopWhen', function (fn) {
+installMethod('stopWhen', function (fn) {
   return _.stopWhen(fn, this)
 })
-_.extend('flatten', function () {
+installMethod('flatten', function () {
   return _.flatten(this)
 })
-_.extend('uniq', function () {
+installMethod('uniq', function () {
   return _.uniq(this)
 })
-_.extend('uniqBy', function (cfg) {
+installMethod('uniqBy', function (cfg) {
   return _.uniqBy(cfg, this)
 })
-_.extend('collect', function () {
+installMethod('collect', function () {
   return _.collect(this)
 })
-_.extend('batch', function (size) {
+installMethod('batch', function (size) {
   return _.batch(size, this)
 })
-_.extend('mapAsync', function (fn, options = null) {
+installMethod('mapAsync', function (fn, options = null) {
   return _.mapAsync(fn, options, this)
 })
-_.extend('csv', function (opts) {
+installMethod('csv', function (opts) {
   return _.csv(opts, this)
 })
-_.extend('csvStringify', function (opts) {
+installMethod('csvStringify', function (opts) {
   return _.csvStringify(opts, this)
 })
-_.extend('json', function (opts) {
+installMethod('json', function (opts) {
   return _.json(opts, this)
 })
-_.extend('jsonStringify', function (opts) {
+installMethod('jsonStringify', function (opts) {
   return _.jsonStringify(opts, this)
 })
-_.extend('jsonl', function (opts) {
+installMethod('jsonl', function (opts) {
   return _.jsonl(opts, this)
 })
-_.extend('jsonlStringify', function (opts) {
+installMethod('jsonlStringify', function (opts) {
   return _.jsonlStringify(opts, this)
 })
-_.extend('slice', function (start, end = Infinity) {
+installMethod('slice', function (start, end = Infinity) {
   return _.slice(start, end, this)
 })
-_.extend('take', function (n) {
+installMethod('take', function (n) {
   return _.take(n, this)
 })
-_.extend('head', function () {
+installMethod('head', function () {
   return _.head(this)
 })
-_.extend('last', function () {
+installMethod('last', function () {
   return _.last(this)
 })
-_.extend('drop', function (n) {
+installMethod('drop', function (n) {
   return _.drop(n, this)
 })
-_.extend('throttle', function (ms) {
+installMethod('throttle', function (ms) {
   return _.throttle(ms, this)
 })
-_.extend('reduce', function (memo, fn) {
+installMethod('reduce', function (memo, fn) {
   return _.reduce(memo, fn, this)
 })
-_.extend('groupBy', function (fnOrString) {
+installMethod('groupBy', function (fnOrString) {
   return _.groupBy(fnOrString, this)
 })
-_.extend('keyBy', function (fnOrString) {
+installMethod('keyBy', function (fnOrString) {
   return _.keyBy(fnOrString, this)
 })
-_.extend('sort', function () {
+installMethod('sort', function () {
   return _.sort(this)
 })
-_.extend('sortBy', function (fn) {
+installMethod('sortBy', function (fn) {
   return _.sortBy(fn, this)
 })
-_.extend('split', function (encoding = 'utf8') {
+installMethod('split', function (encoding = 'utf8') {
   return _.split(encoding, this)
 })
-_.extend('encode', function (encoding) {
+installMethod('encode', function (encoding) {
   return _.encode(encoding, this)
 })
-_.extend('decode', function (encoding) {
+installMethod('decode', function (encoding) {
   return _.decode(encoding, this)
 })
-_.extend('splitBy', function (regexp, encoding = 'utf8') {
+installMethod('splitBy', function (regexp, encoding = 'utf8') {
   return _.splitBy(regexp, encoding, this)
 })
-_.extend('reduce1', function (fn) {
+installMethod('reduce1', function (fn) {
   return _.reduce1(fn, this)
 })
-_.extend('asyncReduce', function (memo, fn) {
+installMethod('asyncReduce', function (memo, fn) {
   return _.asyncReduce(memo, fn, this)
 })
-_.extend('makeAsync', function (ms) {
+installMethod('makeAsync', function (ms) {
   return _.makeAsync(ms, this)
 })
-_.extend('where', function (props) {
+installMethod('where', function (props) {
   return _.where(props, this)
 })
-_.extend('findWhere', function (props) {
+installMethod('findWhere', function (props) {
   return _.findWhere(props, this)
 })
-_.extend('ratelimit', function (num, ms) {
+installMethod('ratelimit', function (num, ms) {
   return _.ratelimit(num, ms, this)
 })
-_.extend('sortedGroupBy', function (fnOrString) {
+installMethod('sortedGroupBy', function (fnOrString) {
   return _.sortedGroupBy(fnOrString, this)
 })
-_.extend(
+installMethod(
   'sortedJoin',
   function (joinKeyOrFnA, joinKeyOrFnB, type = 'inner', sortDirection = 'asc', buffer = 1) {
     return _.sortedJoin(joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, this)

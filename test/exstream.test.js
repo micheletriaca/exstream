@@ -300,11 +300,11 @@ test('through pipelines and pipeTo a destination', async () => {
   expect(res).toEqual(['2222', '4444', '6666'])
 })
 
-test('extend', async () => {
-  _.extend('duplicate', function () {
-    return this.map((x) => x * 2)
-  })
-  await expect(_([1, 2, 3]).duplicate().toArray()).resolves.toEqual([2, 4, 6])
+test('through composes a functional operator without mutating Exstream', async () => {
+  const duplicate = (stream) => stream.map((value) => value * 2)
+
+  await expect(_([1, 2, 3]).through(duplicate).toArray()).resolves.toEqual([2, 4, 6])
+  expect(_.extend).toBeUndefined()
 })
 
 test('filter', async () => {

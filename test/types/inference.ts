@@ -1,5 +1,8 @@
 import exstream = require('exstream.js')
 
+// @ts-expect-error Global prototype extension is not part of the public API.
+void exstream.extend
+
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 type Expect<T extends true> = T

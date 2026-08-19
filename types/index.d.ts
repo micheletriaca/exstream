@@ -340,10 +340,6 @@ declare namespace exstream {
     signal?: AbortSignal
     strategy?: QueuingStrategy<unknown>
   }
-  interface ExtendOptions {
-    /** Set false when the extension cannot be recorded in a reusable pipeline. */
-    pipeline?: boolean
-  }
   interface ThroughOptions {
     /** Treat a Node stream as write-only. */
     writable?: boolean
@@ -921,13 +917,6 @@ declare namespace exstream {
   ): Exstream<T, RecordContext<T>> & { received: number }
   /** Wraps a value so Error objects are treated as data. */
   function data<T>(value: T): DataValue<T>
-  /** Adds a method to every Exstream instance. */
-  function extend(
-    name: string,
-    fn: (this: Exstream<any, any>, ...args: any[]) => unknown,
-    options?: ExtendOptions | null,
-  ): void
-
   /** Builds a curried map operator. Pass a stream as the last argument to run it immediately. */
   function map<T, U, C extends object>(
     fn: (value: T, context: C) => U,

@@ -28,8 +28,8 @@ authoritative record for earlier versions.
   cancellation in both directions, and keeps input/output types distinct.
 - Pipeline definitions now reject instance-only, terminal, adapter, and
   graph-specific methods immediately instead of recording invalid operator
-  chains. `extend()` registers custom methods for pipelines by default and
-  accepts `{ pipeline: false }` for instance-only extensions.
+  chains. Functional operators compose through `through()` on both live streams
+  and reusable pipeline definitions without a global registry.
 - Reusable pipelines can now be closed with `drain()` into a typed
   `Destination<Input>`. `pipeTo()` runs these high-level destinations with the
   same backpressure, error, and cancellation semantics as the connected graph;
@@ -83,6 +83,9 @@ authoritative record for earlier versions.
   `next(otherSource)` handoff. Use iterables or async iterables for pull-based
   sources, `yield*` for delegation, and `exstream()` or `fromEvent()` for
   push-based adapters.
+- `extend()`. Export custom operators as ordinary `Exstream → Exstream`
+  functions and compose them locally with `through()` instead of mutating every
+  Exstream instance and the reusable-pipeline registry.
 
 ## [0.34.0] - 2026-08-16
 

@@ -24,7 +24,6 @@ export const {
   encode,
   errors,
   errorInfo,
-  extend,
   extendContext,
   failOnError,
   filter,

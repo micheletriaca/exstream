@@ -41,8 +41,16 @@ await nodePipeline(input, normalize.toNodeTransform(), output)
 
 Calling instance-only methods such as `toNodeReadable()`, `toArray()`, `fork()`,
 or `merge()` on a pipeline definition now fails immediately. Custom methods
-added with `extend()` remain pipeline operators unless registered with
-`{ pipeline: false }`.
+are no longer installed globally with `extend()`. Define an ordinary transform
+function and attach it with `through()`; reusable pipelines can record the same
+functional operator:
+
+```js
+const multiply = (factor) => (stream) => stream.map((value) => value * factor)
+
+const reusable = exstream.pipeline().through(multiply(2))
+const values = await exstream([1, 2, 3]).through(reusable).toArray()
+```
 
 ```js
 const rows = await exstream(source).map(normalize).toArray()

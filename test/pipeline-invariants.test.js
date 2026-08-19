@@ -29,21 +29,13 @@ test('pipeline definitions reject instance-only methods before recording them', 
   expect(pipeline.definitions).toEqual([])
 })
 
-test('extend controls whether a custom method is reusable in pipelines', async () => {
-  _.extend('doubleForPipeline', function () {
-    return this.map((value) => value * 2)
-  })
-  const reusable = _.pipeline().doubleForPipeline()
+test('pipeline through composes functional operators without a global registry', async () => {
+  const double = (stream) => stream.map((value) => value * 2)
+  const reusable = _.pipeline().through(double)
+
   await expect(_([1, 2]).through(reusable).toArray()).resolves.toEqual([2, 4])
 
-  _.extend(
-    'instanceOnlyExtension',
-    function () {
-      return this.toArray()
-    },
-    { pipeline: false },
-  )
-  expect(() => _.pipeline().instanceOnlyExtension()).toThrow(
-    'instanceOnlyExtension() is not available on reusable pipelines',
-  )
+  const nested = _.pipeline().map((value) => value + 1)
+  const composed = _.pipeline().through(nested).through(double)
+  await expect(_([1, 2]).through(composed).toArray()).resolves.toEqual([4, 6])
 })
