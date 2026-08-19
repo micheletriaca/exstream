@@ -124,15 +124,7 @@ declare namespace exstream {
   interface NodeTransformLike<Input = unknown, Output = Input>
     extends NodeReadableLike<Output>, NodeWritableLike<Input> {}
 
-  type GeneratorWrite<T> = (value: T | Error | DataValue<T> | Nil) => boolean
-  type GeneratorNext<T> = (source?: StreamSource<T>) => void
-  type StreamGenerator<T> = (write: GeneratorWrite<T>, next: GeneratorNext<T>) => void
-  type StreamSource<T> =
-    | Iterable<T>
-    | AsyncIterable<T>
-    | ReadableStream<T>
-    | NodeReadableLike<T>
-    | StreamGenerator<T>
+  type StreamSource<T> = Iterable<T> | AsyncIterable<T> | ReadableStream<T> | NodeReadableLike<T>
 
   type DeferredStreamSource<T, C extends object = LazyRecordContext<T>> =
     | Exstream<T, C>

@@ -3,23 +3,11 @@ const h = require('./helpers.js')
 const { Readable, Writable } = require('stream')
 const { kResume } = require('../src/stream-control.js')
 
-test('error in source stream - exstream generator', async () => {
-  let i = 0
+test('recoverable source errors remain in the record protocol', async () => {
   await ((res) => {
     expect(res).toEqual([1, 2, 3])
   })(
-    await _((write, next) => {
-      i++
-      if (i < 3) {
-        write(i)
-        next()
-      } else if (i < 5) {
-        write(Error(i))
-        next()
-      } else {
-        write(_.nil)
-      }
-    })
+    await _([1, 2, Error('3'), Error('4')])
       .errors((err, push) => {
         if (err.message === '3') push(null, 3)
       })
@@ -27,7 +15,7 @@ test('error in source stream - exstream generator', async () => {
   )
 })
 
-test('fatal error in source stream - generator', async () => {
+test('fatal error in source stream - iterable', async () => {
   const errSkipped = []
   await ((res) => {
     expect(res.length).toBe(2)
@@ -125,17 +113,17 @@ test('error in wrapped writable', async () => {
   expect(errs[0].message).toBe('an error')
 })
 
-test('invalid source', () => {
+test.each([1, () => undefined])('invalid source: %p', (source) => {
   let ex = null
   try {
-    _(1)
+    _(source)
   } catch (e) {
     ex = e
   }
   expect(ex).not.toBe(null)
   expect(ex.message).toEqual(
     'error creating exstream: invalid source. source can be one of: iterable, ' +
-      'async iterable, exstream function, a promise, a node readable stream',
+      'async iterable, a promise, a Web ReadableStream, or a Node readable stream',
   )
 })
 

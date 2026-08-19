@@ -55,10 +55,10 @@ test('destroying a destination early aborts its source and removes pipeTo listen
   destination.on('close', close)
   const baseline = listenerSnapshot(destination, events)
   let produced = 0
-  const source = _((write, next) => {
-    write(produced++)
-    next()
-  })
+  function* values() {
+    while (true) yield produced++
+  }
+  const source = _(values())
 
   const transfer = source.pipeTo(destination)
   await closed

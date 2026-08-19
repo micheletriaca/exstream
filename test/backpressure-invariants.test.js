@@ -31,14 +31,10 @@ const controlledConsumer = (stream) => {
 test('a slow reliable fork stops the source and bounds run-ahead', async () => {
   const total = 20
   let produced = 0
-  const source = _((write, next) => {
-    if (produced === total) {
-      write(_.nil)
-    } else {
-      write(produced++)
-      next()
-    }
-  })
+  function* values() {
+    while (produced < total) yield produced++
+  }
+  const source = _(values())
   const fastValues = []
   const fastResult = source
     .fork()
@@ -65,14 +61,10 @@ test('a slow reliable fork stops the source and bounds run-ahead', async () => {
 test('a blocked observer does not slow the main flow', async () => {
   const total = 20
   let produced = 0
-  const source = _((write, next) => {
-    if (produced === total) {
-      write(_.nil)
-    } else {
-      write(produced++)
-      next()
-    }
-  })
+  function* values() {
+    while (produced < total) yield produced++
+  }
+  const source = _(values())
   const callbacks = []
   const observedValues = []
   const observerWritable = new Writable({

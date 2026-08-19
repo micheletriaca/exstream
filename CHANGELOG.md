@@ -79,6 +79,10 @@ authoritative record for earlier versions.
   than part of the 1.0 package contract.
 - The positional `fork(true)` autostart switch. Use `{ start: 'manual' }` on the
   source and call `start()` after every reliable branch is registered.
+- Callback sources using `(write, next) => void`, including the overloaded
+  `next(otherSource)` handoff. Use iterables or async iterables for pull-based
+  sources, `yield*` for delegation, and `exstream()` or `fromEvent()` for
+  push-based adapters.
 
 ## [0.34.0] - 2026-08-16
 

@@ -237,11 +237,7 @@ test('jsonlStringify rejects unsupported values and oversized output records', a
 test('JSONL format operators preserve recoverable source errors', async () => {
   const reason = Error('upstream JSONL failure')
   const seen = []
-  const source = _((write) => {
-    write(reason)
-    write('{"id":1}\n')
-    write(_.nil)
-  })
+  const source = _([reason, '{"id":1}\n'])
   await expect(
     source
       .jsonl()
@@ -251,11 +247,7 @@ test('JSONL format operators preserve recoverable source errors', async () => {
   expect(seen).toEqual([reason])
 
   const outputSeen = []
-  const output = _((write) => {
-    write(reason)
-    write({ id: 1 })
-    write(_.nil)
-  })
+  const output = _([reason, { id: 1 }])
   await expect(
     output
       .jsonlStringify()

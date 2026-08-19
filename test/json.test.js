@@ -395,11 +395,7 @@ test('jsonStringify enforces serialized value limits and supports encoded byte c
 
 test('JSON format operators preserve recoverable source errors', async () => {
   const reason = Error('upstream JSON failure')
-  const source = _((write) => {
-    write(reason)
-    write('1')
-    write(_.nil)
-  })
+  const source = _([reason, '1'])
   const seen = []
   await expect(
     source
@@ -410,11 +406,7 @@ test('JSON format operators preserve recoverable source errors', async () => {
   expect(seen).toEqual([reason])
 
   const stringifySeen = []
-  const stringifySource = _((write) => {
-    write(reason)
-    write(1)
-    write(_.nil)
-  })
+  const stringifySource = _([reason, 1])
   await expect(
     stringifySource
       .jsonStringify()

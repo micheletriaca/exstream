@@ -8,9 +8,11 @@ test.each([false, true])(
   'merge is lazy before a terminal starts it (ordered: %s)',
   async (ordered) => {
     let started = 0
-    const inner = _((write) => {
-      started++
-      write(_.nil)
+    const inner = _({
+      [Symbol.iterator]() {
+        started++
+        return [][Symbol.iterator]()
+      },
     })
     const merged = _([inner]).merge(1, ordered)
 
@@ -30,11 +32,12 @@ test.each([false, true])(
     const invoked = []
     const factories = releases.map((release, index) => () => {
       invoked.push(index)
-      return _(async (write) => {
-        await release.promise
-        write(index)
-        write(_.nil)
-      })
+      return _(
+        (async function* () {
+          await release.promise
+          yield index
+        })(),
+      )
     })
     const merged = _(factories).merge(2, ordered)
 
@@ -113,11 +116,12 @@ test('destroying merge does not invoke stream factories still outside the window
   const merged = _([
     () => {
       invoked.push(0)
-      active = _(async (write) => {
-        await release.promise
-        write(0)
-        write(_.nil)
-      })
+      active = _(
+        (async function* () {
+          await release.promise
+          yield 0
+        })(),
+      )
       return active
     },
     () => {
@@ -141,14 +145,15 @@ test('ordered merge streams the current inner before it ends', async () => {
   const release = deferred()
   const produced = []
   const emitted = []
-  const inner = _(async (write) => {
-    produced.push(1)
-    write(1)
-    await release.promise
-    produced.push(2)
-    write(2)
-    write(_.nil)
-  })
+  const inner = _(
+    (async function* () {
+      produced.push(1)
+      yield 1
+      await release.promise
+      produced.push(2)
+      yield 2
+    })(),
+  )
   const completion = _([inner])
     .merge(1, true)
     .tap((value) => emitted.push(value))
@@ -168,20 +173,22 @@ test('an ordered buffered inner becomes streaming as soon as it reaches the head
   const finishSecond = deferred()
   const produced = []
   const emitted = []
-  const first = _(async (write) => {
-    produced.push('first')
-    write('first')
-    await finishFirst.promise
-    write(_.nil)
-  })
-  const second = _(async (write) => {
-    produced.push('second-1')
-    write('second-1')
-    await finishSecond.promise
-    produced.push('second-2')
-    write('second-2')
-    write(_.nil)
-  })
+  const first = _(
+    (async function* () {
+      produced.push('first')
+      yield 'first'
+      await finishFirst.promise
+    })(),
+  )
+  const second = _(
+    (async function* () {
+      produced.push('second-1')
+      yield 'second-1'
+      await finishSecond.promise
+      produced.push('second-2')
+      yield 'second-2'
+    })(),
+  )
   const completion = _([first, second])
     .merge(2, true)
     .tap((value) => emitted.push(value))
@@ -206,32 +213,36 @@ test('ordered merge consumes future inners eagerly without exceeding its stream 
   const started = []
   const completed = []
   const emitted = []
-  const first = _(async (write) => {
-    started.push('first')
-    write('first')
-    await finishFirst.promise
-    completed.push('first')
-    write(_.nil)
-  })
-  const second = _((write) => {
-    started.push('second')
-    write('second-1')
-    write('second-2')
-    completed.push('second')
-    write(_.nil)
-  })
-  const third = _((write) => {
-    started.push('third')
-    write('third')
-    completed.push('third')
-    write(_.nil)
-  })
+  const first = _(
+    (async function* () {
+      started.push('first')
+      yield 'first'
+      await finishFirst.promise
+      completed.push('first')
+    })(),
+  )
+  const second = _(
+    (function* () {
+      started.push('second')
+      yield 'second-1'
+      yield 'second-2'
+      completed.push('second')
+    })(),
+  )
+  const third = _(
+    (function* () {
+      started.push('third')
+      yield 'third'
+      completed.push('third')
+    })(),
+  )
   const completion = _([first, second, third])
     .merge(2, true)
     .tap((value) => emitted.push(value))
     .toArray()
 
   await waitFor(() => completed.includes('second'), 'the buffered inner was not consumed eagerly')
+  await waitFor(() => emitted.includes('first'), 'the head inner did not begin streaming')
   expect(started).toEqual(['first', 'second'])
   expect(emitted).toEqual(['first'])
 
@@ -285,11 +296,12 @@ test('ordered merge replays buffered record errors in their original position', 
   const finishFirst = deferred()
   const reason = Error('buffered inner failure')
   const events = []
-  const first = _(async (write) => {
-    write('first')
-    await finishFirst.promise
-    write(_.nil)
-  })
+  const first = _(
+    (async function* () {
+      yield 'first'
+      await finishFirst.promise
+    })(),
+  )
   const second = _([1, 2, 3])
     .withContext((value) => ({ source: 'second', sourceValue: value }))
     .map((value) => {
@@ -374,24 +386,26 @@ test('an ordered record error neither completes its inner nor releases its concu
   let firstStarted = 0
   let maxActive = 0
   let secondStarted = 0
-  const first = _(async (write) => {
-    firstStarted++
-    active++
-    maxActive = Math.max(maxActive, active)
-    write(reason)
-    await releaseFirst.promise
-    write('first')
-    active--
-    write(_.nil)
-  })
-  const second = _(async (write) => {
-    secondStarted++
-    active++
-    maxActive = Math.max(maxActive, active)
-    write('second')
-    active--
-    write(_.nil)
-  })
+  const first = _(
+    (async function* () {
+      firstStarted++
+      active++
+      maxActive = Math.max(maxActive, active)
+      yield reason
+      await releaseFirst.promise
+      yield 'first'
+      active--
+    })(),
+  )
+  const second = _(
+    (async function* () {
+      secondStarted++
+      active++
+      maxActive = Math.max(maxActive, active)
+      yield 'second'
+      active--
+    })(),
+  )
   const completion = _([first, second])
     .merge(1, true)
     .errors((error) => errors.push(error))
@@ -413,12 +427,13 @@ test('destroying an ordered merge destroys every active inner', async () => {
   const releases = [deferred(), deferred()]
   let started = 0
   const inners = releases.map((release, index) =>
-    _(async (write) => {
-      started++
-      await release.promise
-      write(index)
-      write(_.nil)
-    }),
+    _(
+      (async function* () {
+        started++
+        await release.promise
+        yield index
+      })(),
+    ),
   )
   const merged = _(inners).merge(2, true)
   const completion = merged.drain()

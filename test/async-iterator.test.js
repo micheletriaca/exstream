@@ -32,14 +32,12 @@ test('async iteration serializes concurrent next calls without reading ahead', a
   await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
 })
 
-test('async iteration pulls exactly one generator record per next call', async () => {
+test('async iteration pulls exactly one source record per next call', async () => {
   let produced = 0
-  const source = _((write, next) => {
-    produced++
-    write(produced)
-    if (produced === 3) write(_.nil)
-    else next()
-  })
+  function* values() {
+    while (produced < 3) yield ++produced
+  }
+  const source = _(values())
   const iterator = source[Symbol.asyncIterator]()
 
   await nextTurn()
@@ -108,13 +106,12 @@ test('an external signal aborts a pending iterator read and releases the source'
   const controller = new AbortController()
   const reason = Error('cancel iterator')
   const started = deferred()
-  const source = _(
-    async () => {
-      started.resolve()
-      await new Promise(() => {})
-    },
-    { signal: controller.signal },
-  )
+  async function* values() {
+    started.resolve()
+    await new Promise(() => {})
+    yield 1
+  }
+  const source = _(values(), { signal: controller.signal })
   const iterator = source[Symbol.asyncIterator]()
   const pending = iterator.next()
 
@@ -131,9 +128,11 @@ test('a pre-aborted signal prevents the iterator source from starting', async ()
   const reason = Error('already aborted')
   const sourceStarted = vi.fn()
   controller.abort(reason)
-  const iterator = _(async () => sourceStarted(), {
-    signal: controller.signal,
-  })[Symbol.asyncIterator]()
+  async function* values() {
+    sourceStarted()
+    yield 1
+  }
+  const iterator = _(values(), { signal: controller.signal })[Symbol.asyncIterator]()
 
   await expect(iterator.next()).rejects.toBe(reason)
   expect(sourceStarted).not.toHaveBeenCalled()

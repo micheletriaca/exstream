@@ -123,16 +123,10 @@ const run = async () => {
   let produced = 0
   const slowOutput = []
   const fastOutput = []
-  const source = Exstream(
-    (write, next) => {
-      if (produced === 3) write(Exstream.nil)
-      else {
-        write(++produced)
-        next()
-      }
-    },
-    { start: 'manual' },
-  )
+  function* values() {
+    while (produced < 3) yield ++produced
+  }
+  const source = Exstream(values(), { start: 'manual' })
   const slowDone = source.fork().pipeTo(
     new WritableStream({
       async write(value) {

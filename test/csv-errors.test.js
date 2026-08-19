@@ -196,10 +196,7 @@ test('CSV ignores empty chunks and propagates source record errors', async () =>
 
   const reason = Error('upstream CSV failure')
   const seen = []
-  const source = _((write) => {
-    write(reason)
-    write(_.nil)
-  })
+  const source = _([reason])
   await expect(
     source
       .csv()

@@ -78,17 +78,20 @@ class Exstream extends EventHub {
   #dropped = 0
   #bufferLimit = Infinity
   #overflowPolicy = 'error'
-  #sourceData = null
+  #sourceIterator = null
+  #sourceIteratorAsync = false
+  #sourceIteratorDone = false
+  #sourceFrames = false
+  #sourcePulling = false
+  #sourceStage = 'iterate'
   #sourceInitializer = null
-  #generator = null
-  #scheduleGeneratorContinuation = createCooperativeScheduler()
-  #cancelGeneratorContinuation = noCancel
+  #scheduleSourceContinuation = createCooperativeScheduler()
+  #cancelSourceContinuation = noCancel
 
   #consumeFn = null
   #consumeSyncFn = null
   #activeContext = void 0
   #nextCalled = true
-  #nextGenCalled = true
   #consumers = []
   #observers = []
   #observedSource = null
@@ -157,20 +160,76 @@ class Exstream extends EventHub {
       this.#sourceInitializer = () => this.#pipeWebReadable(xs)
     } else if (_.isIterable(xs)) {
       this.#sourceInitializer = () => {
-        this.#sourceData = xs[Symbol.iterator]()
+        this.#setSourceIterator(xs[Symbol.iterator]())
       }
     } else if (_.isAsyncIterable(xs)) {
       this.#sourceInitializer = () => this.#pipeAsyncIterable(xs)
     } else if (_.isPromise(xs)) {
       return new Exstream([xs], options).mapAsync((value) => value)
-    } else if (_.isFunction(xs)) {
-      this.#generator = xs
     } else {
       throw Error(
         'error creating exstream: invalid source. source can be one of: iterable, ' +
-          'async iterable, exstream function, a promise, a node readable stream',
+          'async iterable, a promise, a Web ReadableStream, or a Node readable stream',
       )
     }
+  }
+
+  static fromFrames(iterable, options = null) {
+    const stream = new Exstream(null, options)
+    stream.#sourceInitializer = () => stream.#pipeAsyncIterable(iterable, 'iterate', true)
+    return stream
+  }
+
+  static fromDeferred(factory, options = null) {
+    const frames = {
+      async *[Symbol.asyncIterator]() {
+        let source
+        try {
+          source = await factory()
+          if (
+            !(
+              _.isExstream(source) ||
+              _.isNodeStream(source) ||
+              runtime.isWebReadableStream(source) ||
+              _.isIterable(source) ||
+              _.isAsyncIterable(source)
+            )
+          ) {
+            throw Error('defer() factory must return a valid stream source')
+          }
+        } catch (error) {
+          yield errorFrame(new ExstreamError(error, void 0, { origin: 'source', stage: 'defer' }))
+          return
+        }
+
+        let stream
+        try {
+          stream = new Exstream(source)
+        } catch {
+          yield errorFrame(
+            new ExstreamError(Error('defer() factory must return a valid stream source'), void 0, {
+              origin: 'source',
+              stage: 'defer',
+            }),
+          )
+          return
+        }
+
+        const iterator = stream.#createAsyncIterator({ frames: true })
+        try {
+          /* oxlint-disable no-await-in-loop -- Frame order and backpressure are sequential. */
+          while (true) {
+            const item = await iterator.next()
+            if (item.done) return
+            yield item.value
+          }
+          /* oxlint-enable no-await-in-loop */
+        } finally {
+          await iterator.return()
+        }
+      },
+    }
+    return Exstream.fromFrames(frames, options)
   }
 
   #configureBuffer = (options) => {
@@ -224,31 +283,16 @@ class Exstream extends EventHub {
     }
   }
 
-  #pipeAsyncIterable = (iterable, stage = 'iterate') => {
-    const iterator = iterable[Symbol.asyncIterator]()
-    let cancelled = false
-    this.#generator = (write, next) => {
-      /* v8 ignore next -- Destruction removes the generator before it can be invoked again. */
-      if (cancelled) return
-      void (async () => {
-        try {
-          const item = await iterator.next()
-          if (cancelled) return
-          if (item.done) write(_.nil)
-          else {
-            write(item.value)
-            next()
-          }
-        } catch (error) {
-          write(new ExstreamError(error, void 0, { origin: 'source', stage }))
-          write(_.nil)
-        }
-      })()
-    }
-    this.#destroyers.push(() => {
-      cancelled = true
-      if (typeof iterator.return === 'function') Promise.resolve(iterator.return()).catch(() => {})
-    })
+  #setSourceIterator = (iterator, async = false, stage = 'iterate', frames = false) => {
+    this.#sourceIterator = iterator
+    this.#sourceIteratorAsync = async
+    this.#sourceIteratorDone = false
+    this.#sourceFrames = frames
+    this.#sourceStage = stage
+  }
+
+  #pipeAsyncIterable = (iterable, stage = 'iterate', frames = false) => {
+    this.#setSourceIterator(iterable[Symbol.asyncIterator](), true, stage, frames)
   }
 
   #pipeReadable = (readable) => {
@@ -262,32 +306,31 @@ class Exstream extends EventHub {
 
   #pipeWebReadable = (readable) => {
     const reader = readable.getReader()
-    let cancelled = false
-    this.#generator = (write, next) => {
-      /* v8 ignore next -- Destruction removes the generator before it can be invoked again. */
-      if (cancelled) return
-      void (async () => {
-        try {
-          const { done, value } = await reader.read()
-          if (cancelled) return
-          if (done) write(_.nil)
-          else {
-            write(value)
-            next()
-          }
-        } catch (error) {
-          if (cancelled) return
-          write(new ExstreamError(error, void 0, { origin: 'source', stage: 'read' }))
-          write(_.nil)
-        }
-      })()
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      reader.releaseLock()
     }
-    this.#destroyers.push(() => {
-      cancelled = true
-      Promise.resolve(reader.cancel(this.signal.reason))
-        .catch(() => {})
-        .finally(() => reader.releaseLock())
-    })
+    this.#setSourceIterator(
+      {
+        async next() {
+          const item = await reader.read()
+          if (item.done) release()
+          return item
+        },
+        async return(reason) {
+          try {
+            await reader.cancel(reason)
+          } finally {
+            release()
+          }
+          return { done: true, value: void 0 }
+        },
+      },
+      true,
+      'read',
+    )
   }
 
   #addOnceListener = (event, target, handler) => {
@@ -300,7 +343,7 @@ class Exstream extends EventHub {
     return this._write(x)
   }
 
-  #enqueue = (type, value, input, fatal, context) => {
+  #enqueue = (type, value, input, fatal, context, afterWrite) => {
     if (type === END) {
       const frame = endFrame
       this.#buffer.push(frame)
@@ -315,6 +358,7 @@ class Exstream extends EventHub {
     }
     const frame =
       type === DATA ? dataFrame(value, context) : errorFrame(value, input, fatal, context)
+    if (afterWrite) frame.afterWrite = afterWrite
     this.#buffer.push(frame)
     this.#buffered++
     this.#peakBuffered = Math.max(this.#peakBuffered, this.#buffered)
@@ -335,9 +379,10 @@ class Exstream extends EventHub {
     return this._writeData(x, skipBackPressure)
   }
 
-  _writeData(value, skipBackPressure = false, context) {
-    if (this.paused && !skipBackPressure) {
-      this.#enqueue(DATA, value, void 0, false, context)
+  _writeData(value, skipBackPressure = false, context, afterWrite) {
+    const queued = this.paused && !skipBackPressure
+    if (queued) {
+      this.#enqueue(DATA, value, void 0, false, context, afterWrite)
     } else if (this.#consumeSyncFn) {
       if (context === void 0) this.#consumeSyncFn(void 0, value, this.#push)
       else this.#consumeSyncContext(void 0, value, context)
@@ -346,6 +391,8 @@ class Exstream extends EventHub {
     } else {
       this.#sendData(value, context)
     }
+
+    if (!queued && afterWrite) afterWrite()
 
     return !this.paused || skipBackPressure
   }
@@ -361,13 +408,22 @@ class Exstream extends EventHub {
     )
   }
 
-  #writeControlRecord = (type, value, input, fatal, context, skipBackPressure = false) => {
+  #writeControlRecord = (
+    type,
+    value,
+    input,
+    fatal,
+    context,
+    skipBackPressure = false,
+    afterWrite,
+  ) => {
     if (type === END) this.#nilPushed = true
     const err = type === ERROR ? value : void 0
     const x = type === END ? _.nil : null
 
-    if (this.paused && !skipBackPressure) {
-      this.#enqueue(type, value, input, fatal, context)
+    const queued = this.paused && !skipBackPressure
+    if (queued) {
+      this.#enqueue(type, value, input, fatal, context, afterWrite)
     } else if (this.#consumeSyncFn) {
       if (context === void 0) this.#consumeSyncFn(err, x, this.#push)
       else this.#consumeSyncContext(err, x, context)
@@ -376,6 +432,8 @@ class Exstream extends EventHub {
     } else {
       this.#sendControl(type, value, input, fatal, context)
     }
+
+    if (!queued && afterWrite) afterWrite()
 
     return !this.paused || skipBackPressure
   }
@@ -547,11 +605,10 @@ class Exstream extends EventHub {
       }
     }
     if (this.#observedSource) this.#observedSource.#removeObserver(this)
-    this.#generator = null
     this.#sourceInitializer = null
-    this.#cancelGeneratorContinuation()
-    this.#cancelGeneratorContinuation = noCancel
-    this.#sourceData = null
+    this.#cancelSourceContinuation()
+    this.#cancelSourceContinuation = noCancel
+    this.#closeSourceIterator()
     this.removeAllListeners()
     this.#destroyers.forEach((x) => x())
     this.#destroyers = []
@@ -653,7 +710,7 @@ class Exstream extends EventHub {
       const frame = this.#buffer[i]
       const wrote =
         frame.type === DATA
-          ? this._writeData(frame.value, force, frame.context)
+          ? this._writeData(frame.value, force, frame.context, frame.afterWrite)
           : this.#writeControlRecord(
               frame.type,
               frame.error,
@@ -661,6 +718,7 @@ class Exstream extends EventHub {
               frame.fatal,
               frame.context,
               force,
+              frame.afterWrite,
             )
       if (!wrote) break
     }
@@ -669,71 +727,114 @@ class Exstream extends EventHub {
     this.#buffered -= removed.filter((frame) => frame.type !== END).length
   }
 
-  #consumeSourceData = () => {
+  #closeSourceIterator = () => {
+    const iterator = this.#sourceIterator
+    const done = this.#sourceIteratorDone
+    this.#sourceIterator = null
+    this.#sourceIteratorDone = true
+    this.#sourcePulling = false
+    if (!done && iterator && typeof iterator.return === 'function') {
+      const reason =
+        this.#signalAbortReason === signalActive ? this.#abortReason : this.#signalAbortReason
+      Promise.resolve(iterator.return(reason)).catch(() => {})
+    }
+  }
+
+  #writeSourceFrame = (frame) => {
+    let wrote
+    if (frame.type === DATA)
+      wrote = this._writeData(frame.value, false, frame.context, frame.afterWrite)
+    if (frame.type === ERROR) {
+      wrote = frame.fatal
+        ? this[kFail](frame.error, frame.input)
+        : this.#writeControlRecord(
+            ERROR,
+            frame.error,
+            frame.input,
+            false,
+            frame.context,
+            false,
+            frame.afterWrite,
+          )
+    }
+    if (frame.type === END) {
+      this.end()
+      wrote = false
+    }
+    return wrote
+  }
+
+  #writeSourceValue = (value) =>
+    this.#sourceFrames ? this.#writeSourceFrame(value) : this.write(value)
+
+  #failSource = (error) => {
+    if (error && error.exstreamFatal) {
+      this[kFail](error, error.exstreamInput)
+      return
+    }
+    this.write(new ExstreamError(error, void 0, { origin: 'source', stage: this.#sourceStage }))
+    this.end()
+  }
+
+  #consumeSyncSource = () => {
     let nextVal
     do {
       try {
-        nextVal = this.#sourceData.next()
+        nextVal = this.#sourceIterator.next()
       } catch (e) {
-        // es6 generator fatal error. Must end the stream
-        this.write(new ExstreamError(e, void 0, { origin: 'source', stage: 'iterate' }))
-        this.end()
+        this.#failSource(e)
         return
       }
-      if (!nextVal.done) this.write(nextVal.value)
-      else this.end()
+      if (!nextVal.done) this.#writeSourceValue(nextVal.value)
+      else {
+        this.#sourceIteratorDone = true
+        this.end()
+      }
     } while (!this.#nilPushed && !this.paused)
   }
 
-  #consumeGenerator = () => {
-    let syncNext = true
-    const next = (otherStream) => {
-      this.#nextGenCalled = true
-      let me = this
-      if (otherStream) {
-        otherStream = new Exstream(otherStream)
-        otherStream.#consumers = this.#consumers
-        otherStream.#consumers.forEach((x) => {
-          x.source = otherStream
-        })
-        otherStream.#activationStarted = true
-        otherStream.pausedFromInside = true
-        otherStream.pausedFromOutside = false
-        otherStream.#buffer = this.#buffer
-        otherStream.#buffered = this.#buffered
-        otherStream.#peakBuffered = Math.max(this.#peakBuffered, otherStream.#peakBuffered)
-        otherStream.#dropped += this.#dropped
-        otherStream.#bufferLimit = this.#bufferLimit
-        otherStream.#overflowPolicy = this.#overflowPolicy
-        this.#buffer = []
-        this.#buffered = 0
-        this.#consumers = []
-        this[kDestroy]()
-        me = otherStream
-      }
-      if (me.paused && (!syncNext || otherStream)) {
-        const schedule = otherStream ? scheduleNextTurn : me.#scheduleGeneratorContinuation
-        me.#cancelGeneratorContinuation = schedule(() => {
-          me.#cancelGeneratorContinuation = noCancel
-          me[kResume](true)
-        })
-      }
+  #consumeAsyncSource = () => {
+    if (this.#sourcePulling) return
+    this.#sourcePulling = true
+    this[kPause](true)
+
+    let request
+    try {
+      request = this.#sourceIterator.next()
+    } catch (error) {
+      this.#sourcePulling = false
+      this.#failSource(error)
+      return
     }
 
-    const w = (x) => {
-      if (this.ended || this.#nilPushed) return false
-      const wrote = this.write(x)
-      if (x === _.nil) next()
-      return wrote
-    }
-
-    do {
-      this.#nextGenCalled = false
-      syncNext = true
-      this.#generator(w, next)
-      syncNext = false
-      if (!this.#nextGenCalled) this[kPause](true)
-    } while (!this.paused && !this.#nilPushed)
+    Promise.resolve(request).then(
+      (item) => {
+        this.#sourcePulling = false
+        if (this.ended || this.#state === 'ending') return
+        if (item.done) {
+          this.#sourceIteratorDone = true
+          this.end()
+          return
+        }
+        try {
+          this.#writeSourceValue(item.value)
+        } catch (error) {
+          this[kAbort](error)
+          return
+        }
+        if (this.ended || this.#state === 'ending') return
+        this.#cancelSourceContinuation = this.#scheduleSourceContinuation(() => {
+          this.#cancelSourceContinuation = noCancel
+          this[kResume](true)
+        })
+        return void 0
+      },
+      (error) => {
+        this.#sourcePulling = false
+        if (!this.ended && this.#state !== 'ending') this.#failSource(error)
+        return void 0
+      },
+    )
   }
 
   #rootSource = () => {
@@ -753,7 +854,7 @@ class Exstream extends EventHub {
     if (fromInside) this.pausedFromInside = false
     else this.pausedFromOutside = false
     if (this.pausedFromInside || this.pausedFromOutside) return
-    if (!this.#autostart || !this.#nextCalled || !this.#nextGenCalled || !this.paused) return
+    if (!this.#autostart || !this.#nextCalled || !this.paused) return
     if (this.ended || this.#state === 'ending') return
 
     this.#activationStarted = true
@@ -774,10 +875,9 @@ class Exstream extends EventHub {
     this.#flushBuffer() // This can pause the stream again if the consumers are slow
     if (this.paused) return
 
-    if (this.#sourceData) {
-      this.#consumeSourceData() // This can pause the stream again if the consumers are slow
-    } else if (this.#generator) {
-      this.#consumeGenerator() // This can pause the stream again if the consumers are slow
+    if (this.#sourceIterator) {
+      if (this.#sourceIteratorAsync) this.#consumeAsyncSource()
+      else this.#consumeSyncSource()
     }
 
     if (this.paused) return
@@ -1118,6 +1218,7 @@ class Exstream extends EventHub {
       throw Error('error creating async iterator: options must be an object')
     }
     const signal = options.signal
+    const frames = options.frames === true
     if (
       signal !== void 0 &&
       (!signal ||
@@ -1185,13 +1286,25 @@ class Exstream extends EventHub {
       sink[kPause]()
       const request = pending
       pending = null
-      if (error) {
+      if (error && !frames) {
         closed = true
         cleanup()
         request.reject(error)
         sink[kDestroy]()
       } else {
-        request.resolve({ done: false, value })
+        request.resolve({
+          done: false,
+          value: error
+            ? errorFrame(
+                error,
+                error.exstreamInput,
+                error.exstreamFatal === true,
+                sink._recordContext,
+              )
+            : frames
+              ? dataFrame(value, sink._recordContext)
+              : value,
+        })
       }
     })
     sink.once('error', finish)

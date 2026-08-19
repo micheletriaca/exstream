@@ -11,6 +11,7 @@ const {
 } = require('./context.js')
 const { runtime } = require('./runtime.js')
 const { createDestination } = require('./destination.js')
+const { dataFrame, errorFrame } = require('./protocol.js')
 const { kAbort, kDestroy, kFail, kPause, kResume } = require('./stream-control.js')
 
 const _m = (module.exports = {})
@@ -767,25 +768,39 @@ const slidingConcurrentTransform = (s, options) => {
   const tasks = []
   const readyTasks = []
   let sourceEnded = false
-  let outputNext = null
+  let outputRequest = null
+  let outputClosed = false
   let started = false
   let sink
   let result
 
-  const hasReadyTask = () => (ordered ? tasks[0]?.settled === true : readyTasks.length > 0)
+  const hasReadyTask = () =>
+    ordered ? tasks[0]?.settled === true && tasks[0].delivered !== true : readyTasks.length > 0
 
   const takeReadyTask = () => {
-    const task = ordered ? tasks.shift() : readyTasks.shift()
-    if (!ordered) tasks.splice(tasks.indexOf(task), 1)
+    const task = ordered ? tasks[0] : readyTasks.shift()
+    task.delivered = true
     return task
   }
 
+  const outputItem = () => {
+    const task = takeReadyTask()
+    const frame = task.error
+      ? errorFrame(task.error, task.error.exstreamInput, false, task.context)
+      : dataFrame(task.result, task.context)
+    frame.afterWrite = () => {
+      tasks.splice(tasks.indexOf(task), 1)
+      if (!result.ended && sink && !sink.ended) task.next()
+    }
+    return { done: false, value: frame }
+  }
+
   const wakeOutput = () => {
-    if (!outputNext) return
+    if (!outputRequest) return
     if (!hasReadyTask() && !(sourceEnded && tasks.length === 0)) return
-    const next = outputNext
-    outputNext = null
-    next()
+    const request = outputRequest
+    outputRequest = null
+    request.resolve(hasReadyTask() ? outputItem() : { done: true, value: void 0 })
   }
 
   const handleTaskResult = (isError, value, task) => {
@@ -804,24 +819,37 @@ const slidingConcurrentTransform = (s, options) => {
     wakeOutput()
   }
 
-  result = new Exstream((write, next) => {
-    if (!started) {
-      started = true
-      sink[kResume]()
-    }
+  const output = {
+    next() {
+      if (outputClosed) return Promise.resolve({ done: true, value: void 0 })
+      if (!started) {
+        started = true
+        sink[kResume]()
+      }
+      if (hasReadyTask()) return Promise.resolve(outputItem())
+      if (sourceEnded && tasks.length === 0) {
+        outputClosed = true
+        return Promise.resolve({ done: true, value: void 0 })
+      }
+      return new Promise((resolve) => {
+        outputRequest = { resolve }
+      })
+    },
+    return(value) {
+      outputClosed = true
+      if (outputRequest) {
+        outputRequest.resolve({ done: true, value })
+        outputRequest = null
+      }
+      if (sink && !sink.ended) sink[kDestroy]()
+      return Promise.resolve({ done: true, value })
+    },
+    [Symbol.asyncIterator]() {
+      return this
+    },
+  }
 
-    if (hasReadyTask()) {
-      const task = takeReadyTask()
-      if (task.error) result._writeError(task.error, task.context)
-      else result._writeData(task.result, false, task.context)
-      task.next()
-      next()
-    } else if (sourceEnded && tasks.length === 0) {
-      write(_.nil)
-    } else {
-      outputNext = next
-    }
-  })
+  result = Exstream.fromFrames(output)
 
   sink = s.consume((error, value, push, next) => {
     if (result.ended) return
@@ -863,7 +891,7 @@ const slidingConcurrentTransform = (s, options) => {
     sink[kAbort](reason)
   })
   result.once('end', () => {
-    outputNext = null
+    outputRequest = null
     if (!sink.ended) sink[kDestroy]()
   })
   sink.once('abort', (reason) => {

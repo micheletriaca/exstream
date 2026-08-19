@@ -233,16 +233,10 @@ test('reliable fan-out applies the slowest WritableStream backpressure to the so
   const releases = []
   const fastValues = []
   const slowValues = []
-  const source = _(
-    (write, next) => {
-      if (produced === 3) write(_.nil)
-      else {
-        write(++produced)
-        next()
-      }
-    },
-    { start: 'manual' },
-  )
+  function* values() {
+    while (produced < 3) yield ++produced
+  }
+  const source = _(values(), { start: 'manual' })
   const slow = new WritableStream({
     write(value) {
       slowValues.push(value)

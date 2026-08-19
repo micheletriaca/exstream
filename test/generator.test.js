@@ -3,14 +3,13 @@ const _ = require('../src')
 const h = require('./helpers')
 
 test('async exstream', async () => {
-  let i = -1
-  const sourceStream = _(async (write, next) => {
-    if (++i < 10) {
+  async function* source() {
+    for (let i = 0; i < 10; i++) {
       await h.sleep(0)
-      write(i)
-      next()
-    } else write(_.nil)
-  })
+      yield i
+    }
+  }
+  const sourceStream = _(source())
   const res = await sourceStream.tap(() => expect(sourceStream.paused).toBe(false)).toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 })
@@ -39,13 +38,10 @@ test('async sources preserve AsyncLocalStorage across cooperative yields', async
 })
 
 test('generator backpressure', async () => {
-  let i = -1
-  const sourceStream = _((write, next) => {
-    if (++i < 10) {
-      write(i)
-      next()
-    } else write(_.nil)
-  })
+  function* source() {
+    for (let i = 0; i < 10; i++) yield i
+  }
+  const sourceStream = _(source())
 
   const res = await sourceStream
     .map(async (x) => {
@@ -59,40 +55,31 @@ test('generator backpressure', async () => {
 })
 
 test('recursive generator', async () => {
-  const gen = (i = 0) =>
-    _((write, next) => {
-      if (i > 10) write(_.nil)
-      else {
-        write(i)
-        next(gen(i + 1))
-      }
-    })
+  function* gen(i = 0) {
+    if (i > 10) return
+    yield i
+    yield* gen(i + 1)
+  }
 
   const res = await _(gen()).toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
 test('switch source', async () => {
-  const gen = (i = 0) =>
-    _((write, next) => {
-      if (i <= 5) {
-        write(i++)
-        next()
-      } else next(_([6, 7, 8, 9, 10]))
-    })
+  function* gen() {
+    yield* [0, 1, 2, 3, 4, 5]
+    yield* [6, 7, 8, 9, 10]
+  }
 
   const res = await _(gen()).toArray()
   expect(res).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 })
 
 test('switch source + backpressure', async () => {
-  const gen = (i = 0) =>
-    _((write, next) => {
-      if (i <= 5) {
-        write(i++)
-        next()
-      } else next(_([6, 7, 8, 9, 10]))
-    })
+  function* gen() {
+    yield* [0, 1, 2, 3, 4, 5]
+    yield* [6, 7, 8, 9, 10]
+  }
 
   const res = []
   await _(gen()).pipeTo(h.getSlowWritable(res, 1, 0))

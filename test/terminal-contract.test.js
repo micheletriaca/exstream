@@ -37,7 +37,7 @@ test('toArray rejects synchronous transformation errors', async () => {
 test.each([
   ['mapAsync', () => _([Promise.resolve(1)]).mapAsync((value) => value)],
   ['mapAsync', () => _([1]).mapAsync(async (value) => value)],
-  ['generator', () => _((write) => write(_.nil))],
+  ['async iterable', () => _((async function* () {})())],
   ['Node readable', () => _(Readable.from([1]))],
 ])('toArray consumes an asynchronous %s pipeline', async (name, createStream) => {
   await expect(createStream().toArray()).resolves.toBeInstanceOf(Array)

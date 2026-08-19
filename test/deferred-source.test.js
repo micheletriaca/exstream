@@ -38,11 +38,14 @@ test('deferred factory failures retain source provenance', async () => {
   expect(_.errorInfo(reason)).toMatchObject({ origin: 'source', stage: 'defer' })
 })
 
-test('defer rejects factories that do not return stream sources', async () => {
-  await expect(_.defer(() => 42).toArray()).rejects.toThrow(
-    'defer() factory must return a valid stream source',
-  )
-})
+test.each([42, null, undefined, () => undefined])(
+  'defer rejects a factory result that is not a stream source: %p',
+  async (value) => {
+    await expect(_.defer(() => value).toArray()).rejects.toThrow(
+      'defer() factory must return a valid stream source',
+    )
+  },
+)
 
 test('cancellation before demand does not invoke a deferred factory', () => {
   const controller = new AbortController()

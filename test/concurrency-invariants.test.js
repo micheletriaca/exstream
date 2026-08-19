@@ -51,14 +51,15 @@ test('merge(n) never activates more than n source streams concurrently', async (
   let maxActive = 0
 
   const streams = values.map((value) =>
-    _(async (write) => {
-      active++
-      maxActive = Math.max(maxActive, active)
-      await new Promise((resolve) => releases.push(resolve))
-      active--
-      write(value)
-      write(_.nil)
-    }),
+    _(
+      (async function* () {
+        active++
+        maxActive = Math.max(maxActive, active)
+        await new Promise((resolve) => releases.push(resolve))
+        active--
+        yield value
+      })(),
+    ),
   )
   const resultPromise = _(streams).merge(parallelism, false).toArray()
 
@@ -131,14 +132,15 @@ test('ordered merge activates n streams but emits each complete stream in input 
   let active = 0
 
   const controlledStream = (name, gate) =>
-    _(async (write) => {
-      active++
-      await gate.promise
-      write(`${name}-1`)
-      write(`${name}-2`)
-      completed.push(name)
-      write(_.nil)
-    })
+    _(
+      (async function* () {
+        active++
+        await gate.promise
+        yield `${name}-1`
+        yield `${name}-2`
+        completed.push(name)
+      })(),
+    )
   const resultPromise = _([
     controlledStream('first', firstGate),
     controlledStream('second', secondGate),

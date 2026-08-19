@@ -112,6 +112,53 @@ creating the source must be delayed, use `defer(() => source)`. This distinction
 matters for calls such as `fetch()` and `createReadStream()`, which have already
 started or acquired resources if their result is passed directly.
 
+## Custom callback sources
+
+The legacy `(write, next) => void` source protocol was removed. Use the language
+iterator protocols for pull-based sources:
+
+```js
+// Before
+let value = 0
+const source = exstream((write, next) => {
+  if (value === 10) write(exstream.nil)
+  else {
+    write(value++)
+    next()
+  }
+})
+
+// 1.0
+function* values() {
+  for (let value = 0; value < 10; value++) yield value
+}
+const source = exstream(values())
+```
+
+Use an async generator when acquiring a record is asynchronous. Exceptions,
+completion and cleanup then follow standard `throw`, `return`, and `finally`
+semantics:
+
+```js
+async function* rows() {
+  const cursor = await openCursor()
+  try {
+    while (true) {
+      const item = await cursor.read()
+      if (item.done) return
+      yield item.value
+    }
+  } finally {
+    await cursor.close()
+  }
+}
+```
+
+Replace `next(otherSource)` with `yield* otherIterable`. For genuinely push-based
+adapters, create a writable source with `exstream()`, respect the boolean result
+of `write()`, and terminate it with `end()`; event targets should normally use
+`fromEvent()`.
+
 Generic helpers and internal type guards previously copied onto the package
 export are no longer public. Applications should use JavaScript and platform
 primitives directly; for example, use `typeof value === 'string'`,

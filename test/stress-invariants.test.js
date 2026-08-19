@@ -13,17 +13,10 @@ test('reliable fan-out remains bounded with a slow writer over many records', as
   let maxPendingWrites = 0
   const slowValues = []
   const fastValues = []
-  const source = _(
-    (write, next) => {
-      if (produced === total) {
-        write(_.nil)
-      } else {
-        write(produced++)
-        next()
-      }
-    },
-    { start: 'manual' },
-  )
+  function* values() {
+    while (produced < total) yield produced++
+  }
+  const source = _(values(), { start: 'manual' })
   const slowWriter = new Writable({
     objectMode: true,
     highWaterMark: 1,
@@ -97,13 +90,10 @@ test('destroy terminates a backpressured fork/merge graph without later activity
     },
   })
   const destinationDone = finished(destination, { cleanup: true })
-  const source = _(
-    (write, next) => {
-      write(produced++)
-      next()
-    },
-    { start: 'manual' },
-  )
+  function* values() {
+    while (true) yield produced++
+  }
+  const source = _(values(), { start: 'manual' })
   const first = source.fork().map((value) => `a${value}`)
   const second = source.fork().map((value) => `b${value}`)
   const merged = _([first, second]).merge(2, false)
