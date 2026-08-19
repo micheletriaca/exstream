@@ -211,10 +211,16 @@ backpressure, cancellation, format parsing and cleanup.
 
 ## Documentation
 
-The full documentation portal is the next roadmap step and will live at
-[exstream-js.github.io](https://exstream-js.github.io/). Until then, the
-repository contains the [migration guide](MIGRATION.md),
-[support policy](SUPPORT.md), [changelog](CHANGELOG.md) and reproducible
+The full documentation is available at
+[exstream-js.github.io/docs](https://exstream-js.github.io/docs/). Start with
+the [learning guide](https://exstream-js.github.io/docs/learn/pipeline-model/),
+read about
+[extensibility and composition](https://exstream-js.github.io/docs/learn/extensibility/),
+or browse the complete
+[API reference](https://exstream-js.github.io/docs/reference/).
+
+The repository also contains the [migration guide](MIGRATION.md),
+[support policy](SUPPORT.md), [changelog](CHANGELOG.md), and reproducible
 [benchmark methodology](test/benchmarks/README.md).
 
 Exstream is released under the [MIT License](LICENSE).
