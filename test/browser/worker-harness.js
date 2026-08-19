@@ -1,4 +1,4 @@
-importScripts('./exstream.iife.js')
+importScripts('./exstream.iife.min.js')
 
 const equal = (actual, expected, message) => {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw Error(message)

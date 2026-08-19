@@ -56,8 +56,12 @@ const run = async () => {
     () => web([1]).toNodeReadable(),
     /toNodeReadable\(\) is not available in this runtime/,
   )
+  assert.throws(
+    () => web.pipeline().toNodeTransform(),
+    /toNodeTransform\(\) is not available in this runtime/,
+  )
 
-  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=9')
+  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=10')
 }
 
 run().catch((error) => {

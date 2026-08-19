@@ -9,6 +9,23 @@ const equal = (actual, expected, message) => {
 }
 
 const run = async () => {
+  const { default: ExstreamModule } = await import('./exstream.mjs')
+  const hiddenMethods = ['abort', 'destroy', 'fail', 'pause', 'resume', 'writeData']
+  const hiddenUtilities = ['curry', 'get', 'isExstream', 'isIterable']
+  const empty = ExstreamModule()
+  assert(
+    hiddenMethods.every((name) => !(name in empty)) &&
+      hiddenUtilities.every((name) => !(name in ExstreamModule)),
+    'browser bundle exposes internal API',
+  )
+  equal(
+    await ExstreamModule([1, 2, 3])
+      .map((value) => value + 1)
+      .toArray(),
+    [2, 3, 4],
+    'ES module',
+  )
+
   const mapped = await Exstream([1, 2, 3])
     .mapAsync(async (value) => value * 10, { concurrency: 2 })
     .toArray()
@@ -35,6 +52,25 @@ const run = async () => {
     .map((value) => value * 2)
     .pipeTo(writable)
   equal(written, [2, 4], 'web sink')
+
+  const destinationOutput = []
+  const destination = ExstreamModule.pipeline()
+    .batch(2)
+    .mapAsync(async (batch) => destinationOutput.push(batch))
+    .drain()
+  await ExstreamModule([1, 2, 3]).pipeTo(destination)
+  equal(destinationOutput, [[1, 2], [3]], 'Exstream destination')
+
+  let nodeTransformError
+  try {
+    ExstreamModule.pipeline().toNodeTransform()
+  } catch (error) {
+    nodeTransformError = error
+  }
+  assert(
+    nodeTransformError?.message === 'toNodeTransform() is not available in this runtime',
+    'browser pipeline rejects the Node transform adapter',
+  )
 
   const target = new EventTarget()
   const events = Exstream.fromEvent(target, 'row', {
@@ -124,7 +160,7 @@ const run = async () => {
   })
   assert(workerResult.checks === 5, 'worker did not complete every check')
 
-  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=9 worker=5'
+  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=13 worker=5'
 }
 
 run().catch((error) => {
