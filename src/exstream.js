@@ -58,6 +58,7 @@ class Exstream extends EventHub {
   readable = true
 
   #state = 'idle'
+  #activationStarted = false
   #startPromise = null
   #abortReason = null
   #failing = false
@@ -65,7 +66,6 @@ class Exstream extends EventHub {
   #abortController = null
   #signalAbortReason = signalActive
 
-  #resumedAtLeastOnce = false
   paused = true
   pausedFromOutside = true
   pausedFromInside = false
@@ -79,6 +79,7 @@ class Exstream extends EventHub {
   #bufferLimit = Infinity
   #overflowPolicy = 'error'
   #sourceData = null
+  #sourceInitializer = null
   #generator = null
   #scheduleGeneratorContinuation = createCooperativeScheduler()
   #cancelGeneratorContinuation = noCancel
@@ -93,6 +94,7 @@ class Exstream extends EventHub {
   #observedSource = null
   #contextBoundary = false
   #autostart = true
+  #startMode = 'auto'
 
   #destroyers = []
 
@@ -141,6 +143,7 @@ class Exstream extends EventHub {
   constructor(xs, options = null) {
     super()
     this.#configureBuffer(options)
+    this.#configureStart(options)
     this.#configureAbortSignal(options)
     if (this.ended) return
     if (!xs) {
@@ -148,15 +151,18 @@ class Exstream extends EventHub {
     } else if (_.isExstream(xs)) {
       return xs
     } else if (_.isNodeStream(xs)) {
-      this.#pipeReadable(xs)
+      this.#sourceInitializer = () =>
+        _.isAsyncIterable(xs) ? this.#pipeAsyncIterable(xs, 'read') : this.#pipeReadable(xs)
     } else if (runtime.isWebReadableStream(xs)) {
-      this.#pipeWebReadable(xs)
+      this.#sourceInitializer = () => this.#pipeWebReadable(xs)
     } else if (_.isIterable(xs)) {
-      this.#sourceData = xs[Symbol.iterator]()
+      this.#sourceInitializer = () => {
+        this.#sourceData = xs[Symbol.iterator]()
+      }
     } else if (_.isAsyncIterable(xs)) {
-      this.#pipeAsyncIterable(xs)
+      this.#sourceInitializer = () => this.#pipeAsyncIterable(xs)
     } else if (_.isPromise(xs)) {
-      return new Exstream([xs]).mapAsync((value) => value)
+      return new Exstream([xs], options).mapAsync((value) => value)
     } else if (_.isFunction(xs)) {
       this.#generator = xs
     } else {
@@ -189,6 +195,16 @@ class Exstream extends EventHub {
     this.#overflowPolicy = overflow
   }
 
+  #configureStart = (options) => {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) return
+    const mode = options.start === void 0 ? 'auto' : options.start
+    if (mode !== 'auto' && mode !== 'manual') {
+      throw Error('start must be one of: auto, manual')
+    }
+    this.#startMode = mode
+    this.#autostart = mode === 'auto'
+  }
+
   #configureAbortSignal = (options) => {
     const signal = options && typeof options === 'object' ? options.signal : void 0
     if (signal === void 0) return
@@ -208,17 +224,7 @@ class Exstream extends EventHub {
     }
   }
 
-  #pipeReadable = (xs) => {
-    xs.pipe(this)
-    this.#addOnceListener('error', xs, (e) => {
-      // sometimes e is not an instance of Error, nobody knows why
-      this.write(new ExstreamError(e, void 0, { origin: 'source', stage: 'read' }))
-      scheduleNextTurn(() => this.end())
-    })
-    this.once('end', () => xs.destroy())
-  }
-
-  #pipeAsyncIterable = (iterable) => {
+  #pipeAsyncIterable = (iterable, stage = 'iterate') => {
     const iterator = iterable[Symbol.asyncIterator]()
     let cancelled = false
     this.#generator = (write, next) => {
@@ -234,7 +240,7 @@ class Exstream extends EventHub {
             next()
           }
         } catch (error) {
-          write(new ExstreamError(error, void 0, { origin: 'source', stage: 'iterate' }))
+          write(new ExstreamError(error, void 0, { origin: 'source', stage }))
           write(_.nil)
         }
       })()
@@ -243,6 +249,15 @@ class Exstream extends EventHub {
       cancelled = true
       if (typeof iterator.return === 'function') Promise.resolve(iterator.return()).catch(() => {})
     })
+  }
+
+  #pipeReadable = (readable) => {
+    this.#addOnceListener('error', readable, (reason) => {
+      this.write(new ExstreamError(reason, void 0, { origin: 'source', stage: 'read' }))
+      scheduleNextTurn(() => this.end())
+    })
+    this.once('end', () => readable.destroy())
+    readable.pipe(this)
   }
 
   #pipeWebReadable = (readable) => {
@@ -489,9 +504,12 @@ class Exstream extends EventHub {
   }
 
   start() {
+    const root = this.#rootSource()
+    if (root !== this) return root.start()
     if (this.ended || this.#state === 'ending') return Promise.resolve()
     if (this.#startPromise) return this.#startPromise
-    // A next turn guarantees that .pipe() has resumed the source stream.
+    this.#activationStarted = true
+    // A next turn lets downstream adapters finish attaching before activation.
     this.#startPromise = new Promise((resolve) =>
       scheduleNextTurn(() => {
         if (this.ended || this.#state === 'ending') {
@@ -530,6 +548,7 @@ class Exstream extends EventHub {
     }
     if (this.#observedSource) this.#observedSource.#removeObserver(this)
     this.#generator = null
+    this.#sourceInitializer = null
     this.#cancelGeneratorContinuation()
     this.#cancelGeneratorContinuation = noCancel
     this.#sourceData = null
@@ -677,7 +696,7 @@ class Exstream extends EventHub {
         otherStream.#consumers.forEach((x) => {
           x.source = otherStream
         })
-        otherStream.#resumedAtLeastOnce = true
+        otherStream.#activationStarted = true
         otherStream.pausedFromInside = true
         otherStream.pausedFromOutside = false
         otherStream.#buffer = this.#buffer
@@ -715,6 +734,12 @@ class Exstream extends EventHub {
       syncNext = false
       if (!this.#nextGenCalled) this[kPause](true)
     } while (!this.paused && !this.#nilPushed)
+  }
+
+  #rootSource = () => {
+    let root = this
+    while (root.source) root = root.source
+    return root
   };
 
   [kPause](fromInside = false) {
@@ -731,9 +756,21 @@ class Exstream extends EventHub {
     if (!this.#autostart || !this.#nextCalled || !this.#nextGenCalled || !this.paused) return
     if (this.ended || this.#state === 'ending') return
 
-    this.#resumedAtLeastOnce = true
+    this.#activationStarted = true
     this.#state = 'running'
     this.paused = false
+    if (this.#sourceInitializer) {
+      const initialize = this.#sourceInitializer
+      this.#sourceInitializer = null
+      try {
+        initialize()
+      } catch (error) {
+        this.write(new ExstreamError(error, void 0, { origin: 'source', stage: 'acquire' }))
+        this.end()
+        return
+      }
+      if (this.ended || this.#state === 'ending') return
+    }
     this.#flushBuffer() // This can pause the stream again if the consumers are slow
     if (this.paused) return
 
@@ -1358,11 +1395,15 @@ class Exstream extends EventHub {
       }
     })
 
-  fork(disableAutostart = false) {
-    if (this.#resumedAtLeastOnce)
+  fork() {
+    if (arguments.length) {
+      throw Error("fork() does not accept arguments; use { start: 'manual' } on the source")
+    }
+    const root = this.#rootSource()
+    if (root.#activationStarted || root.ended)
       throw Error("this stream is already started. you can't fork it anymore")
-    this.#autostart = false
-    if (!disableAutostart) scheduleMicrotask(() => this.start())
+    root.#autostart = false
+    if (root.#startMode === 'auto') scheduleMicrotask(() => root.start())
     const res = new Exstream()
     res.#contextBoundary = true
     this.#addConsumer(res, true)

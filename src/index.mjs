@@ -18,6 +18,7 @@ export const {
   csvStringify,
   data,
   decode,
+  defer,
   destination,
   drop,
   encode,

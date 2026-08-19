@@ -21,6 +21,15 @@ const run = async () => {
   })
   equal(await Exstream(readable).toArray(), [3], 'worker Web Stream')
 
+  let deferredInvocations = 0
+  const deferred = Exstream.defer(() => {
+    deferredInvocations += 1
+    return [4]
+  })
+  if (deferredInvocations !== 0) throw Error('worker deferred source started eagerly')
+  equal(await deferred.toArray(), [4], 'worker deferred source')
+  if (deferredInvocations !== 1) throw Error('worker deferred source started more than once')
+
   const csv = new TextEncoder().encode('a,b\n1,2\n')
   equal(await Exstream([csv]).csv({ header: true }).toArray(), [{ a: '1', b: '2' }], 'worker CSV')
 
@@ -30,7 +39,7 @@ const run = async () => {
   const jsonl = new TextEncoder().encode('{"id":1}\n{"id":2}\n')
   equal(await Exstream([jsonl]).jsonl().toArray(), [{ id: 1 }, { id: 2 }], 'worker JSONL')
 
-  postMessage({ checks: 5, ok: true })
+  postMessage({ checks: 6, ok: true })
 }
 
 run().catch((error) => postMessage({ error: error.stack || String(error), ok: false }))

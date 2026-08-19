@@ -3,9 +3,9 @@ const { nextTurn } = require('./invariant-helpers.js')
 const { kAbort, kDestroy, kPause, kResume } = require('../src/stream-control.js')
 
 test('concurrent start calls consume a manually started source exactly once', async () => {
-  const source = _([1, 2, 3])
+  const source = _([1, 2, 3], { start: 'manual' })
   const end = vi.fn()
-  const result = source.fork(true).once('end', end).toArray()
+  const result = source.fork().once('end', end).toArray()
 
   const firstStart = source.start()
   expect(source.start()).toBe(firstStart)
@@ -184,9 +184,9 @@ test('aborting the only transformed branch propagates to its source', () => {
 })
 
 test('aborting one reliable fork leaves a sibling attached', async () => {
-  const source = _([1, 2, 3])
-  const aborted = source.fork(true)
-  const siblingResult = source.fork(true).toArray()
+  const source = _([1, 2, 3], { start: 'manual' })
+  const aborted = source.fork()
+  const siblingResult = source.fork().toArray()
 
   aborted[kAbort]('branch stopped')
 

@@ -127,12 +127,12 @@ test('an exception in a skipErrors predicate remains a contextual record error',
 
 test('failOnError promotes a record error to a fatal graph failure', async () => {
   const reason = Error('invalid record')
-  const source = _([1, 2]).map((value) => {
+  const source = _([1, 2], { start: 'manual' }).map((value) => {
     if (value === 2) throw reason
     return value
   })
-  const promoted = source.fork(true).failOnError()
-  const sibling = source.fork(true)
+  const promoted = source.fork().failOnError()
+  const sibling = source.fork()
   const promotedResult = promoted.toArray()
   const siblingResult = sibling.toArray()
 

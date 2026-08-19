@@ -37,6 +37,15 @@ const run = async () => {
   }
   assert.deepEqual(await web(iterable).toArray(), [1, 2])
 
+  let deferredInvocations = 0
+  const deferred = web.defer(() => {
+    deferredInvocations += 1
+    return [3]
+  })
+  assert.equal(deferredInvocations, 0)
+  assert.deepEqual(await deferred.toArray(), [3])
+  assert.equal(deferredInvocations, 1)
+
   const decoded = await web(['AQ', 'IDBA==']).decode('base64').toArray()
   assert.deepEqual(decoded, [new Uint8Array([1, 2, 3, 4])])
   assert.equal(Buffer.isBuffer(decoded[0]), false)
@@ -61,7 +70,7 @@ const run = async () => {
     /toNodeTransform\(\) is not available in this runtime/,
   )
 
-  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=10')
+  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=11')
 }
 
 run().catch((error) => {

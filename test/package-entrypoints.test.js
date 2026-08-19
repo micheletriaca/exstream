@@ -40,6 +40,7 @@ test('the package surface excludes internal utilities and lifecycle controls', (
   expect(lifecycleControls.filter((name) => name in stream)).toEqual([])
   expect(typeof stream.consume).toBe('function')
   expect(typeof stream.consumeSync).toBe('function')
+  expect(typeof node.defer).toBe('function')
   expect(typeof stream.start).toBe('function')
   expect(typeof stream.write).toBe('function')
   expect(typeof stream.end).toBe('function')

@@ -91,6 +91,8 @@ declare namespace exstream {
     overflow?: OverflowPolicy
     /** Cancels the stream when this signal is aborted. */
     signal?: AbortSignal
+    /** Activates on downstream demand, or waits for an explicit start(). Defaults to "auto". */
+    start?: 'auto' | 'manual'
   }
 
   /** Wraps a value so an Error can travel as normal data. */
@@ -131,6 +133,13 @@ declare namespace exstream {
     | ReadableStream<T>
     | NodeReadableLike<T>
     | StreamGenerator<T>
+
+  type DeferredStreamSource<T, C extends object = LazyRecordContext<T>> =
+    | Exstream<T, C>
+    | StreamSource<T>
+  type DeferredStreamFactory<T, C extends object = LazyRecordContext<T>> = () =>
+    | DeferredStreamSource<T, C>
+    | PromiseLike<DeferredStreamSource<T, C>>
 
   type Push<T, C extends object> = (
     error?: unknown | null,
@@ -458,10 +467,10 @@ declare namespace exstream {
     /** Writes one value. Error objects become error records; wrap them with data() to keep them as data. */
     write(value: T | Error | DataValue<T> | Nil): boolean
     /**
-     * Starts a source whose automatic startup was disabled, typically with `fork(true)`.
-     * This releases the producer once downstream consumers are ready; it is not a terminal
-     * consumer and the returned promise does not wait for the stream to finish. Use `drain()`
-     * to run a pipeline that has no writer or whose output should be discarded.
+     * Activates a graph created with `{ start: 'manual' }` and freezes reliable fork registration.
+     * This releases the producer once downstream consumers are ready; it is not a terminal consumer
+     * and the returned promise does not wait for the stream to finish. Use `drain()` to run a
+     * pipeline that has no writer or whose output should be discarded.
      */
     start(): Promise<void>
     /** Ends this stream after its buffered values. */
@@ -654,8 +663,8 @@ declare namespace exstream {
     ): Promise<void>
     /** Runs a reusable Exstream destination against this source. */
     pipeTo(destination: Destination<T>, options?: DestinationPipeOptions): Promise<void>
-    /** Creates an independent consuming branch. Context objects are copied at the boundary. */
-    fork(disableAutostart?: boolean): Exstream<T, C>
+    /** Creates an independent consuming branch before the source graph is activated. */
+    fork(): Exstream<T, C>
     /** Creates a non-blocking branch that may drop buffered values by policy. */
     observe(options?: ObserveOptions | null): Exstream<T, C>
     /** Connects this stream to a reusable pipeline, stream or transform function. */
@@ -895,6 +904,16 @@ declare namespace exstream {
 
   /** Creates a reusable pipeline definition. */
   function pipeline<T = unknown>(): Pipeline<T, T, RecordContext<T>>
+  /** Creates a source whose factory is invoked once, only when its graph is activated by demand. */
+  function defer<T, C extends object>(
+    factory: DeferredStreamFactory<T, C>,
+    options?: StreamOptions | null,
+  ): Exstream<T, C>
+  /** Creates a deferred source with lazily materialized record context. */
+  function defer<T>(
+    factory: DeferredStreamFactory<T>,
+    options?: StreamOptions | null,
+  ): Exstream<T, LazyRecordContext<T>>
   /** Creates a reusable terminal destination with high-level Exstream lifecycle access. */
   function destination<T = unknown>(
     run: (

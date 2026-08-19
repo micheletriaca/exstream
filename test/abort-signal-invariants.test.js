@@ -35,9 +35,9 @@ test('source options reject values that are not AbortSignals', () => {
 
 test('aborting one fork rejects its sink without cancelling a sibling', async () => {
   const reason = Error('branch cancelled')
-  const source = _([1, 2, 3])
-  const cancelled = source.fork(true)
-  const sibling = source.fork(true)
+  const source = _([1, 2, 3], { start: 'manual' })
+  const cancelled = source.fork()
+  const sibling = source.fork()
   const cancelledResult = cancelled.toArray()
   const siblingResult = sibling.toArray()
 

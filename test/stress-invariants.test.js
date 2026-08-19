@@ -13,14 +13,17 @@ test('reliable fan-out remains bounded with a slow writer over many records', as
   let maxPendingWrites = 0
   const slowValues = []
   const fastValues = []
-  const source = _((write, next) => {
-    if (produced === total) {
-      write(_.nil)
-    } else {
-      write(produced++)
-      next()
-    }
-  })
+  const source = _(
+    (write, next) => {
+      if (produced === total) {
+        write(_.nil)
+      } else {
+        write(produced++)
+        next()
+      }
+    },
+    { start: 'manual' },
+  )
   const slowWriter = new Writable({
     objectMode: true,
     highWaterMark: 1,
@@ -34,9 +37,9 @@ test('reliable fan-out remains bounded with a slow writer over many records', as
     },
   })
   const slowDone = finished(slowWriter, { cleanup: true })
-  source.fork(true).pipeTo(slowWriter)
+  source.fork().pipeTo(slowWriter)
   const fastResult = source
-    .fork(true)
+    .fork()
     .tap((value) => fastValues.push(value))
     .toArray()
 
@@ -94,12 +97,15 @@ test('destroy terminates a backpressured fork/merge graph without later activity
     },
   })
   const destinationDone = finished(destination, { cleanup: true })
-  const source = _((write, next) => {
-    write(produced++)
-    next()
-  })
-  const first = source.fork(true).map((value) => `a${value}`)
-  const second = source.fork(true).map((value) => `b${value}`)
+  const source = _(
+    (write, next) => {
+      write(produced++)
+      next()
+    },
+    { start: 'manual' },
+  )
+  const first = source.fork().map((value) => `a${value}`)
+  const second = source.fork().map((value) => `b${value}`)
   const merged = _([first, second]).merge(2, false)
   merged.pipeTo(destination)
 

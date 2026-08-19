@@ -50,6 +50,7 @@ const fromEvent = (target, event, options = null) => {
     bufferLimit: highWaterMark,
     overflow,
     signal: options.signal,
+    start: options.start,
   })
   source.received = 0
   let producerPaused = false

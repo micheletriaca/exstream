@@ -1,4 +1,4 @@
-import exstream, { destination, map, nil } from 'exstream.js'
+import exstream, { defer, destination, map, nil } from 'exstream.js'
 import coreExstream from 'exstream.js/core'
 import nodeExstream from 'exstream.js/node'
 import webExstream from 'exstream.js/web'
@@ -14,6 +14,14 @@ const drained: void = await exstream([1, 2]).drain()
 const reusableDestination = destination<number>(async (source) => source.drain())
 const written: void = await exstream([1, 2]).pipeTo(reusableDestination)
 const transform = exstream.pipeline<number>().map(String).toNodeTransform()
+const deferred: number[] = await defer(() => [1, 2]).toArray()
+const deferredAsync: string[] = await exstream
+  .defer(async () => new ReadableStream<string>())
+  .toArray()
+const manual = exstream([1, 2], { start: 'manual' })
+const manualResult = manual.toArray()
+await manual.start()
+await manualResult
 const end: typeof nil = nil
 const writable = exstream<number | Error>()
 writable.write(1)
@@ -34,6 +42,10 @@ writable.abort()
 writable.writeData(Error('ordinary value'))
 // @ts-expect-error generic helpers are not package exports
 exstream.curry((value: number) => value)
+// @ts-expect-error fork startup is configured on the source
+manual.fork(true)
+// @ts-expect-error start mode is explicit
+exstream([1], { start: 'later' })
 
 void root
 void core
@@ -43,4 +55,6 @@ void mapped
 void drained
 void written
 void transform
+void deferred
+void deferredAsync
 void end

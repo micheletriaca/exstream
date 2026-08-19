@@ -233,13 +233,16 @@ test('reliable fan-out applies the slowest WritableStream backpressure to the so
   const releases = []
   const fastValues = []
   const slowValues = []
-  const source = _((write, next) => {
-    if (produced === 3) write(_.nil)
-    else {
-      write(++produced)
-      next()
-    }
-  })
+  const source = _(
+    (write, next) => {
+      if (produced === 3) write(_.nil)
+      else {
+        write(++produced)
+        next()
+      }
+    },
+    { start: 'manual' },
+  )
   const slow = new WritableStream({
     write(value) {
       slowValues.push(value)
@@ -247,8 +250,8 @@ test('reliable fan-out applies the slowest WritableStream backpressure to the so
     },
   })
   const fast = new WritableStream({ write: (value) => fastValues.push(value) })
-  const slowDone = source.fork(true).pipeTo(slow)
-  const fastDone = source.fork(true).pipeTo(fast)
+  const slowDone = source.fork().pipeTo(slow)
+  const fastDone = source.fork().pipeTo(fast)
 
   await source.start()
   for (let value = 1; value <= 3; value++) {

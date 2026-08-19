@@ -4,9 +4,9 @@ const { kFail } = require('../src/stream-control.js')
 
 test('a fatal error rejects every reliable branch and aborts the graph', async () => {
   const reason = Error('fatal source failure')
-  const source = _()
-  const first = source.fork(true)
-  const second = source.fork(true)
+  const source = _(null, { start: 'manual' })
+  const first = source.fork()
+  const second = source.fork()
   const firstResult = first.toArray()
   const secondResult = second.toArray()
 
@@ -35,9 +35,9 @@ test('a fatal error bypasses record error handlers', async () => {
 
 test('failing one branch aborts its source and every sibling', async () => {
   const reason = Error('branch failure')
-  const source = _()
-  const failed = source.fork(true)
-  const sibling = source.fork(true)
+  const source = _(null, { start: 'manual' })
+  const failed = source.fork()
+  const sibling = source.fork()
   const failedResult = failed.toArray()
   const siblingResult = sibling.toArray()
 

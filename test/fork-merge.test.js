@@ -105,72 +105,35 @@ test('consuming fork in different "transactions" throw exception', async () => {
   expect(ex.message).toBe("this stream is already started. you can't fork it anymore")
 })
 
-test('consuming fork in different "transactions" with disable autostart', async () => {
-  const source = _([1, 2, 3])
-  const firstResult = source.fork(true).toArray()
-  const secondResult = new Promise((resolve) => {
-    setTimeout(async () => {
-      await resolve(
-        await source
-          .fork()
-          .map((x) => x * 2)
-          .toArray(),
-      )
-      source.start()
-    }, 10)
-  })
+test('manual start allows reliable forks to be registered in different turns', async () => {
+  const source = _([1, 2, 3], { start: 'manual' })
+  const firstResult = source.fork().toArray()
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  const secondResult = source
+    .fork()
+    .map((x) => x * 2)
+    .toArray()
+  await source.start()
 
   const [first, second] = await Promise.all([firstResult, secondResult])
   expect(first).toEqual([1, 2, 3])
   expect(second).toEqual([2, 4, 6])
 })
 
-test('consuming fork in setImmediate or nextTick works', async () => {
-  const finished = vi.fn()
+test('automatic activation accepts synchronous forks and closes before later turns', async () => {
   const source = _([1, 2, 3])
-  const directResult = source
+  const direct = source.fork().toArray()
+  const synchronous = source
     .fork()
+    .map((x) => x * 2)
     .toArray()
-    .then((res) => {
-      finished()
-      return res
-    })
-  const nextTickResult = new Promise((resolve) => {
-    process.nextTick(async () => {
-      await ((res) => {
-        finished()
-        resolve(res)
-      })(
-        await source
-          .fork()
-          .map((x) => x * 2)
-          .toArray(),
-      )
-    })
-  })
-  const immediateResult = new Promise((resolve) => {
-    setImmediate(async () => {
-      await ((res) => {
-        finished()
-        resolve(res)
-      })(
-        await source
-          .fork()
-          .map((x) => x * 2)
-          .toArray(),
-      )
-    })
-  })
 
-  const [direct, nextTick, immediate] = await Promise.all([
-    directResult,
-    nextTickResult,
-    immediateResult,
+  await Promise.resolve()
+  expect(() => source.fork()).toThrow("this stream is already started. you can't fork it anymore")
+  await expect(Promise.all([direct, synchronous])).resolves.toEqual([
+    [1, 2, 3],
+    [2, 4, 6],
   ])
-  expect(direct).toEqual([1, 2, 3])
-  expect(nextTick).toEqual([2, 4, 6])
-  expect(immediate).toEqual([2, 4, 6])
-  expect(finished).toHaveBeenCalledTimes(3)
 })
 
 test('take() in a fork', async () => {

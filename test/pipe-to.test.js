@@ -103,9 +103,9 @@ test('pipeTo identifies Node writer failures as sink errors', async () => {
 
 test('a pipeTo sink failure aborts only its fork while reliable siblings continue', async () => {
   const reason = Error('one destination failed')
-  const source = _([1, 2, 3])
-  const failed = source.fork(true)
-  const sibling = source.fork(true)
+  const source = _([1, 2, 3], { start: 'manual' })
+  const failed = source.fork()
+  const sibling = source.fork()
   const destination = new Writable({
     objectMode: true,
     write(value, encoding, callback) {

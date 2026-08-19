@@ -25,6 +25,14 @@ const run = async () => {
     [2, 3, 4],
     'ES module',
   )
+  let deferredInvocations = 0
+  const deferred = ExstreamModule.defer(() => {
+    deferredInvocations += 1
+    return [4, 5]
+  })
+  assert(deferredInvocations === 0, 'deferred browser source started eagerly')
+  equal(await deferred.toArray(), [4, 5], 'deferred browser source')
+  assert(deferredInvocations === 1, 'deferred browser source did not start exactly once')
 
   const mapped = await Exstream([1, 2, 3])
     .mapAsync(async (value) => value * 10, { concurrency: 2 })
@@ -115,14 +123,17 @@ const run = async () => {
   let produced = 0
   const slowOutput = []
   const fastOutput = []
-  const source = Exstream((write, next) => {
-    if (produced === 3) write(Exstream.nil)
-    else {
-      write(++produced)
-      next()
-    }
-  })
-  const slowDone = source.fork(true).pipeTo(
+  const source = Exstream(
+    (write, next) => {
+      if (produced === 3) write(Exstream.nil)
+      else {
+        write(++produced)
+        next()
+      }
+    },
+    { start: 'manual' },
+  )
+  const slowDone = source.fork().pipeTo(
     new WritableStream({
       async write(value) {
         slowOutput.push(value)
@@ -131,7 +142,7 @@ const run = async () => {
     }),
   )
   const fastDone = source
-    .fork(true)
+    .fork()
     .pipeTo(new WritableStream({ write: (value) => fastOutput.push(value) }))
   await source.start()
   await Promise.all([slowDone, fastDone])
@@ -158,9 +169,9 @@ const run = async () => {
       { once: true },
     )
   })
-  assert(workerResult.checks === 5, 'worker did not complete every check')
+  assert(workerResult.checks === 6, 'worker did not complete every check')
 
-  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=13 worker=5'
+  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=14 worker=6'
 }
 
 run().catch((error) => {
