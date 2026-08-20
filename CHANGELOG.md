@@ -9,6 +9,10 @@ authoritative record for earlier versions.
 
 ### Added
 
+- `mapAsync({ onFail })` adds per-record asynchronous recovery. A handler can
+  retry the callback with the same or a replacement input, emit a fallback
+  output, or propagate the failure to downstream error policy without releasing
+  the record's concurrency slot.
 - `defer(factory)` creates a source whose synchronous or asynchronous factory is
   invoked once, only after graph activation and downstream demand. It delays
   resource acquisition such as `fetch()` and `createReadStream()` rather than

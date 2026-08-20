@@ -177,6 +177,27 @@ const batchDestination = exstream
   })
   .drain()
 const destinationCompletion: Promise<void> = exstream([1, 2]).pipeTo(batchDestination)
+const recoveredAsync = exstream([{ id: 1 }]).mapAsync(async (input) => String(input.id), {
+  onFail(error, input, push, attempt, retry, context) {
+    const failedInput: { id: number } = error.exstreamInput
+    const currentInput: { id: number } = input
+    const attemptNumber: number = attempt
+    const signal: AbortSignal = context.signal
+    retry()
+    retry({ id: input.id + 1 })
+    push(error, input)
+    push(null, 'fallback')
+    // @ts-expect-error retry() accepts another mapAsync input, not its output.
+    retry('wrong input')
+    // @ts-expect-error A successful recovery must emit the mapAsync output type.
+    push(null, 123)
+    void failedInput
+    void currentInput
+    void attemptNumber
+    void signal
+  },
+})
+type RecoveredAsyncValue = Expect<Equal<Value<typeof recoveredAsync>, string>>
 const customDestination: exstream.Destination<number> = exstream.destination<number>(
   async (source, { signal }) => {
     const destinationSignal: AbortSignal = signal
@@ -236,6 +257,7 @@ type Used =
   | StandaloneJsonlOutputValue
   | PipelineValue
   | AggregatedPipelineValue
+  | RecoveredAsyncValue
   | NestedPipelineValue
   | typeof pipeCompletion
   | typeof errorOrigin

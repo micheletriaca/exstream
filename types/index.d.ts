@@ -176,13 +176,40 @@ declare namespace exstream {
     ) => boolean | PromiseLike<boolean>
   }
 
-  interface MapAsyncOptions<T, C extends object> {
+  /** Chooses how a failed mapAsync attempt should continue. */
+  interface MapAsyncFailurePush<Input, Output> {
+    /** Recovers the record with a replacement output. */
+    (error: null | undefined, value: Output): void
+    /** Propagates a record error, optionally associating a replacement input with it. */
+    (error: unknown, input?: Input): void
+  }
+
+  /** Restarts the mapAsync callback, with the same input or a replacement input. */
+  interface MapAsyncRetryAttempt<Input> {
+    (): void
+    (input: Input): void
+  }
+
+  type MapAsyncOnFail<Input, Output, C extends object> = {
+    bivarianceHack(
+      error: ExstreamError<Input>,
+      input: Input,
+      push: MapAsyncFailurePush<Input, Output>,
+      attempt: number,
+      retry: MapAsyncRetryAttempt<Input>,
+      context: C,
+    ): void | PromiseLike<void>
+  }['bivarianceHack']
+
+  interface MapAsyncOptions<T, C extends object, Output = unknown> {
     /** Maximum active operations plus completed results awaiting downstream demand. Defaults to 1. */
     concurrency?: number
     /** Keep results in input order. Defaults to true. */
     ordered?: boolean
     /** Retry policy, or a number of retries. */
     retry?: number | MapAsyncRetry<T, C> | null
+    /** Handles a failed attempt locally. Cannot be combined with retry. */
+    onFail?: MapAsyncOnFail<T, Output, C> | null
     /** Maximum time in milliseconds for each attempt. */
     timeout?: number | null
     /** Cancels this operator when aborted. */
@@ -533,10 +560,10 @@ declare namespace exstream {
     /** Groups values into arrays of the requested maximum size. */
     batch(size: number): Exstream<T[], AggregateOutputContext<C, T[]>>
 
-    /** Runs an asynchronous transform with concurrency, ordering, retry and timeout controls. */
+    /** Runs an asynchronous transform with concurrency, ordering, recovery and timeout controls. */
     mapAsync<U>(
       fn: (value: T, context: C) => U | PromiseLike<U>,
-      options?: MapAsyncOptions<T, C> | null,
+      options?: MapAsyncOptions<T, C, Awaited<U>> | null,
     ): Exstream<Awaited<U>, C>
 
     /** Handles error records and can emit replacement values with push(). */
@@ -754,10 +781,10 @@ declare namespace exstream {
     stopWhen(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
     /** Adds a map followed by flatten. */
     flatMap<U>(fn: (value: Output, context: C) => U): Pipeline<Input, FlatValue<U>, C>
-    /** Adds an asynchronous transform to this reusable pipeline. */
+    /** Adds an asynchronous transform with per-record recovery to this reusable pipeline. */
     mapAsync<U>(
       fn: (value: Output, context: C) => U | PromiseLike<U>,
-      options?: MapAsyncOptions<Output, C> | null,
+      options?: MapAsyncOptions<Output, C, Awaited<U>> | null,
     ): Pipeline<Input, Awaited<U>, C>
     /** Adds a flattening step to this reusable pipeline. */
     flatten(): Pipeline<Input, FlatValue<Output>, C>
@@ -1060,15 +1087,15 @@ declare namespace exstream {
   function batch(
     size: number,
   ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T[], AggregateContext<T[], C>>
-  /** Builds a curried concurrent asynchronous transform. */
+  /** Builds a curried concurrent asynchronous transform with per-record recovery. */
   function mapAsync<T, U, C extends object>(
     fn: (value: T, context: C) => U | PromiseLike<U>,
-    options: MapAsyncOptions<T, C> | null,
+    options: MapAsyncOptions<T, C, Awaited<U>> | null,
     stream: Exstream<T, C>,
   ): Exstream<Awaited<U>, C>
   function mapAsync<T, U>(
     fn: (value: T, context: RecordContext<T>) => U | PromiseLike<U>,
-    options?: MapAsyncOptions<T, RecordContext<T>> | null,
+    options?: MapAsyncOptions<T, RecordContext<T>, Awaited<U>> | null,
   ): <C extends object>(stream: Exstream<T, C>) => Exstream<Awaited<U>, C>
   /** Builds a curried error handler. */
   function errors<T, U, C extends object>(

@@ -700,12 +700,14 @@ const runMapAsyncTask = async (
   result,
   fn,
   usesContext,
+  onFail,
   retry,
   timeout,
   timeoutCoordinator,
 ) => {
   const baseSignal = context === void 0 ? result.signal : context.signal
   let attempt = 0
+  let currentValue = value
   while (true) {
     attempt++
     try {
@@ -717,14 +719,63 @@ const runMapAsyncTask = async (
         timeout,
         timeoutCoordinator,
         usesContext,
-        value,
+        value: currentValue,
       })
     } catch (reason) {
-      const error = new ExstreamError(reason, value, { origin: 'operator', stage: 'mapAsync' })
-      if (error.exstreamFatal || attempt > retry.retries) throw error
-      if (retry.when && !(await retry.when(error, value, context, attempt))) throw error
+      const error = new ExstreamError(reason, currentValue, {
+        origin: 'operator',
+        stage: 'mapAsync',
+      })
+      if (error.exstreamFatal) throw error
+      if (baseSignal.aborted) throw baseSignal.reason
+      if (onFail) {
+        let decision = null
+        const decide = (nextDecision) => {
+          if (decision) {
+            throw Error('error in .mapAsync(). onFail settled more than once', { cause: reason })
+          }
+          decision = nextDecision
+        }
+        const push = (nextError, output) => {
+          if (nextError) {
+            decide({ error: nextError, input: output, type: 'error' })
+          } else {
+            decide({ type: 'value', value: output })
+          }
+        }
+        function retryWith(nextValue) {
+          decide({
+            type: 'retry',
+            value: arguments.length === 0 ? currentValue : nextValue,
+          })
+        }
+        try {
+          await onFail(error, currentValue, push, attempt, retryWith, context)
+        } catch (handlerError) {
+          throw new ExstreamError(handlerError, currentValue, {
+            origin: 'operator',
+            stage: 'mapAsync',
+          })
+        }
+        if (!decision) throw error
+        if (decision.type === 'error') {
+          const errorInput = decision.input === void 0 ? currentValue : decision.input
+          const propagatedError = new ExstreamError(decision.error, errorInput, {
+            origin: 'operator',
+            stage: 'mapAsync',
+          })
+          propagatedError.exstreamInput = errorInput
+          throw propagatedError
+        }
+        if (decision.type === 'value') return decision.value
+        currentValue = decision.value
+        if (baseSignal.aborted) throw baseSignal.reason
+        continue
+      }
+      if (attempt > retry.retries) throw error
+      if (retry.when && !(await retry.when(error, currentValue, context, attempt))) throw error
       const delay = _.isFunction(retry.delay)
-        ? await retry.delay(attempt, error, value, context)
+        ? await retry.delay(attempt, error, currentValue, context)
         : retry.delay
       const delayMs = _.asNonNegativeFiniteNumber(delay)
       if (delayMs === null) {
@@ -919,14 +970,22 @@ _m.mapAsync = _.curry((fn, options, s) => {
     throw Error('error in .mapAsync(). ordered must be a boolean')
   }
   validateMapAsyncSignal(options.signal)
+  const onFail = options.onFail
+  if (onFail !== void 0 && onFail !== null && !_.isFunction(onFail)) {
+    throw Error('error in .mapAsync(). onFail must be a function')
+  }
+  if (onFail && options.retry !== void 0 && options.retry !== null) {
+    throw Error('error in .mapAsync(). onFail cannot be combined with retry')
+  }
   const retry = normalizeMapAsyncRetry(options.retry)
   const timeout = normalizeMapAsyncTimeout(options.timeout)
   const usesContext = fn.length >= 2
   const needsContext =
     usesContext ||
+    (onFail && onFail.length >= 6) ||
     (retry.when && retry.when.length >= 3) ||
     (_.isFunction(retry.delay) && retry.delay.length >= 4)
-  const hasTaskPolicy = retry.retries > 0 || timeout !== null
+  const hasTaskPolicy = Boolean(onFail) || retry.retries > 0 || timeout !== null
   const timeoutCoordinator = timeout === null ? null : createAttemptTimeoutCoordinator()
   const result = slidingConcurrentTransform(s, {
     concurrency,
@@ -952,6 +1011,7 @@ _m.mapAsync = _.curry((fn, options, s) => {
           result,
           fn,
           usesContext,
+          onFail,
           retry,
           timeout,
           timeoutCoordinator,

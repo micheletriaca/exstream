@@ -139,6 +139,11 @@ Errors produced while handling one record remain recoverable with `errors()`,
 `skipErrors()` or `routeErrors()`. `failOnError()` promotes the first record
 error to a fatal failure and cancels the connected graph.
 
+For asynchronous per-record recovery, `mapAsync({ onFail })` can await more
+work, retry the complete callback with the same or an enriched input, emit a
+fallback, or forward the error to downstream policy. Without `onFail`, existing
+`mapAsync()` retry and propagation behavior is unchanged.
+
 Use `pipeTo()` when writing must be an explicit terminal operation:
 
 ```javascript
