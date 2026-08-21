@@ -180,28 +180,11 @@ test('merging3', async () => {
   expect(excep).toBe(true)
 })
 
-test('final through in a node writer is equivalent to calling pipe', async () => {
+test('pipeTo writes to a Node destination', async () => {
   const res = []
-  await new Promise((resolve) => {
-    _([1, 2, 3])
-      .through(h.getSlowWritable(res, 0, 0), { writable: true })
-      .on('finish', resolve)
-  })
+  await _([1, 2, 3]).pipeTo(h.getSlowWritable(res, 0, 0))
 
   expect(res).toEqual([1, 2, 3])
-})
-
-/* Merge a stream of streams piped in a writable node stream, controlling the speed with merge */
-test('merge a stream of streams', async () => {
-  const res = []
-  await _([
-    [1, 2, 3],
-    [4, 5, 6],
-  ])
-    .map((x) => _(x).through(h.getSlowWritable(res, 0, 0), { writable: true }))
-    .merge({ concurrency: 1 })
-    .toArray()
-  expect(res).toEqual([1, 2, 3, 4, 5, 6])
 })
 
 test('writable streams cannot be wrapped in an exstream instance', async () => {
@@ -210,30 +193,4 @@ test('writable streams cannot be wrapped in an exstream instance', async () => {
     .toArray()
     .catch((e) => void (ex = e))
   expect(ex).not.toBe(null)
-})
-
-test('complex control flow with through, fork, merge and writable', async () => {
-  const res = []
-  const res2 = []
-  const res3 = []
-  const s = _([1, 2, 3])
-
-  const p1 = _()
-    .map((x) => x * 2)
-    .through(h.getSlowWritable(res, 0, 0), { writable: true })
-  const p2 = _.pipeline()
-    .map((x) => x * 2)
-    .through(h.getSlowWritable(res3, 0, 0), { writable: true })
-
-  await _([
-    s.fork().through(p1, { writable: true }),
-    s.fork().through(p2, { writable: true }),
-    s.fork().through(h.getSlowWritable(res2, 0, 0), { writable: true }),
-  ])
-    .merge()
-    .toArray()
-
-  expect(res).toEqual([2, 4, 6])
-  expect(res3).toEqual([2, 4, 6])
-  expect(res2).toEqual([1, 2, 3])
 })

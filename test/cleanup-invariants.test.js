@@ -1,6 +1,5 @@
 vi.setConfig({ testTimeout: 2000 })
 
-const { finished } = require('stream/promises')
 const { Writable } = require('stream')
 const _ = require('../src/index.js')
 const { kDestroy, kResume } = require('../src/stream-control.js')
@@ -83,19 +82,6 @@ test('pipeTo with end disabled releases destination listeners when its source en
   expect(listenerSnapshot(destination, events)).toEqual(baseline)
   removeSentinels()
   destination.destroy()
-})
-
-test('through writable removes every listener it installs on a destination', async () => {
-  const { destination, events, removeSentinels } = writableWithSentinels()
-  const baseline = listenerSnapshot(destination, events)
-
-  _([1, 2, 3]).through(destination, { writable: true })
-  await finished(destination, { cleanup: true })
-  await nextTurn()
-  await nextTurn()
-
-  expect(listenerSnapshot(destination, events)).toEqual(baseline)
-  removeSentinels()
 })
 
 test('fork and merge release stream listeners after completion', async () => {

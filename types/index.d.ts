@@ -372,10 +372,6 @@ declare namespace exstream {
     signal?: AbortSignal
     strategy?: QueuingStrategy<unknown>
   }
-  interface ThroughOptions {
-    /** Treat a Node stream as write-only. */
-    writable?: boolean
-  }
   interface RoutedErrors<T, C extends object> {
     output: Exstream<T, C>
     deadLetters: Exstream<{ error: ExstreamError<T>; input: T }, C>
@@ -668,22 +664,16 @@ declare namespace exstream {
     fork(): Exstream<T, C>
     /** Creates a non-blocking branch that may drop buffered values by policy. */
     observe(options?: ObserveOptions | null): Exstream<T, C>
-    /** Connects this stream to a reusable pipeline, stream or transform function. */
+    /** Connects this stream to a reusable pipeline, transform function, or Node transform. */
     through<U>(
       target: <InputContext extends object>(
         stream: Exstream<T, InputContext>,
       ) => Exstream<U, InputContext>,
-      options?: ThroughOptions,
     ): Exstream<U, C>
     through<U, NextContext extends object>(
-      target:
-        | Pipeline<T, U, NextContext>
-        | Exstream<U, NextContext>
-        | ((stream: Exstream<T, C>) => Exstream<U, NextContext>),
-      options?: ThroughOptions,
+      target: Pipeline<T, U, NextContext> | ((stream: Exstream<T, C>) => Exstream<U, NextContext>),
     ): Exstream<U, NextContext>
-    through<U>(target: NodeTransformLike<T, U>, options?: ThroughOptions): Exstream<U, C>
-    through(target?: null | undefined, options?: ThroughOptions): Exstream<T, C>
+    through<U>(target: NodeTransformLike<T, U>): Exstream<U, C>
     /** Merges the Exstreams carried by this stream. */
     merge(
       this: [T] extends [Exstream<any, any>] ? Exstream<T, C> : never,
@@ -872,13 +862,11 @@ declare namespace exstream {
       target: <InputContext extends object>(
         stream: Exstream<Output, InputContext>,
       ) => Exstream<NextOutput, InputContext>,
-      options?: ThroughOptions,
     ): Pipeline<Input, NextOutput, C>
     through<NextOutput, NextContext extends object>(
       target:
         | Pipeline<Output, NextOutput, NextContext>
         | ((stream: Exstream<Output, C>) => Exstream<NextOutput, NextContext>),
-      options?: ThroughOptions,
     ): Pipeline<Input, NextOutput, NextContext>
   }
 

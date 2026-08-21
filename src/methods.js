@@ -1429,7 +1429,11 @@ const createPipeline = (definitions = []) => {
       return undefined
     },
   })
-  return registerPipeline(pipeline, () => materializePipeline(definitions))
+  return registerPipeline(
+    pipeline,
+    () => materializePipeline(definitions),
+    () => definitions.length === 0,
+  )
 }
 
 _m.pipeline = () => createPipeline()

@@ -5,7 +5,7 @@ const { createCooperativeScheduler, scheduleMicrotask, scheduleNextTurn } = requ
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
 const { forkContext } = require('./context')
 const { annotateError } = require('./error-info.js')
-const { instantiatePipeline } = require('./pipeline-control.js')
+const { instantiatePipeline, isIdentityPipeline } = require('./pipeline-control.js')
 const { kAbort, kDestroy, kFail, kPause, kResume } = require('./stream-control.js')
 
 const signalActive = Symbol('exstream signal active')
@@ -1536,45 +1536,22 @@ class Exstream extends EventHub {
     return res
   }
 
-  through(target, { writable = false } = {}) {
-    if (!target) return this
-    else if (_.isExstream(target)) {
-      const findParent = (x) => (x.#source ? findParent(x.#source) : x)
-      this.#addConsumer(findParent(target))
-      return target
-    } else if (_.isExstreamPipeline(target)) {
+  through(target) {
+    if (arguments.length > 1) {
+      throw Error('error in .through(). options are no longer supported; use pipeTo() for writers')
+    }
+    if (_.isExstreamPipeline(target)) {
+      if (isIdentityPipeline(target)) return this
       const pipelineInstance = instantiatePipeline(target)
       this.#addConsumer(pipelineInstance.input)
       return pipelineInstance.output
-    } else if (_.isNodeStream(target) && !writable) {
+    } else if (_.isNodeStream(target)) {
       this.toNodeReadable().pipe(target)
       return new Exstream(target)
-    } else if (_.isNodeStream(target) && writable) {
-      this.toNodeReadable().pipe(target)
-      const s = new Exstream()
-      s.readable = false
-      s.#source = this
-      s[kResume]()
-      s.#addOnceListener('error', target, (e) => {
-        s.write(e)
-        scheduleNextTurn(() => s.end())
-      })
-      s.#addOnceListener('finish', target, () => {
-        s.emit('finish')
-        scheduleNextTurn(() => s[kDestroy]())
-      })
-      s.#addOnceListener('close', target, () => {
-        s.emit('close')
-        scheduleNextTurn(() => s[kDestroy]())
-      })
-      return s
     } else if (_.isFunction(target)) {
       return target(this)
     }
-    throw Error(
-      'error in .through(). you must pass a non consumed' +
-        'exstream instance, a pipeline or a node stream',
-    )
+    throw Error('error in .through(). expected a pipeline, transform function, or Node transform')
   }
 
   merge(options = null) {

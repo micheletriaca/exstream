@@ -1,6 +1,6 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
-const { Readable, Writable } = require('stream')
+const { Readable } = require('stream')
 const { kResume } = require('../src/stream-control.js')
 
 test('recoverable source errors remain in the record protocol', async () => {
@@ -88,28 +88,6 @@ test('error in source stream - node stream', async () => {
 
   expect(res).toEqual([0, 1, 2])
   expect(errs.length).toBe(1)
-  expect(errs[0].message).toBe('an error')
-})
-
-test('error in wrapped writable', async () => {
-  const errs = []
-  const res = await _([1, 2])
-    .map((x) =>
-      _([x]).through(
-        new Writable({
-          objectMode: true,
-          write(chunk, enc, cb) {
-            cb(Error('an error'))
-          },
-        }),
-        { writable: true },
-      ),
-    )
-    .merge()
-    .errors((e) => errs.push(e))
-    .toArray()
-  expect(res).toEqual([])
-  expect(errs.length).toBe(2)
   expect(errs[0].message).toBe('an error')
 })
 

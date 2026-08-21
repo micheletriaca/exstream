@@ -11,7 +11,7 @@ const { errorInfo } = require('./error-info.js')
 const { createDeferredSource } = require('./deferred.js')
 
 const operators = Object.assign({}, csv, json, joins, methods)
-const _ = (module.exports = Object.assign((xs, options) => new Exstream(xs, options), {
+module.exports = Object.assign((xs, options) => new Exstream(xs, options), {
   BufferOverflowError,
   CsvParseError: csv.CsvParseError,
   CsvStringifyError: csv.CsvStringifyError,
@@ -25,7 +25,7 @@ const _ = (module.exports = Object.assign((xs, options) => new Exstream(xs, opti
   fromEvent: events.fromEvent,
   nil: utils.nil,
   pipeline: methods.pipeline,
-}))
+})
 
 const installMethod = (name, fn, options = null) => {
   Exstream.prototype[name] = fn

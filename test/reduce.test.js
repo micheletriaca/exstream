@@ -17,7 +17,7 @@ test('reduce without initial value - sum', async () => {
 
 test('reduce without initial value - to object', async () => {
   const res = await _([{ a: 1 }, { a: 2 }, { b: 1 }])
-    .reduce((memo, x) => ({ ...memo, ...x }))
+    .reduce((memo, x) => Object.assign({}, memo, x))
     .single()
   expect(res).toEqual({ a: 2, b: 1 })
 })

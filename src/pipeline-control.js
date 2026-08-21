@@ -1,10 +1,11 @@
-const pipelineInstantiators = new WeakMap()
+const pipelineRegistrations = new WeakMap()
 
-const registerPipeline = (pipeline, instantiate) => {
-  pipelineInstantiators.set(pipeline, instantiate)
+const registerPipeline = (pipeline, instantiate, isIdentity) => {
+  pipelineRegistrations.set(pipeline, { instantiate, isIdentity })
   return pipeline
 }
 
-const instantiatePipeline = (pipeline) => pipelineInstantiators.get(pipeline)()
+const instantiatePipeline = (pipeline) => pipelineRegistrations.get(pipeline).instantiate()
+const isIdentityPipeline = (pipeline) => pipelineRegistrations.get(pipeline).isIdentity()
 
-module.exports = { instantiatePipeline, registerPipeline }
+module.exports = { instantiatePipeline, isIdentityPipeline, registerPipeline }

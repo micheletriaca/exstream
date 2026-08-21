@@ -57,6 +57,32 @@ stream.map(calculateScore, { wrap: true })
 stream.map((input) => ({ input, output: calculateScore(input) }))
 ```
 
+`through()` now has one job: compose a reusable pipeline, transform function,
+or Node transform into the current flow. Use an empty pipeline when a
+conditional transform should do nothing; this is an optimized identity and
+does not add a stream node:
+
+```js
+// Before
+source.through(enabled ? normalize : null)
+
+// 1.0
+source.through(enabled ? normalize : exstream.pipeline())
+```
+
+Live Exstreams are sources rather than transform definitions, and Node writers
+are terminal destinations:
+
+```js
+// Before
+source.through(exstream().map(normalize))
+source.through(writer, { writable: true })
+
+// 1.0
+source.through(exstream.pipeline().map(normalize))
+await source.pipeTo(writer)
+```
+
 ## Terminal operations
 
 Terminal methods now have one predictable contract: methods that represent

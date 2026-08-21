@@ -256,6 +256,12 @@ const nodeTransform: exstream.NodeTransformLike<number, string> = exstream
 nodeTransform.write(1)
 const transformedByNode = exstream([1]).through(nodeTransform)
 type NodeThroughValue = Expect<Equal<Value<typeof transformedByNode>, string>>
+// @ts-expect-error Use an empty pipeline as the explicit identity target.
+exstream([1]).through(null)
+// @ts-expect-error Live Exstreams are data sources, not reusable transformations.
+exstream([1]).through(exstream<number>().map((value) => value * 2))
+// @ts-expect-error Node writers are terminal destinations handled by pipeTo().
+exstream([1]).through({ write() {}, end() {} }, { writable: true })
 // @ts-expect-error A reusable pipeline has no source to expose as a Node readable.
 exstream.pipeline<number>().toNodeReadable()
 // @ts-expect-error Pipeline instances are created only by through().

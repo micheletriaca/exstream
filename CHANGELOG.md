@@ -61,6 +61,8 @@ authoritative record for earlier versions.
   `toWebReadable()` remains the corresponding Web Streams adapter.
 - `through()` now types native Node duplex and transform targets, including the
   value type exposed by their readable side.
+- An empty reusable pipeline is an optimized identity target for `through()`;
+  it returns the current stream without instantiating another chain.
 - `mapAsync()` failures now record the `mapAsync` operator stage before
   cancellation propagates through the graph.
 
@@ -119,6 +121,9 @@ authoritative record for earlier versions.
 - `Pipeline.generateStream()` and the mutable `Pipeline.definitions` array.
   Attach reusable definitions with `through()`; pipeline instantiation and
   recorded operators are now private implementation details.
+- `through(null)`, live Exstream targets, and the `{ writable: true }` mode.
+  Use an empty `pipeline()` for conditional identity, reusable pipelines or
+  functions for composition, and `pipeTo()` for terminal writers.
 - Public graph and scheduler internals `source`, `endOfChain`,
   `pausedFromInside`, and `pausedFromOutside`. Lifecycle state, aggregate
   pressure, cancellation, and buffer metrics remain available for diagnostics.

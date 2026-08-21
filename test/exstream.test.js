@@ -274,7 +274,7 @@ test('through pipelines and pipeTo a destination', async () => {
   await _([1, 2, 3])
     .map((x) => x * 2)
     .map((x) => x.toString())
-    .through(_().map((x) => x + x))
+    .through((stream) => stream.map((x) => x + x))
     .through(_.pipeline().map((x) => x + x))
     .pipeTo(h.getSlowWritable(res))
 
@@ -316,32 +316,19 @@ test('through pipeline', async () => {
   )
 })
 
-test('through accepts null', () => {
+test('empty pipeline is an identity target', () => {
   const s = _([1, 2, 3])
-  const s1 = s.through(null)
+  const s1 = s.through(_.pipeline())
   expect(s).toBe(s1)
 })
 
-test('through stream', async () => {
-  await ((res) => {
-    expect(res).toEqual([4, 8, 12])
-  })(
-    await _([1, 2, 3])
-      .through(
-        _()
-          .map((x) => x * 2)
-          .map((x) => x * 2),
-      )
-      .toArray(),
+test('through rejects unsupported and legacy targets', () => {
+  expect(() => _([1, 2, 3]).through(null)).toThrow('expected a pipeline')
+  expect(() => _([1, 2, 3]).through(_().map((x) => x * 2))).toThrow('expected a pipeline')
+  expect(() => _([1, 2, 3]).through(2)).toThrow('expected a pipeline')
+  expect(() => _([1, 2, 3]).through((stream) => stream, { writable: true })).toThrow(
+    'options are no longer supported',
   )
-
-  let exception = false
-  try {
-    _([1, 2, 3]).through(2)
-  } catch (e) {
-    exception = true
-  }
-  expect(exception).toBe(true)
 })
 
 test('toArray', async () => {
