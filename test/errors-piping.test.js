@@ -25,7 +25,7 @@ test('pipeTo succeeds when pipeline errors are handled', async () => {
     })
 
   await _([1, 2, 3])
-    .through(p.generateStream())
+    .through(p)
     .errors((e) => errs.push(e))
     .pipeTo(h.getSlowWritable(res, 0, 10))
   expect(res).toEqual([])

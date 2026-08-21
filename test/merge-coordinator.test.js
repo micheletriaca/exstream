@@ -26,30 +26,30 @@ test.each([false, true])(
 )
 
 test.each([false, true])(
-  'merge invokes stream factories lazily and within its activation window (ordered: %s)',
+  'merge activates deferred sources lazily and within its activation window (ordered: %s)',
   async (ordered) => {
     const releases = [deferred(), deferred(), deferred()]
     const invoked = []
-    const factories = releases.map((release, index) => () => {
-      invoked.push(index)
-      return _(
-        (async function* () {
+    const inners = releases.map((release, index) =>
+      _.defer(() => {
+        invoked.push(index)
+        return (async function* () {
           await release.promise
           yield index
-        })(),
-      )
-    })
-    const merged = _(factories).merge(2, ordered)
+        })()
+      }),
+    )
+    const merged = _(inners).merge(2, ordered)
 
     await nextTurn()
     expect(invoked).toEqual([])
 
     const completion = merged.toArray()
-    await waitFor(() => invoked.length === 2, 'merge did not invoke its initial factory window')
+    await waitFor(() => invoked.length === 2, 'merge did not acquire its initial source window')
     expect(invoked).toEqual([0, 1])
 
     releases[0].resolve()
-    await waitFor(() => invoked.length === 3, 'merge did not invoke the next factory')
+    await waitFor(() => invoked.length === 3, 'merge did not acquire the next deferred source')
     releases[1].resolve()
     releases[2].resolve()
 
@@ -59,84 +59,72 @@ test.each([false, true])(
   },
 )
 
-test('merge accepts direct streams and stream factories in the same outer stream', async () => {
+test('merge accepts direct and deferred streams in the same outer stream', async () => {
   await expect(
-    _([_([1]), () => _([2])])
+    _([_([1]), _.defer(() => [2])])
       .merge(2, true)
       .toArray(),
   ).resolves.toEqual([1, 2])
 })
 
-test('a throwing stream factory becomes a contextual record error and releases its slot', async () => {
-  const reason = Error('factory failed')
+test('merge rejects function values without invoking them', async () => {
+  const value = vi.fn(() => _([1]))
   const errors = []
-  const contexts = []
+
+  await _([value])
+    .merge()
+    .errors((error) => errors.push(error))
+    .drain()
+
+  expect(value).not.toHaveBeenCalled()
+  expect(errors).toHaveLength(1)
+  expect(errors[0].message).toBe('.merge() can merge ONLY exstream instances')
+})
+
+test('a failing deferred source becomes a source error and releases its merge slot', async () => {
+  const reason = Error('source acquisition failed')
+  const errors = []
   const result = await _([
-    () => {
+    _.defer(() => {
       throw reason
-    },
-    () => _([2]),
+    }),
+    _.defer(() => [2]),
   ])
-    .withContext(() => ({ source: 'outer factory' }))
     .merge(1, true)
-    .errors((error, _push, context) => {
-      errors.push(error)
-      contexts.push(context)
-    })
+    .errors((error) => errors.push(error))
     .toArray()
 
   expect(result).toEqual([2])
   expect(errors).toEqual([reason])
-  expect(contexts).toEqual([expect.objectContaining({ source: 'outer factory' })])
+  expect(_.errorInfo(reason)).toMatchObject({ origin: 'source', stage: 'defer' })
 })
 
-test.each([
-  ['a non-stream value', () => 42],
-  ['a promise', async () => _([1])],
-  ['a rejected promise', () => Promise.reject(Error('async factory failed'))],
-])(
-  'a factory returning %s becomes a record error and does not block merge',
-  async (_name, factory) => {
-    const errors = []
-    const result = await _([factory, () => _([2])])
-      .merge(1)
-      .errors((error) => errors.push(error))
-      .toArray()
-
-    expect(result).toEqual([2])
-    expect(errors).toHaveLength(1)
-    expect(errors[0].message).toContain('factory must return an exstream instance')
-  },
-)
-
-test('destroying merge does not invoke stream factories still outside the window', async () => {
+test('destroying merge does not acquire deferred sources still outside the window', async () => {
   const release = deferred()
   const invoked = []
-  let active
-  const merged = _([
-    () => {
+  const inners = [
+    _.defer(() => {
       invoked.push(0)
-      active = _(
-        (async function* () {
-          await release.promise
-          yield 0
-        })(),
-      )
-      return active
-    },
-    () => {
+      return (async function* () {
+        await release.promise
+        yield 0
+      })()
+    }),
+    _.defer(() => {
       invoked.push(1)
-      return _([1])
-    },
-  ]).merge(1)
+      return [1]
+    }),
+  ]
+  const merged = _(inners).merge(1)
   const completion = merged.drain()
 
-  await waitFor(() => invoked.length === 1, 'merge did not invoke the first factory')
+  await waitFor(() => invoked.length === 1, 'merge did not acquire the first deferred source')
   merged[kDestroy]()
   await nextTurn()
 
   expect(invoked).toEqual([0])
-  expect(active.state).toBe('destroyed')
+  expect(inners[0].state).toBe('destroyed')
+  expect(inners[1].state).toBe('idle')
   release.resolve()
   await completion.catch(() => {})
 })

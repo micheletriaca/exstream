@@ -12,6 +12,7 @@ const {
 const { runtime } = require('./runtime.js')
 const { createDestination } = require('./destination.js')
 const { dataFrame, errorFrame } = require('./protocol.js')
+const { registerPipeline } = require('./pipeline-control.js')
 const { kAbort, kDestroy, kFail, kPause, kResume } = require('./stream-control.js')
 
 const _m = (module.exports = {})
@@ -348,38 +349,6 @@ _m.reject = _.curry((fn, s) => {
         if (!res) push(null, x, nextContext)
       } catch (e) {
         push(new ExstreamError(e, x, { origin: 'operator', stage: 'reject' }), null, nextContext)
-      }
-    }
-  })
-  return result
-})
-
-_m.asyncFilter = _.curry((fn, s) => {
-  const usesContext = fn.length >= 2
-  let result
-  result = s.consume(async (err, x, push, next) => {
-    if (err) {
-      push(err)
-      next()
-    } else if (x === _.nil) {
-      push(err, x)
-    } else {
-      const context = usesContext ? result._recordContext : void 0
-      const nextContext =
-        usesContext && context === void 0 ? createContext(x, result.signal) : context
-      try {
-        let res
-        if (usesContext) res = await fn(x, nextContext)
-        else res = await fn(x)
-        if (res) push(null, x, nextContext)
-        next()
-      } catch (e) {
-        push(
-          new ExstreamError(e, x, { origin: 'operator', stage: 'asyncFilter' }),
-          null,
-          nextContext,
-        )
-        next()
       }
     }
   })
@@ -1266,42 +1235,6 @@ _m.reduce1 = _.curry((fn, s) => {
   return s1
 })
 
-_m.asyncReduce = _.curry((fn, accumulator, s) => {
-  const usesContext = fn.length >= 3
-  let contexts
-  let inputCount = 0
-  let s1
-  s1 = s.consume(async (err, x, push, next) => {
-    if (x === _.nil) {
-      push(
-        null,
-        accumulator,
-        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
-      )
-      push(null, _.nil)
-    } else if (err) {
-      push(err)
-      next()
-    } else {
-      const context = s1._recordContext
-      const nextContext = context === void 0 && usesContext ? createContext(x, s1.signal) : context
-      contexts = appendContext(contexts, nextContext, inputCount++)
-      try {
-        accumulator = usesContext ? await fn(accumulator, x, nextContext) : await fn(accumulator, x)
-        next()
-      } catch (e) {
-        try {
-          push(new ExstreamError(e, x), null, nextContext)
-        } finally {
-          accumulator = void 0
-          s1[kDestroy]()
-        }
-      }
-    }
-  })
-  return s1
-})
-
 _m.groupBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
   const usesContext = !_.isString(fnOrString) && getter.length >= 2
@@ -1386,31 +1319,32 @@ _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   if (maxSyncExecutionTime === null) {
     throw Error('error in .makeAsync(). maxSyncExecutionTime must be a non-negative finite number')
   }
-  let lastSnapshot = null
   let start = null
-  let end = null
   let cancelTurn = noCancel
   const result = s.consume((err, x, push, next) => {
-    if (err) {
-      push(err)
-      next()
-    } else if (x === _.nil) {
+    if (x === _.nil) {
       push(null, _.nil)
+      return
+    }
+
+    const forward = () => {
+      if (err) push(err)
+      else push(null, x)
+      next()
+    }
+    const now = monotonicNow()
+    if (start === null) {
+      start = now
+      forward()
+    } else if (now - start >= maxSyncExecutionTime) {
+      cancelTurn = scheduleNextTurn(() => {
+        cancelTurn = noCancel
+        if (result.ended) return
+        start = monotonicNow()
+        forward()
+      })
     } else {
-      lastSnapshot = monotonicNow()
-      if (start === null) start = lastSnapshot
-      else end = lastSnapshot
-      if (end !== null && end - start > maxSyncExecutionTime) {
-        cancelTurn = scheduleNextTurn(() => {
-          cancelTurn = noCancel
-          push(null, x)
-          start = monotonicNow()
-          next()
-        })
-      } else {
-        push(null, x)
-        next()
-      }
+      forward()
     }
   })
   result.once('end', () => {
@@ -1474,75 +1408,74 @@ const unavailablePipelineMethod = (method) => () => {
   throw Error(`error in pipeline(). ${method}() is not available on reusable pipelines.${advice}`)
 }
 
-const createPipeline = (definitions = []) =>
-  new Proxy(
-    {
-      __exstream_pipeline__: true,
-      definitions,
-      generateStream: function () {
-        const s = new Exstream()
-        let curr = s
-        for (const { method, args } of this.definitions) curr = curr[method](...args)
-        s.endOfChain = curr.endOfChain || curr
-        return s
-      },
-      drain: function () {
-        const snapshot = createPipeline(clonePipelineDefinitions(this.definitions))
-        return createDestination((source) => source.through(snapshot).drain())
-      },
-      toNodeTransform: function () {
-        if (!runtime.duplexFromTransform) {
-          throw Error('toNodeTransform() is not available in this runtime')
-        }
-        const snapshot = createPipeline(clonePipelineDefinitions(this.definitions))
-        return runtime.duplexFromTransform(async function* (source, { signal }) {
-          const iterator = source[Symbol.asyncIterator]()
-          let inputEnded = false
-          let completed = false
-          const protectedSource = {
-            [Symbol.asyncIterator]() {
-              return {
-                async next() {
-                  const item = await iterator.next()
-                  inputEnded ||= item.done
-                  return item
-                },
-                return(value) {
-                  return Promise.resolve({ done: true, value })
-                },
-              }
-            },
-          }
+const materializePipeline = (definitions) => {
+  const input = new Exstream()
+  let output = input
+  for (const { method, args } of definitions) output = output[method](...args)
+  return { input, output }
+}
 
-          try {
-            yield* new Exstream(protectedSource, { signal }).through(snapshot)
-            completed = true
-          } finally {
-            if (completed && !inputEnded && !signal.aborted) {
-              await drainAsyncIterator(iterator)
-            } else if (!inputEnded && typeof iterator.return === 'function') {
-              await Promise.resolve(iterator.return()).catch(noCancel)
+const createPipeline = (definitions = []) => {
+  const target = {
+    __exstream_pipeline__: true,
+    drain: function () {
+      const snapshot = createPipeline(clonePipelineDefinitions(definitions))
+      return createDestination((source) => source.through(snapshot).drain())
+    },
+    toNodeTransform: function () {
+      if (!runtime.duplexFromTransform) {
+        throw Error('toNodeTransform() is not available in this runtime')
+      }
+      const snapshot = createPipeline(clonePipelineDefinitions(definitions))
+      return runtime.duplexFromTransform(async function* (source, { signal }) {
+        const iterator = source[Symbol.asyncIterator]()
+        let inputEnded = false
+        let completed = false
+        const protectedSource = {
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                const item = await iterator.next()
+                inputEnded ||= item.done
+                return item
+              },
+              return(value) {
+                return Promise.resolve({ done: true, value })
+              },
             }
-          }
-        })
-      },
-    },
-    {
-      get(target, propKey, receiver) {
-        if (Reflect.has(target, propKey)) {
-          return Reflect.get(target, propKey, receiver)
+          },
         }
-        if (typeof propKey !== 'string') return undefined
-        if (pipelineOperators.has(propKey)) {
-          return (...args) => {
-            target.definitions.push({ method: propKey, args })
-            return receiver
+
+        try {
+          yield* new Exstream(protectedSource, { signal }).through(snapshot)
+          completed = true
+        } finally {
+          if (completed && !inputEnded && !signal.aborted) {
+            await drainAsyncIterator(iterator)
+          } else if (!inputEnded && typeof iterator.return === 'function') {
+            await Promise.resolve(iterator.return()).catch(noCancel)
           }
         }
-        if (propKey in Exstream.prototype) return unavailablePipelineMethod(propKey)
-        return undefined
-      },
+      })
     },
-  )
+  }
+  const pipeline = new Proxy(target, {
+    get(target, propKey, receiver) {
+      if (Reflect.has(target, propKey)) {
+        return Reflect.get(target, propKey, receiver)
+      }
+      if (typeof propKey !== 'string') return undefined
+      if (pipelineOperators.has(propKey)) {
+        return (...args) => {
+          definitions.push({ method: propKey, args })
+          return receiver
+        }
+      }
+      if (propKey in Exstream.prototype) return unavailablePipelineMethod(propKey)
+      return undefined
+    },
+  })
+  return registerPipeline(pipeline, () => materializePipeline(definitions))
+}
 
 _m.pipeline = () => createPipeline()

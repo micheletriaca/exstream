@@ -175,3 +175,68 @@ test('destroy cancels a pending makeAsync turn', () => {
     vi.useRealTimers()
   }
 })
+
+test('makeAsync counts work performed by the first record after a yielded turn', async () => {
+  vi.useFakeTimers({ toFake: ['setImmediate', 'clearImmediate'] })
+  let now = 0
+  const clock = vi.spyOn(globalThis.performance, 'now').mockImplementation(() => now)
+  const received = []
+  try {
+    const asynchronous = _([1, 2, 3]).makeAsync(5)
+    const sink = asynchronous.consumeSync((error, value) => {
+      if (error || value === _.nil) return
+      received.push(value)
+      now += 6
+    })
+    sink[kResume]()
+
+    expect(received).toEqual([1])
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersToNextTimer()
+    await Promise.resolve()
+    expect(received).toEqual([1, 2])
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersToNextTimer()
+    await Promise.resolve()
+    expect(received).toEqual([1, 2, 3])
+    sink[kDestroy]()
+  } finally {
+    clock.mockRestore()
+    vi.useRealTimers()
+  }
+})
+
+test('makeAsync applies its time budget to record errors', () => {
+  vi.useFakeTimers({ toFake: ['setImmediate', 'clearImmediate'] })
+  const clock = vi.spyOn(globalThis.performance, 'now').mockReturnValue(0)
+  const received = []
+  try {
+    const source = _()
+    const asynchronous = source.makeAsync(0)
+    const sink = asynchronous.consume((error, value, push, next) => {
+      if (value === _.nil) push(null, _.nil)
+      else {
+        received.push(error)
+        next()
+      }
+    })
+    sink[kResume]()
+
+    const first = Error('first')
+    const second = Error('second')
+    source.write(first)
+    source.write(second)
+
+    expect(received).toEqual([first])
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersToNextTimer()
+    expect(received).toEqual([first, second])
+    sink[kDestroy]()
+  } finally {
+    clock.mockRestore()
+    vi.useRealTimers()
+  }
+})

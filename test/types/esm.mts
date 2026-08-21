@@ -1,7 +1,10 @@
+/// <reference types="node" />
+
 import exstream, { defer, destination, map, nil } from 'exstream.js'
 import coreExstream from 'exstream.js/core'
 import nodeExstream from 'exstream.js/node'
 import webExstream from 'exstream.js/web'
+import { Transform } from 'node:stream'
 
 const root: number[] = await exstream([1, 2])
   .map((value) => value * 2)
@@ -14,6 +17,14 @@ const drained: void = await exstream([1, 2]).drain()
 const reusableDestination = destination<number>(async (source) => source.drain())
 const written: void = await exstream([1, 2]).pipeTo(reusableDestination)
 const transform = exstream.pipeline<number>().map(String).toNodeTransform()
+const nativeTransform = new Transform({
+  transform(chunk, _encoding, callback) {
+    callback(null, chunk)
+  },
+})
+const nativeTransformResult = exstream([Buffer.from('value')])
+  .through(nativeTransform)
+  .toArray()
 const deferred: number[] = await defer(() => [1, 2]).toArray()
 const deferredAsync: string[] = await exstream
   .defer(async () => new ReadableStream<string>())
@@ -55,6 +66,7 @@ void mapped
 void drained
 void written
 void transform
+void nativeTransformResult
 void deferred
 void deferredAsync
 void end

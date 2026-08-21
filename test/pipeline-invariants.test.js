@@ -1,16 +1,25 @@
 const _ = require('../src/index.js')
 
-test('pipeline property reads do not register stream operators', () => {
+test('pipeline internals are not exposed as mutable properties', async () => {
   const pipeline = _.pipeline()
 
-  expect(pipeline.definitions).toEqual([])
+  expect(pipeline.definitions).toBeUndefined()
+  expect(pipeline.generateStream).toBeUndefined()
   expect(pipeline.unknownProperty).toBeUndefined()
-  expect(pipeline.definitions).toEqual([])
+  expect(Object.getOwnPropertySymbols(pipeline)).toEqual([])
 
   const map = pipeline.map
   expect(map((value) => value)).toBe(pipeline)
-  expect(pipeline.definitions).toHaveLength(1)
-  expect(pipeline.definitions[0].method).toBe('map')
+  await expect(_([1]).through(pipeline).toArray()).resolves.toEqual([1])
+})
+
+test('stream graph and scheduler internals are private', () => {
+  const stream = _([1]).map((value) => value)
+
+  expect(stream.paused).toBe(true)
+  for (const property of ['source', 'endOfChain', 'pausedFromInside', 'pausedFromOutside']) {
+    expect(property in stream).toBe(false)
+  }
 })
 
 test('pipeline definitions reject instance-only methods before recording them', () => {
@@ -26,7 +35,7 @@ test('pipeline definitions reject instance-only methods before recording them', 
     'routeErrors() is not available on reusable pipelines',
   )
   expect(() => pipeline.sortedJoin()).toThrow('sortedJoin() is not available on reusable pipelines')
-  expect(pipeline.definitions).toEqual([])
+  expect(pipeline.definitions).toBeUndefined()
 })
 
 test('pipeline through composes functional operators without a global registry', async () => {

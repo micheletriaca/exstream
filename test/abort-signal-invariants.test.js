@@ -77,28 +77,6 @@ test('map receives a signal that cancels pending work after downstream abort', a
   await nextTurn()
 })
 
-test('context-aware async predicates and maps receive their branch signal', async () => {
-  const signals = []
-
-  const result = await _([1, 2, 3])
-    .asyncFilter(async (value, context) => {
-      signals.push(context.signal)
-      return value > 1
-    })
-    .map((value, context) => {
-      signals.push(context.signal)
-      return value
-    })
-    .toArray()
-
-  expect(result).toEqual([2, 3])
-  expect(signals).toHaveLength(5)
-  for (const signal of signals) {
-    expect(signal).toBeInstanceOf(AbortSignal)
-    expect(signal.aborted).toBe(false)
-  }
-})
-
 test('normal completion does not abort the stream signal', async () => {
   const source = _([1])
 

@@ -95,9 +95,9 @@ test.each([
     'error in .makeAsync(). maxSyncExecutionTime must be a non-negative finite number',
   ],
   [
-    'sorted join buffer',
-    () => _([_([]), _([])]).sortedJoin('id', 'id', 'inner', 'asc', 0),
-    'error in .sortedJoin(). buffer must be a positive integer',
+    'sorted join order',
+    () => _([]).sortedJoin(_([]), { leftKey: 'id', order: 'sideways', rightKey: 'id' }),
+    "error in .sortedJoin(). order must be 'asc', 'desc', or a comparator",
   ],
   [
     'non-coercible batch size',

@@ -35,14 +35,18 @@ declare namespace exstream {
   type SortDirection = 'asc' | 'desc'
   type JoinType = 'inner' | 'left' | 'right'
   type PropertyKeyOf<T> = Extract<keyof T, PropertyKey>
+  type JoinKeySelector<T, C extends object> =
+    | ((value: T, context: CallbackContext<T, C>) => unknown)
+    | PropertyKeyOf<T>
+  type JoinKey<T, Selector> = Selector extends (...args: any[]) => infer K
+    ? K
+    : Selector extends keyof T
+      ? T[Selector]
+      : never
   type Falsy = false | 0 | '' | null | undefined
   type FlatValue<T> = T extends string ? T : T extends Iterable<infer U> ? U : T
-  /** Creates an inner stream only when merge activates its slot. */
-  type StreamFactory<T, C extends object> = () => Exstream<T, C>
-  type MergeValue<T> =
-    T extends Exstream<infer U, any> ? U : T extends StreamFactory<infer U, any> ? U : never
-  type MergeContext<T, Fallback extends object> =
-    T extends Exstream<any, infer C> ? C : T extends StreamFactory<any, infer C> ? C : Fallback
+  type MergeValue<T> = T extends Exstream<infer U, any> ? U : never
+  type MergeContext<T> = T extends Exstream<any, infer C> ? C : never
   type ContextAddition<T> = Awaited<T> extends object ? Awaited<T> : object
   type ValueOf<S> = S extends Exstream<infer T, any> ? T : never
   type ContextOf<S> = S extends Exstream<infer T, infer C> ? CallbackContext<T, C> : never
@@ -379,10 +383,26 @@ declare namespace exstream {
     key: K
     values: T[]
   }
-  interface SortedJoinResult<K, A, B> {
-    key: K
-    a: A | null
-    b: B | null
+  type SortedJoinResult<K, Left, Right, Type extends JoinType = JoinType> = Type extends 'inner'
+    ? { key: K; left: Left; right: Right }
+    : Type extends 'left'
+      ? { key: K; left: Left; right: Right | null }
+      : { key: K; left: Left | null; right: Right }
+  interface SortedJoinOptions<
+    Left,
+    LeftContext extends object,
+    Right,
+    RightContext extends object,
+    LeftSelector extends JoinKeySelector<Left, LeftContext>,
+    RightSelector extends JoinKeySelector<Right, RightContext>,
+    Type extends JoinType = 'inner',
+  > {
+    leftKey: LeftSelector
+    rightKey: RightSelector
+    type?: Type
+    order?:
+      | SortDirection
+      | ((left: JoinKey<Left, LeftSelector>, right: JoinKey<Right, RightSelector>) => number)
   }
 
   /** An error raised while processing one input value. */
@@ -453,12 +473,6 @@ declare namespace exstream {
     readonly bufferLimit: number
     readonly overflowPolicy: OverflowPolicy
     readonly paused: boolean
-    readonly pausedFromOutside: boolean
-    readonly pausedFromInside: boolean
-    /** The stream that feeds this stream, when connected. */
-    readonly source?: Exstream<unknown, object> | null
-    /** The last stream in a connected chain, when one is assigned. */
-    readonly endOfChain?: Exstream<unknown, object>
 
     /** Adds an event listener. */
     on(event: string | symbol, listener: (...args: any[]) => void): this
@@ -544,8 +558,6 @@ declare namespace exstream {
     filter(fn: (value: T, context: C) => unknown): Exstream<T, C>
     /** Removes values that pass the test. */
     reject(fn: (value: T, context: C) => unknown): Exstream<T, C>
-    /** Keeps values that pass an asynchronous test. */
-    asyncFilter(fn: (value: T, context: C) => unknown | PromiseLike<unknown>): Exstream<T, C>
     /** Emits each value, then stops when the test passes. */
     stopWhen(fn: (value: T, context: C) => unknown): Exstream<T, C>
     /** Emits items from iterable values; non-iterable values pass through unchanged. */
@@ -632,17 +644,6 @@ declare namespace exstream {
       T,
       AggregateOutputContext<C, T, Parameters<F> extends [any, any, any, ...any[]] ? true : false>
     >
-    /** Combines all values with an asynchronous reducer. */
-    asyncReduce<
-      A,
-      F extends (accumulator: A, value: T, context: CallbackContext<T, C>) => A | PromiseLike<A>,
-    >(
-      fn: F,
-      initialValue: A,
-    ): Exstream<
-      A,
-      AggregateOutputContext<C, A, Parameters<F> extends [any, any, any, ...any[]] ? true : false>
-    >
     /** Collects values into arrays indexed by a selected key. */
     groupBy<K extends PropertyKey>(
       fn: ((value: T, context: C) => K) | PropertyKeyOf<T>,
@@ -696,12 +697,14 @@ declare namespace exstream {
         | ((stream: Exstream<T, C>) => Exstream<U, NextContext>),
       options?: ThroughOptions,
     ): Exstream<U, NextContext>
+    through<U>(target: NodeTransformLike<T, U>, options?: ThroughOptions): Exstream<U, C>
     through(target?: null | undefined, options?: ThroughOptions): Exstream<T, C>
-    /** Merges the Exstreams or lazy stream factories carried by this stream. */
+    /** Merges the Exstreams carried by this stream. */
     merge(
+      this: [T] extends [Exstream<any, any>] ? Exstream<T, C> : never,
       parallelism?: number,
       preserveOrder?: boolean,
-    ): Exstream<MergeValue<T>, MergeContext<T, C>>
+    ): Exstream<MergeValue<T>, MergeContext<T>>
     /** Adapts this pipeline to a lazy Node readable stream. */
     toNodeReadable(options?: object | null): NodeReadableLike<T>
     /** Converts values to a Web ReadableStream. */
@@ -726,24 +729,24 @@ declare namespace exstream {
     sortedGroupBy<K>(
       fn: ((value: T, context: C) => K) | PropertyKeyOf<T>,
     ): Exstream<SortedGroup<K, T>, AggregateContext<SortedGroup<K, T>, C>>
-    /** Joins two sorted Exstreams carried by this stream. */
-    sortedJoin<K, A, B>(
-      this: Exstream<readonly [Exstream<A, object>, Exstream<B, object>], C>,
-      leftKey: ((value: A, context: object) => K) | PropertyKeyOf<A>,
-      rightKey: ((value: B, context: object) => K) | PropertyKeyOf<B>,
-      type?: JoinType,
-      direction?:
-        | SortDirection
-        | ((left: K, right: K, leftContext: object, rightContext: object) => boolean),
-      buffer?: number,
-    ): Exstream<SortedJoinResult<K, A, B>, AggregateContext<SortedJoinResult<K, A, B>, object>>
+    /** Merge-joins this sorted stream with another sorted stream. */
+    sortedJoin<
+      Right,
+      RightContext extends object,
+      LeftSelector extends JoinKeySelector<T, C>,
+      RightSelector extends JoinKeySelector<Right, RightContext>,
+      Type extends JoinType = 'inner',
+      Key = JoinKey<T, LeftSelector> | JoinKey<Right, RightSelector>,
+      Output = SortedJoinResult<Key, T, Right, Type>,
+    >(
+      right: Exstream<Right, RightContext>,
+      options: SortedJoinOptions<T, C, Right, RightContext, LeftSelector, RightSelector, Type>,
+    ): Exstream<Output, AggregateContext<Output, C | RightContext>>
   }
 
   /** A reusable list of operators that can be attached with through(). */
   interface Pipeline<Input = unknown, Output = Input, C extends object = RecordContext<Input>> {
     readonly __exstream_pipeline__: true
-    /** Creates a fresh stream containing this pipeline's operators. */
-    generateStream(): Exstream<Output, C>
     /** Closes this operator definition into a reusable terminal destination. */
     drain(): Destination<Input>
     /** Creates a native Node Transform with this pipeline as its writable-to-readable body. */
@@ -773,10 +776,6 @@ declare namespace exstream {
     filter(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
     /** Adds a rejecting filter. */
     reject(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
-    /** Adds an asynchronous filter. */
-    asyncFilter(
-      fn: (value: Output, context: C) => unknown | PromiseLike<unknown>,
-    ): Pipeline<Input, Output, C>
     /** Adds a stop condition. */
     stopWhen(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
     /** Adds a map followed by flatten. */
@@ -837,11 +836,6 @@ declare namespace exstream {
     /** Adds a synchronous reducer. */
     reduce<A>(
       fn: (accumulator: A, value: Output, context: C) => A,
-      initialValue: A,
-    ): Pipeline<Input, A, AggregateContext<A, C>>
-    /** Adds an asynchronous reducer. */
-    asyncReduce<A>(
-      fn: (accumulator: A, value: Output, context: C) => A | PromiseLike<A>,
       initialValue: A,
     ): Pipeline<Input, A, AggregateContext<A, C>>
     /** Adds a reducer that starts with the first value. */
@@ -1044,14 +1038,6 @@ declare namespace exstream {
   function reject<T>(
     fn: (value: T, context: RecordContext<T>) => unknown,
   ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried asynchronous filter. */
-  function asyncFilter<T, C extends object>(
-    fn: (value: T, context: C) => unknown | PromiseLike<unknown>,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function asyncFilter<T>(
-    fn: (value: T, context: RecordContext<T>) => unknown | PromiseLike<unknown>,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
   /** Builds a curried stop condition. */
   function stopWhen<T, C extends object>(
     fn: (value: T, context: C) => unknown,
@@ -1241,16 +1227,6 @@ declare namespace exstream {
   function reduce1<T>(
     fn: (accumulator: T, value: T, context: RecordContext<T>) => T,
   ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, AggregateContext<T, C>>
-  /** Builds a curried asynchronous reducer. */
-  function asyncReduce<T, A, C extends object>(
-    fn: (accumulator: A, value: T, context: C) => A | PromiseLike<A>,
-    initialValue: A,
-    stream: Exstream<T, C>,
-  ): Exstream<A, AggregateContext<A, C>>
-  function asyncReduce<T, A>(
-    fn: (accumulator: A, value: T, context: RecordContext<T>) => A | PromiseLike<A>,
-    initialValue: A,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<A, AggregateContext<A, C>>
   /** Builds a curried grouping operator. */
   function groupBy<T, K extends PropertyKey, C extends object>(
     selector: ((value: T, context: C) => K) | PropertyKeyOf<T>,
@@ -1351,15 +1327,6 @@ declare namespace exstream {
   ): <C extends object>(
     stream: Exstream<T, C>,
   ) => Exstream<SortedGroup<K, T>, AggregateContext<SortedGroup<K, T>, C>>
-  /** Joins two sorted streams passed as the final argument. */
-  function sortedJoin<K, A, B, C extends object>(
-    leftKey: ((value: A, context: object) => K) | PropertyKeyOf<A>,
-    rightKey: ((value: B, context: object) => K) | PropertyKeyOf<B>,
-    type: JoinType,
-    direction: SortDirection,
-    buffer: number,
-    stream: Exstream<readonly [Exstream<A, object>, Exstream<B, object>], C>,
-  ): Exstream<SortedJoinResult<K, A, B>, AggregateContext<SortedJoinResult<K, A, B>, object>>
   /** Returns Exstream provenance metadata without replacing the original error. */
   function errorInfo<Input = unknown>(error: unknown): ErrorInfo<Input>
 }

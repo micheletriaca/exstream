@@ -38,7 +38,7 @@ test('pipe pipeline', async () => {
     .map((x) => 'buahaha' + x + '\n')
 
   const res = []
-  await _(fs.createReadStream('out')).through(p.generateStream()).pipeTo(h.getSlowWritable(res, 0))
+  await _(fs.createReadStream('out')).through(p).pipeTo(h.getSlowWritable(res, 0))
 
   expect(res.length).toBe(11)
 })

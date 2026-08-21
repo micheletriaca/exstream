@@ -14,6 +14,8 @@ const options = {
 const coreValues = Array.from({ length: 20_000 }, (_, index) => index)
 const asyncValues = Array.from({ length: 2_000 }, (_, index) => index)
 const forkValues = Array.from({ length: 5_000 }, (_, index) => index)
+const joinLeftValues = Array.from({ length: 20_000 }, (_, key) => ({ key, side: 'left' }))
+const joinRightValues = Array.from({ length: 20_000 }, (_, key) => ({ key, side: 'right' }))
 const csvRows = Array.from(
   { length: 5_000 },
   (_, index) => `${index},name-${index},${index % 2 === 0}`,
@@ -80,6 +82,19 @@ bench(
       .toArray()
     if (result.length !== forkValues.length * 2)
       throw Error(`unexpected result length: ${result.length}`)
+  },
+  options,
+)
+
+bench(
+  'sortedJoin inner (20k records per input)',
+  async () => {
+    let count = 0
+    await _(joinLeftValues)
+      .sortedJoin(_(joinRightValues), { leftKey: 'key', rightKey: 'key' })
+      .tap(() => count++)
+      .drain()
+    if (count !== joinLeftValues.length) throw Error(`unexpected result length: ${count}`)
   },
   options,
 )

@@ -93,14 +93,18 @@ test('pipeline in through', async () => {
   expect(res).toEqual([4, 8, 12])
 })
 
-test('pipeline as node stream toArray', async () => {
+test('pipeline attachments create independent operator state', async () => {
   const p = _.pipeline()
-    .map(async (x) => x * 2)
-    .mapAsync((value) => value)
+    .map((x) => x * 2)
+    .take(2)
 
-  const res = await _([1, 2, 3]).through(p.generateStream()).toArray()
+  const first = _([1, 2, 3]).through(p).toArray()
+  const second = _([4, 5, 6]).through(p).toArray()
 
-  expect(res).toEqual([2, 4, 6])
+  await expect(Promise.all([first, second])).resolves.toEqual([
+    [2, 4],
+    [8, 10],
+  ])
 })
 
 test('error propagation in async chain', async () => {

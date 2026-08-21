@@ -47,12 +47,18 @@ authoritative record for earlier versions.
 - `merge()` is now lazy and uses a dedicated sliding coordinator. Unordered
   mode streams every active inner with bounded demand; ordered mode streams the
   current inner while eagerly buffering later active inners as protocol frames,
-  preserving record errors, contexts, cancellation, and outer order. Outer
-  values may also be zero-argument stream factories, invoked only when an
-  activation slot is available.
+  preserving record errors, contexts, cancellation, and outer order. Wrap
+  resource acquisition in `defer()` when it must wait for an activation slot.
+- `sortedJoin()` is now a binary graph operation called on the left input with
+  the right input and a named options object. Its merge-join coordinator
+  propagates fatal failures and cancellation across both inputs, uses numeric
+  comparator semantics for ordering and key equivalence, and emits duplicate
+  products one record at a time under downstream demand.
 - Exstream instances implement `Symbol.asyncIterator` directly.
 - Node interoperability now uses the readable-only `toNodeReadable()` adapter;
   `toWebReadable()` remains the corresponding Web Streams adapter.
+- `through()` now types native Node duplex and transform targets, including the
+  value type exposed by their readable side.
 - `mapAsync()` failures now record the `mapAsync` operator stage before
   cancellation propagates through the graph.
 
@@ -62,6 +68,8 @@ authoritative record for earlier versions.
   microtasks within a bounded execution slice, then yield through `setImmediate`
   in Node or a cancellable `MessageChannel` task in browsers. This removes the
   per-record task cost without starving timers, I/O, rendering, or cancellation.
+- `makeAsync()` now includes record errors and work performed by the first
+  record after a yield in its synchronous execution budget.
 
 ### Removed
 
@@ -70,6 +78,14 @@ authoritative record for earlier versions.
   `toNodeStream()` APIs.
 - `resolve()`, `massThen()`, and `massCatch()`; use `mapAsync()` for asynchronous
   transformations, concurrency, and ordering.
+- `asyncFilter()` and `asyncReduce()`. Use `mapAsync()` before synchronous
+  selection or reduction when work is independent; use `for await` for a
+  genuinely sequential asynchronous fold.
+- Stream factories as `merge()` inputs. `merge()` now accepts only Exstreams;
+  wrap lazy acquisition in `defer()` before merging.
+- The positional `exstream([left, right]).sortedJoin(...)` form, the standalone
+  curried `sortedJoin()` export, and its `buffer` argument. Use
+  `left.sortedJoin(right, { leftKey, rightKey, type, order })`.
 - Standalone and curried terminal exports. Terminal operations are instance
   methods in 1.0.
 - Public `pause()`, `resume()`, `fail()`, `destroy()`, and `abort()` lifecycle
@@ -90,6 +106,12 @@ authoritative record for earlier versions.
 - `extend()`. Export custom operators as ordinary `Exstream → Exstream`
   functions and compose them locally with `through()` instead of mutating every
   Exstream instance and the reusable-pipeline registry.
+- `Pipeline.generateStream()` and the mutable `Pipeline.definitions` array.
+  Attach reusable definitions with `through()`; pipeline instantiation and
+  recorded operators are now private implementation details.
+- Public graph and scheduler internals `source`, `endOfChain`,
+  `pausedFromInside`, and `pausedFromOutside`. Lifecycle state, aggregate
+  pressure, cancellation, and buffer metrics remain available for diagnostics.
 
 ## [0.34.0] - 2026-08-16
 

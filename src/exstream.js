@@ -5,6 +5,7 @@ const { createCooperativeScheduler, scheduleMicrotask, scheduleNextTurn } = requ
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
 const { forkContext } = require('./context')
 const { annotateError } = require('./error-info.js')
+const { instantiatePipeline } = require('./pipeline-control.js')
 const { kAbort, kDestroy, kFail, kPause, kResume } = require('./stream-control.js')
 
 const signalActive = Symbol('exstream signal active')
@@ -66,9 +67,10 @@ class Exstream extends EventHub {
   #abortController = null
   #signalAbortReason = signalActive
 
-  paused = true
-  pausedFromOutside = true
-  pausedFromInside = false
+  #paused = true
+  #pausedFromOutside = true
+  #pausedFromInside = false
+  #source = null
 
   #nilPushed = false
 
@@ -111,6 +113,10 @@ class Exstream extends EventHub {
 
   get abortReason() {
     return this.#abortReason
+  }
+
+  get paused() {
+    return this.#paused
   }
 
   get signal() {
@@ -596,7 +602,7 @@ class Exstream extends EventHub {
     if (terminalState === 'aborted') this.emit('abort', this.#abortReason)
     if (this.readable) this.emit('end')
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
-    const source = this.source
+    const source = this.#source
     if (source) {
       source.#removeConsumer(this)
       if (propagateUpstream && source.#consumers.length === 0) {
@@ -672,7 +678,7 @@ class Exstream extends EventHub {
     const error = new ExstreamError(reason, input, { origin: 'operator', stage: 'fail' })
     error.exstreamFatal = true
     let root = this
-    while (root.source) root = root.source
+    while (root.#source) root = root.#source
     return root.#failDownstream(error, input)
   }
 
@@ -839,27 +845,27 @@ class Exstream extends EventHub {
 
   #rootSource = () => {
     let root = this
-    while (root.source) root = root.source
+    while (root.#source) root = root.#source
     return root
   };
 
   [kPause](fromInside = false) {
-    this.paused = true
-    if (fromInside) this.pausedFromInside = true
-    else this.pausedFromOutside = true
-    if (this.source) this.source[kPause]()
+    this.#paused = true
+    if (fromInside) this.#pausedFromInside = true
+    else this.#pausedFromOutside = true
+    if (this.#source) this.#source[kPause]()
   }
 
   [kResume](fromInside = false) {
-    if (fromInside) this.pausedFromInside = false
-    else this.pausedFromOutside = false
-    if (this.pausedFromInside || this.pausedFromOutside) return
+    if (fromInside) this.#pausedFromInside = false
+    else this.#pausedFromOutside = false
+    if (this.#pausedFromInside || this.#pausedFromOutside) return
     if (!this.#autostart || !this.#nextCalled || !this.paused) return
     if (this.ended || this.#state === 'ending') return
 
     this.#activationStarted = true
     this.#state = 'running'
-    this.paused = false
+    this.#paused = false
     if (this.#sourceInitializer) {
       const initialize = this.#sourceInitializer
       this.#sourceInitializer = null
@@ -881,8 +887,8 @@ class Exstream extends EventHub {
     }
 
     if (this.paused) return
-    if (!this.source) this.emit('drain')
-    else this.source.#checkBackPressure()
+    if (!this.#source) this.emit('drain')
+    else this.#source.#checkBackPressure()
   }
 
   #checkBackPressure = () => {
@@ -912,22 +918,21 @@ class Exstream extends EventHub {
   }
 
   #addConsumer = (s, skipCheck = false) => {
-    const realSource = this.endOfChain || this
-    if (!skipCheck && realSource.#consumers.length) {
+    if (!skipCheck && this.#consumers.length) {
       throw Error(
         'This stream has already been transformed or consumed. Please ' +
           'fork() or observe() the stream if you want to perform ' +
           'parallel transformations.',
       )
     }
-    s.source = realSource
-    realSource.#consumers.push(s)
-    realSource.#checkBackPressure()
+    s.#source = this
+    this.#consumers.push(s)
+    this.#checkBackPressure()
   }
 
   #removeConsumer = (s) => {
     this.#consumers = this.#consumers.filter((c) => c !== s)
-    s.source = null
+    s.#source = null
     this.#checkBackPressure()
   }
 
@@ -1534,13 +1539,13 @@ class Exstream extends EventHub {
   through(target, { writable = false } = {}) {
     if (!target) return this
     else if (_.isExstream(target)) {
-      const findParent = (x) => (x.source ? findParent(x.source) : x)
+      const findParent = (x) => (x.#source ? findParent(x.#source) : x)
       this.#addConsumer(findParent(target))
       return target
     } else if (_.isExstreamPipeline(target)) {
-      const pipelineInstance = target.generateStream()
-      this.#addConsumer(pipelineInstance)
-      return pipelineInstance
+      const pipelineInstance = instantiatePipeline(target)
+      this.#addConsumer(pipelineInstance.input)
+      return pipelineInstance.output
     } else if (_.isNodeStream(target) && !writable) {
       this.toNodeReadable().pipe(target)
       return new Exstream(target)
@@ -1548,7 +1553,7 @@ class Exstream extends EventHub {
       this.toNodeReadable().pipe(target)
       const s = new Exstream()
       s.readable = false
-      s.source = this
+      s.#source = this
       s[kResume]()
       s.#addOnceListener('error', target, (e) => {
         s.write(e)
@@ -1730,31 +1735,9 @@ class Exstream extends EventHub {
     }
 
     const activateOuterValue = (value, context, next) => {
-      let inner = value
-      if (_.isFunction(value)) {
-        try {
-          inner = value()
-        } catch (reason) {
-          addOuterError(reason, value, context, next)
-          return
-        }
-        if (!_.isExstream(inner)) {
-          if (_.isPromise(inner)) inner.catch(noCancel)
-          addOuterError(
-            Error('error in .merge(). a stream factory must return an exstream instance'),
-            inner,
-            context,
-            next,
-          )
-          return
-        }
-      } else if (!_.isExstream(inner)) {
-        addOuterError(
-          Error('.merge() can merge ONLY exstream instances or stream factories'),
-          value,
-          context,
-          next,
-        )
+      const inner = value
+      if (!_.isExstream(inner)) {
+        addOuterError(Error('.merge() can merge ONLY exstream instances'), value, context, next)
         return
       }
 

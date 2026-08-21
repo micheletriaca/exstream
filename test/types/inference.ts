@@ -7,7 +7,7 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
 type Expect<T extends true> = T
 type Value<S> = S extends exstream.Exstream<infer T, any> ? T : never
-type Context<S> = S extends exstream.Exstream<unknown, infer C> ? C : never
+type Context<S> = S extends exstream.Exstream<any, infer C> ? C : never
 
 const enriched = exstream([{ a: 1 }])
   .map((value) => Object.assign(value, { b: 2 }))
@@ -54,6 +54,39 @@ const batched = exstream([1, 2, 3]).batch(2)
 type BatchValue = Expect<Equal<Value<typeof batched>, number[]>>
 declare const batchContext: Context<typeof batched>
 const batchInput: number[] = batchContext.input
+
+const customers = exstream([{ id: 1, name: 'Ada' }])
+const orders = exstream([{ customerId: 1, total: 42 }])
+const innerJoin = customers.sortedJoin(orders, {
+  leftKey: 'id',
+  order: (customerId, orderCustomerId) => customerId - orderCustomerId,
+  rightKey: 'customerId',
+})
+type InnerJoinValue = Expect<
+  Equal<
+    Value<typeof innerJoin>,
+    {
+      key: number
+      left: { id: number; name: string }
+      right: { customerId: number; total: number }
+    }
+  >
+>
+
+const leftJoin = exstream([{ id: 1 }]).sortedJoin(exstream([{ ownerId: 1 }]), {
+  leftKey: (value, recordContext) => value.id + recordContext.input.id - value.id,
+  rightKey: (value, recordContext) => value.ownerId + recordContext.input.ownerId - value.ownerId,
+  type: 'left',
+})
+type LeftJoinValue = Expect<
+  Equal<
+    Value<typeof leftJoin>,
+    { key: number; left: { id: number }; right: { ownerId: number } | null }
+  >
+>
+
+// @ts-expect-error sortedJoin is a graph operation, not a standalone curried operator.
+void exstream.sortedJoin
 
 const reducedWithContext = exstream([1, 2]).reduce((sum, value, recordContext) => {
   const original: number = recordContext.input
@@ -149,11 +182,16 @@ type ForkContext = Expect<Equal<Context<typeof contextualFork>, Context<typeof c
 const merged = exstream([exstream([1]), exstream([2])]).merge(2, true)
 type MergedValue = Expect<Equal<Value<typeof merged>, number>>
 
-const factoryMerged = exstream([() => exstream([1]), () => exstream(['two'])]).merge(2, true)
-export type FactoryMergedValue = Expect<Equal<Value<typeof factoryMerged>, number | string>>
+const deferredMerged = exstream([exstream.defer(() => [1]), exstream.defer(() => ['two'])]).merge(
+  2,
+  true,
+)
+export type DeferredMergedValue = Expect<Equal<Value<typeof deferredMerged>, number | string>>
 
-const mixedMerged = exstream([exstream([1]), () => exstream(['two'])]).merge()
-export type MixedMergedValue = Expect<Equal<Value<typeof mixedMerged>, number | string>>
+// @ts-expect-error merge() consumes a stream of Exstreams.
+exstream([1, 2]).merge()
+// @ts-expect-error Lazy acquisition belongs in defer(), not in merge() inputs.
+exstream([() => exstream([1])]).merge()
 
 const routed = exstream([{ id: 1 }]).routeErrors()
 type RoutedOutput = Expect<Equal<Value<typeof routed.output>, { id: number }>>
@@ -215,10 +253,31 @@ const nodeTransform: exstream.NodeTransformLike<number, string> = exstream
   .map((value) => String(value))
   .toNodeTransform()
 nodeTransform.write(1)
+const transformedByNode = exstream([1]).through(nodeTransform)
+type NodeThroughValue = Expect<Equal<Value<typeof transformedByNode>, string>>
 // @ts-expect-error A reusable pipeline has no source to expose as a Node readable.
 exstream.pipeline<number>().toNodeReadable()
+// @ts-expect-error Pipeline instances are created only by through().
+exstream.pipeline<number>().generateStream()
+// @ts-expect-error Recorded operator definitions are internal state.
+void exstream.pipeline<number>().definitions
 // @ts-expect-error An instantiated Exstream is readable, not a reusable Node transform definition.
 exstream([1]).toNodeTransform()
+// @ts-expect-error Asynchronous selection is expressed with mapAsync() followed by filter().
+exstream([1]).asyncFilter(async (value) => value > 0)
+// @ts-expect-error Asynchronous stateful folds belong at a for-await consumption boundary.
+exstream.pipeline<number>().asyncReduce(async (total, value) => total + value, 0)
+
+const publicState = exstream([1])
+const isPaused: boolean = publicState.paused
+// @ts-expect-error Pressure gates are internal scheduler state.
+void publicState.pausedFromInside
+// @ts-expect-error Pressure gates are internal scheduler state.
+void publicState.pausedFromOutside
+// @ts-expect-error Graph links are internal implementation details.
+void publicState.source
+// @ts-expect-error Pipeline chain links are internal implementation details.
+void publicState.endOfChain
 
 exstream([{ a: 1 }]).map((value) => {
   // @ts-expect-error Direct mutation cannot add a field to the inferred object type.
@@ -236,13 +295,18 @@ void destinationCompletion
 void customDestinationCompletion
 void nodeReadable
 void nodeTransform
+void transformedByNode
+void isPaused
 void typedErrorData
 type Used =
   | EnrichedValue
+  | NodeThroughValue
   | EnrichedObject
   | NarrowedValue
   | ErrorDataValue
   | BatchValue
+  | InnerJoinValue
+  | LeftJoinValue
   | WrappedValue
   | CsvObject
   | CsvArray

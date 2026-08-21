@@ -66,16 +66,6 @@ test('reduce1 in async chain', async () => {
   expect(res).toEqual([6])
 })
 
-test('async reduce', async () => {
-  const res = await _([1, 2, 3])
-    .asyncReduce(async (memo, x) => {
-      await h.sleep(10)
-      return memo + x
-    }, 0)
-    .toArray()
-  expect(res).toEqual([6])
-})
-
 test('reduce errors', async () => {
   let e = null
   try {
@@ -160,37 +150,6 @@ test('reduce errors pass through', async () => {
     .errors((err) => errs.push(err))
     .single()
   expect(res).toEqual(0)
-  expect(errs.length).toBe(3)
-  expect(errs[2].message).toBe('3')
-})
-
-test('async reduce errors', async () => {
-  const errs = []
-  const res = await _([1, 2, 3])
-    .asyncReduce(async (memo, x) => {
-      if (x === 3) throw Error('NOOO')
-      return memo + x
-    }, 0)
-    .toArray()
-    .catch((e) => {
-      errs.push(e)
-      return undefined
-    })
-  expect(res).toBeUndefined()
-  expect(errs.length).toBe(1)
-  expect(errs[0].message).toBe('NOOO')
-})
-
-test('async reduce errors pass through', async () => {
-  const errs = []
-  const res = await _([1, 2, 3])
-    .map((x) => {
-      throw Error(x + '')
-    })
-    .asyncReduce(async (memo, x) => memo + x, 0)
-    .errors((x) => errs.push(x))
-    .toArray()
-  expect(res).toEqual([0])
   expect(errs.length).toBe(3)
   expect(errs[2].message).toBe('3')
 })

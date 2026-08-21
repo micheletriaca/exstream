@@ -28,17 +28,6 @@ test('backpressure', () => {
   })
 })
 
-test('async filter', async () => {
-  const res = await _([1, 2, 3])
-    .asyncFilter(async (x) => {
-      await h.sleep(10)
-      return x % 2 === 0
-    })
-    .toArray()
-
-  expect(res).toEqual([2])
-})
-
 test('slow writes on node stream', async () => {
   const res = []
   await _([2, 3, 4])

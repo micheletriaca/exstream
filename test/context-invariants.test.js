@@ -263,22 +263,6 @@ test('reduce receives each record context and emits an aggregate context', async
   expect(result).toEqual({ inputs: [1, 2, 3], sameInput: true, total: 6 })
 })
 
-test('asyncReduce receives a lazily-created record context', async () => {
-  const result = await _([1, 2])
-    .asyncReduce(async (total, value, context) => {
-      expect(context.input).toBe(value)
-      expect(context.signal).toBeInstanceOf(AbortSignal)
-      return total + value
-    }, 0)
-    .map((total, context) => ({
-      inputs: context.contexts.map((parent) => parent.input),
-      total,
-    }))
-    .toArray()
-
-  expect(result).toEqual([{ inputs: [1, 2], total: 3 }])
-})
-
 test('ordered mapAsync keeps contexts correlated when promises settle out of order', async () => {
   const resolvers = []
   const result = _([1, 2])
@@ -469,17 +453,13 @@ test('context survives async operators and contextual rejection recovery', async
   expect(errors).toEqual([{ correlationId: 'row-1', message: 'rejected' }])
 })
 
-test('contextual predicate failures remain correlated record errors', async () => {
+test('contextual filter failures remain correlated record errors', async () => {
   let failure
-  const result = await _([1, 2])
+  const result = await _([1])
     .withContext((value) => ({ correlationId: `row-${value}` }))
-    .filter((value, context) => {
-      if (value === 1) throw Error('sync predicate')
-      return context.input === value
-    })
-    .asyncFilter(async (value, context) => {
-      if (value === 2) throw Error('async predicate')
-      return context.input === value
+    .filter((_value, context) => {
+      if (context.input === 1) throw Error('predicate failed')
+      return true
     })
     .errors((error, push, context) => {
       failure = { correlationId: context.correlationId, message: error.message }
@@ -487,7 +467,7 @@ test('contextual predicate failures remain correlated record errors', async () =
     .toArray()
 
   expect(result).toEqual([])
-  expect(failure).toEqual({ correlationId: 'row-2', message: 'async predicate' })
+  expect(failure).toEqual({ correlationId: 'row-1', message: 'predicate failed' })
 })
 
 test('a contextual stopOnError handler receives the failing record context', async () => {

@@ -39,6 +39,28 @@ const normalize = exstream.pipeline().map(normalizeOrder)
 await nodePipeline(input, normalize.toNodeTransform(), output)
 ```
 
+`asyncFilter()` and `asyncReduce()` were removed. When asynchronous work is
+independent per record, run it through `mapAsync()` and keep selection or
+aggregation synchronous:
+
+```js
+const total = await exstream(orderIds)
+  .mapAsync(loadOrder, { concurrency: 8 })
+  .filter((order) => order.status === 'paid')
+  .reduce((sum, order) => sum + order.total, 0)
+  .single()
+```
+
+When every asynchronous accumulator step depends on the previous result, make
+that sequencing explicit at the consumption boundary:
+
+```js
+let digest = initialDigest
+for await (const chunk of stream) {
+  digest = await extendDigest(digest, chunk)
+}
+```
+
 Calling instance-only methods such as `toNodeReadable()`, `toArray()`, `fork()`,
 or `merge()` on a pipeline definition now fails immediately. Custom methods
 are no longer installed globally with `extend()`. Define an ordinary transform
@@ -119,6 +141,54 @@ Source adapters now acquire iterators and platform readers on demand. When even
 creating the source must be delayed, use `defer(() => source)`. This distinction
 matters for calls such as `fetch()` and `createReadStream()`, which have already
 started or acquired resources if their result is passed directly.
+
+## Merging deferred sources
+
+`merge()` now accepts only Exstream instances. Replace merge-specific stream
+factories with deferred inner sources:
+
+```js
+// Before
+exstream(paths)
+  .map((path) => () => exstream(createReadStream(path)).jsonl())
+  .merge(4)
+
+// 1.0
+exstream(paths)
+  .map((path) => exstream.defer(() => createReadStream(path)).jsonl())
+  .merge(4)
+```
+
+The `defer()` factory runs only when `merge()` activates that inner stream, so
+the merge parallelism still limits the number of open resources. Unlike the
+removed merge-specific factory, `defer()` also accepts asynchronous acquisition
+and every supported source type.
+
+## Joining sorted streams
+
+`sortedJoin()` is now called directly on the left input. Join configuration is
+named, and results use `left` and `right` instead of `a` and `b`:
+
+```js
+// Before
+const joined = exstream([customers, orders]).sortedJoin('id', 'customerId', 'left', 'asc', 100)
+
+// 1.0
+const joined = customers.sortedJoin(orders, {
+  leftKey: 'id',
+  rightKey: 'customerId',
+  type: 'left',
+  order: 'asc',
+})
+```
+
+The removed `buffer` parameter only changed internal read granularity. The new
+implementation follows downstream demand directly. A custom `order` function
+is now a standard numeric comparator: negative means the left key comes first,
+zero means the keys match, and positive means the right key comes first.
+
+The standalone curried form was removed because a sorted join is specific to
+two live stream instances and cannot be recorded in a reusable pipeline.
 
 ## Custom callback sources
 

@@ -79,9 +79,6 @@ installMethod('filter', function (fn) {
 installMethod('reject', function (fn) {
   return _.reject(fn, this)
 })
-installMethod('asyncFilter', function (fn) {
-  return _.asyncFilter(fn, this)
-})
 installMethod('stopWhen', function (fn) {
   return _.stopWhen(fn, this)
 })
@@ -169,9 +166,6 @@ installMethod('splitBy', function (regexp, encoding = 'utf8') {
 installMethod('reduce1', function (fn) {
   return _.reduce1(fn, this)
 })
-installMethod('asyncReduce', function (memo, fn) {
-  return _.asyncReduce(memo, fn, this)
-})
 installMethod('makeAsync', function (ms) {
   return _.makeAsync(ms, this)
 })
@@ -189,8 +183,8 @@ installMethod('sortedGroupBy', function (fnOrString) {
 })
 installMethod(
   'sortedJoin',
-  function (joinKeyOrFnA, joinKeyOrFnB, type = 'inner', sortDirection = 'asc', buffer = 1) {
-    return _.sortedJoin(joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, this)
+  function (right, options) {
+    return joins.sortedJoin(this, right, options)
   },
   { pipeline: false },
 )

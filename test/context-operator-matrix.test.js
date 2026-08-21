@@ -163,18 +163,17 @@ test('sortedJoin key callbacks receive source contexts and outputs aggregate bot
   const right = _([{ parentId: 1 }]).withContext(() => ({ source: 'right' }))
   const selectors = []
 
-  const result = await _([left, right])
-    .sortedJoin(
-      (value, context) => {
+  const result = await left
+    .sortedJoin(right, {
+      leftKey: (value, context) => {
         selectors.push([value.id, context.source])
         return value.id
       },
-      (value, context) => {
+      rightKey: (value, context) => {
         selectors.push([value.parentId, context.source])
         return value.parentId
       },
-      'inner',
-    )
+    })
     .map((value, context) => ({
       inputIsOutput: context.input === value,
       sources: context.contexts.map((parent) => parent.source),
@@ -191,39 +190,30 @@ test('sortedJoin key callbacks receive source contexts and outputs aggregate bot
     {
       inputIsOutput: true,
       sources: ['left', 'right'],
-      value: { a: { id: 1 }, b: { parentId: 1 }, key: 1 },
+      value: { left: { id: 1 }, right: { parentId: 1 }, key: 1 },
     },
   ])
 })
 
-test('sortedJoin supports a contextual ordering predicate without pre-existing contexts', async () => {
+test('sortedJoin supports a numeric key comparator', async () => {
   const comparisons = []
   const left = _([{ id: 1 }, { id: 2 }])
   const right = _([{ parentId: 2 }])
 
-  const result = await _([left, right])
-    .sortedJoin(
-      (value) => value.id,
-      (value) => value.parentId,
-      'inner',
-      (leftKey, rightKey, leftContext, rightContext) => {
-        comparisons.push({
-          leftInput: leftContext.input,
-          leftKey,
-          rightInput: rightContext.input,
-          rightKey,
-        })
-        return leftKey > rightKey
+  const result = await left
+    .sortedJoin(right, {
+      leftKey: (value) => value.id,
+      order: (leftKey, rightKey) => {
+        comparisons.push([leftKey, rightKey])
+        return leftKey - rightKey
       },
-    )
+      rightKey: (value) => value.parentId,
+    })
     .toArray()
 
-  expect(result).toEqual([{ a: { id: 2 }, b: { parentId: 2 }, key: 2 }])
+  expect(result).toEqual([{ left: { id: 2 }, right: { parentId: 2 }, key: 2 }])
   expect(comparisons.length).toBeGreaterThan(0)
-  expect(comparisons.every(({ leftInput, leftKey }) => leftInput.key === leftKey)).toBe(true)
-  expect(comparisons.every(({ rightInput, rightKey }) => rightInput.parentId === rightKey)).toBe(
-    true,
-  )
+  expect(comparisons).toContainEqual([2, 2])
 })
 
 test('right sortedJoin keeps output parent contexts aligned, including unmatched records', async () => {
@@ -232,12 +222,12 @@ test('right sortedJoin keeps output parent contexts aligned, including unmatched
     source: `parent-${value.id}`,
   }))
 
-  const result = await _([children, parents])
-    .sortedJoin(
-      (value, context) => value.parentId + Number(context.source === 'children') - 1,
-      (value, context) => value.id + Number(context.source.startsWith('parent-')) - 1,
-      'right',
-    )
+  const result = await children
+    .sortedJoin(parents, {
+      leftKey: (value, context) => value.parentId + Number(context.source === 'children') - 1,
+      rightKey: (value, context) => value.id + Number(context.source.startsWith('parent-')) - 1,
+      type: 'right',
+    })
     .map((value, context) => ({
       sources: context.contexts.map((parent) => parent?.source),
       value,
@@ -247,11 +237,11 @@ test('right sortedJoin keeps output parent contexts aligned, including unmatched
   expect(result).toEqual([
     {
       sources: ['children', 'parent-1'],
-      value: { a: { parentId: 1 }, b: { id: 1 }, key: 1 },
+      value: { left: { parentId: 1 }, right: { id: 1 }, key: 1 },
     },
     {
       sources: [undefined, 'parent-2'],
-      value: { a: null, b: { id: 2 }, key: 2 },
+      value: { left: null, right: { id: 2 }, key: 2 },
     },
   ])
 })
@@ -261,15 +251,14 @@ test('sortedJoin preserves the source context of selector errors', async () => {
   const right = _([{ parentId: 1 }]).withContext(() => ({ source: 'right' }))
   const errors = []
 
-  const result = await _([left, right])
-    .sortedJoin(
-      (value) => value.id,
-      (value, context) => {
+  const result = await left
+    .sortedJoin(right, {
+      leftKey: (value) => value.id,
+      rightKey: (value, context) => {
         context.stage = 'right selector'
         throw Error(`invalid ${value.parentId}`)
       },
-      'inner',
-    )
+    })
     .errors((error, push, context) => {
       errors.push({ message: error.message, source: context.source, stage: context.stage })
     })

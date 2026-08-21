@@ -269,7 +269,6 @@ test('error propagation', async () => {
     .flatten()
     .filter((x) => x)
     .reject((x) => x)
-    .asyncFilter(async (x) => x)
     .uniq()
     .encode('base64')
     .decode('base64')
@@ -359,22 +358,6 @@ test('reject errors', async () => {
   expect(res).toEqual([])
   expect(ex).not.toBe(null)
   expect(ex.exstreamInput).toBe(3)
-})
-
-test('async filter errors', async () => {
-  let e = null
-  const res = await _([1, 2, 3])
-    .asyncFilter(async (x) => {
-      await h.sleep(100)
-      if (x === 3) throw Error('NOO')
-      return true
-    })
-    .errors((ex) => void (e = ex))
-    .toArray()
-
-  expect(res).toEqual([1, 2])
-  expect(e).not.toBe(null)
-  expect(e.message).toBe('NOO')
 })
 
 test('stream in error without consumers emits an error event', async () => {

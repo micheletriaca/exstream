@@ -35,11 +35,17 @@ test('the package surface excludes internal utilities and lifecycle controls', (
     'traverse',
   ]
   const lifecycleControls = ['abort', 'destroy', 'fail', 'pause', 'resume', 'writeData']
+  const removedOperators = ['asyncFilter', 'asyncReduce']
 
   expect(internalUtilities.filter((name) => name in node)).toEqual([])
   expect(lifecycleControls.filter((name) => name in stream)).toEqual([])
+  expect(removedOperators.filter((name) => name in node)).toEqual([])
+  expect(removedOperators.filter((name) => name in stream)).toEqual([])
+  expect(removedOperators.filter((name) => name in node.pipeline())).toEqual([])
+  expect('sortedJoin' in node).toBe(false)
   expect(typeof stream.consume).toBe('function')
   expect(typeof stream.consumeSync).toBe('function')
+  expect(typeof stream.sortedJoin).toBe('function')
   expect(typeof node.defer).toBe('function')
   expect(typeof stream.start).toBe('function')
   expect(typeof stream.write).toBe('function')

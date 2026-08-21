@@ -39,6 +39,22 @@ const run = async () => {
     .toArray()
   equal(mapped, [10, 20, 30], 'browser mapAsync')
 
+  const joined = await Exstream([{ id: 1 }, { id: 2 }])
+    .sortedJoin(Exstream([{ ownerId: 2 }]), {
+      leftKey: 'id',
+      rightKey: 'ownerId',
+      type: 'left',
+    })
+    .toArray()
+  equal(
+    joined,
+    [
+      { key: 1, left: { id: 1 }, right: null },
+      { key: 2, left: { id: 2 }, right: { ownerId: 2 } },
+    ],
+    'browser sortedJoin',
+  )
+
   const readable = new ReadableStream({
     start(controller) {
       controller.enqueue(1)
@@ -165,7 +181,7 @@ const run = async () => {
   })
   assert(workerResult.checks === 6, 'worker did not complete every check')
 
-  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=14 worker=6'
+  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=15 worker=6'
 }
 
 run().catch((error) => {
