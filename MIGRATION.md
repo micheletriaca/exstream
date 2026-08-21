@@ -36,6 +36,16 @@ Without an explicit initial value, the first successful record becomes the
 accumulator and an empty input emits no result. Passing an initial value keeps
 the existing behavior, including emitting that value for empty input.
 
+`sort()` now accepts the comparison function previously passed to `sortBy()`:
+
+```js
+// Before
+stream.sortBy((left, right) => right.score - left.score)
+
+// 1.0
+stream.sort((left, right) => right.score - left.score)
+```
+
 ## Terminal operations
 
 Terminal methods now have one predictable contract: methods that represent

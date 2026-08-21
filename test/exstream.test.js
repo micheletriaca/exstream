@@ -625,7 +625,7 @@ test('sort strings', async () => {
 
 test('sort by', async () => {
   const res = await _(['1', '2', '10', '20'])
-    .sortBy((a, b) => (parseInt(a) > parseInt(b) ? 1 : -1))
+    .sort((a, b) => (parseInt(a) > parseInt(b) ? 1 : -1))
     .toArray()
   expect(res).toEqual(['1', '2', '10', '20'])
 })

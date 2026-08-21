@@ -1232,7 +1232,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
     : s.reduce((accumulator, x) => add(accumulator, x), {})
 })
 
-_m.sortBy = _.curry((fn, s) => {
+_m.sort = (fn, s) => {
   const usesContext = fn && fn.length >= 3
   const entries = []
   let result
@@ -1276,9 +1276,7 @@ _m.sortBy = _.curry((fn, s) => {
     }
   })
   return result
-})
-
-_m.sort = (s) => _m.sortBy(void 0, s)
+}
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   maxSyncExecutionTime = _.asNonNegativeFiniteNumber(maxSyncExecutionTime)

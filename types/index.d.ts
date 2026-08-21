@@ -657,10 +657,8 @@ declare namespace exstream {
     keyBy<K extends PropertyKey>(
       fn: ((value: T, context: C) => K) | PropertyKeyOf<T>,
     ): Exstream<Record<K, T>, AggregateContext<Record<K, T>, C>>
-    /** Sorts values using their string representation. */
-    sort(): Exstream<T, C>
-    /** Sorts values with a comparison function. */
-    sortBy(fn: (left: T, right: T, leftContext: C, rightContext: C) => number): Exstream<T, C>
+    /** Sorts values using their string representation or a comparison function. */
+    sort(compare?: (left: T, right: T, leftContext: C, rightContext: C) => number): Exstream<T, C>
 
     /** Decodes byte chunks and splits them on line endings. */
     split(encoding?: string): Exstream<string, C>
@@ -871,11 +869,9 @@ declare namespace exstream {
     jsonStringify<FinalProperties extends object = Record<string, unknown>>(
       options?: JsonStringifyOptions<FinalProperties> | null,
     ): Pipeline<Input, string | Uint8Array, C>
-    /** Adds string-value sorting. */
-    sort(): Pipeline<Input, Output, C>
-    /** Adds comparison sorting. */
-    sortBy(
-      fn: (left: Output, right: Output, leftContext: C, rightContext: C) => number,
+    /** Adds string-value or comparison sorting. */
+    sort(
+      compare?: (left: Output, right: Output, leftContext: C, rightContext: C) => number,
     ): Pipeline<Input, Output, C>
     /** Adds line splitting. */
     split(encoding?: string): Pipeline<Input, string, C>

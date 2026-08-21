@@ -75,6 +75,7 @@ authoritative record for earlier versions.
 
 ### Removed
 
+- `sortBy()`; pass its comparison function directly to `sort(compare)`.
 - `reduce1()`; call `reduce(fn)` to use the first successful value as the
   accumulator, or `reduce(fn, initialValue)` to provide one explicitly.
 - Standalone and curried operator exports such as `map()`, `filter()`, `json()`,

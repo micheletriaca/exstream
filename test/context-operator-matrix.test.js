@@ -68,10 +68,10 @@ test('predicate and key callbacks receive a lazy per-record context', async () =
   expect(seen.every(([, value, input]) => value === input)).toBe(true)
 })
 
-test('sortBy receives both input contexts and preserves them after reordering', async () => {
+test('sort comparator receives both input contexts and preserves them after reordering', async () => {
   const result = await _([3, 1, 2])
     .withContext((value) => ({ correlationId: `row-${value}` }))
-    .sortBy((left, right, leftContext, rightContext) => {
+    .sort((left, right, leftContext, rightContext) => {
       expect(leftContext.input).toBe(left)
       expect(rightContext.input).toBe(right)
       return left - right
@@ -86,11 +86,11 @@ test('sortBy receives both input contexts and preserves them after reordering', 
   ])
 })
 
-test('sortBy comparator errors retain the contexts of the compared collection', async () => {
+test('sort comparator errors retain the contexts of the compared collection', async () => {
   const errors = []
   const result = await _([2, 1])
     .withContext((value) => ({ correlationId: `row-${value}` }))
-    .sortBy(() => {
+    .sort(() => {
       throw Error('cannot compare')
     })
     .errors((error, push, context) => {

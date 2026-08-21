@@ -152,11 +152,8 @@ installMethod('groupBy', function (fnOrString) {
 installMethod('keyBy', function (fnOrString) {
   return operators.keyBy(fnOrString, this)
 })
-installMethod('sort', function () {
-  return operators.sort(this)
-})
-installMethod('sortBy', function (fn) {
-  return operators.sortBy(fn, this)
+installMethod('sort', function (compare) {
+  return operators.sort(compare, this)
 })
 installMethod('split', function (encoding = 'utf8') {
   return operators.split(encoding, this)
