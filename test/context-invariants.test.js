@@ -401,10 +401,13 @@ test('context is preserved through reject and mapAsync', async () => {
   expect(recovered).toEqual([{ value: 2, correlationId: 'row-2', input: 2 }])
 })
 
-test('contextual map preserves context in sync and async wrap mode', async () => {
+test('contextual map preserves context for explicit sync and async result shapes', async () => {
   const sync = await _([1])
     .withContext(() => ({ correlationId: 'sync' }))
-    .map((value, context) => value + Number(context.input === value), { wrap: true })
+    .map((value, context) => ({
+      input: value,
+      output: value + Number(context.input === value),
+    }))
     .map((value, context) => ({
       correlationId: context.correlationId,
       input: value.input,
@@ -414,9 +417,12 @@ test('contextual map preserves context in sync and async wrap mode', async () =>
 
   const async = await _([2])
     .withContext(() => ({ correlationId: 'async' }))
-    .map((value, context) => Promise.resolve(value + Number(context.input === value)), {
-      wrap: true,
-    })
+    .map((value, context) =>
+      Promise.resolve({
+        input: value,
+        output: value + Number(context.input === value),
+      }),
+    )
     .mapAsync((value) => value)
     .map((value, context) => ({
       correlationId: context.correlationId,

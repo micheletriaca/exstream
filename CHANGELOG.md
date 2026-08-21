@@ -75,6 +75,8 @@ authoritative record for earlier versions.
 
 ### Removed
 
+- The `map(fn, { wrap: true })` output mode. Return `{ input, output }`
+  explicitly from the mapping callback when both values are needed.
 - `sortBy()`; pass its comparison function directly to `sort(compare)`.
 - `reduce1()`; call `reduce(fn)` to use the first successful value as the
   accumulator, or `reduce(fn, initialValue)` to provide one explicitly.

@@ -69,6 +69,11 @@ test('mapAsync normalizes a cyclic rejection object without throwing while forma
 
 test.each([
   [
+    'map options',
+    () => _([]).map(String, { wrap: true }),
+    'error in .map(). options are no longer supported',
+  ],
+  [
     'merge concurrency',
     () => _([]).merge({ concurrency: -1 }),
     'error in .merge(). concurrency must be a positive integer or Infinity',

@@ -94,7 +94,7 @@ _m.decode = _.curry((encoding, s) => {
   })
 })
 
-_m.map = _.curry((fn, options, s) => {
+_m.map = (fn, s) => {
   const usesContext = fn.length >= 2
   let result
   const consumer = (err, x, push) => {
@@ -113,17 +113,7 @@ _m.map = _.curry((fn, options, s) => {
           res = res.catch((e) => {
             throw new ExstreamError(e, x, { origin: 'operator', stage: 'map' })
           })
-        if (!options || !options.wrap) {
-          return push(null, res, nextContext)
-        } else if (probablyPromise) {
-          push(
-            null,
-            res.then((y) => ({ input: x, output: y })),
-            nextContext,
-          )
-        } else {
-          push(null, { input: x, output: res }, nextContext)
-        }
+        push(null, res, nextContext)
       } catch (e) {
         push(new ExstreamError(e, x, { origin: 'operator', stage: 'map' }), null, nextContext)
       }
@@ -131,7 +121,7 @@ _m.map = _.curry((fn, options, s) => {
   }
   result = s.consumeSync(consumer)
   return result
-})
+}
 
 _m.withContext = _.curry((fn, s) => {
   let result

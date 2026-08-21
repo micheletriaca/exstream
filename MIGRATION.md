@@ -46,6 +46,17 @@ stream.sortBy((left, right) => right.score - left.score)
 stream.sort((left, right) => right.score - left.score)
 ```
 
+`map()` no longer has a special wrapping mode. Build the output shape in the
+callback:
+
+```js
+// Before
+stream.map(calculateScore, { wrap: true })
+
+// 1.0
+stream.map((input) => ({ input, output: calculateScore(input) }))
+```
+
 ## Terminal operations
 
 Terminal methods now have one predictable contract: methods that represent

@@ -101,8 +101,10 @@ const reducedWithoutInitial = exstream([{ total: 1 }, { total: 2 }]).reduce((sum
 }))
 type ReducedWithoutInitial = Expect<Equal<Value<typeof reducedWithoutInitial>, { total: number }>>
 
-const wrapped = exstream([1]).map(async (value) => String(value), { wrap: true })
-type WrappedValue = Expect<Equal<Value<typeof wrapped>, Promise<{ input: number; output: string }>>>
+const mappedPromise = exstream([1]).map(async (value) => String(value))
+type MappedPromiseValue = Expect<Equal<Value<typeof mappedPromise>, Promise<string>>>
+// @ts-expect-error map() no longer has a wrapping options argument.
+exstream([1]).map(String, { wrap: true })
 
 const csvObjects = exstream(['id,name\n1,Ada\n']).csv({ header: true })
 type CsvObject = Expect<Equal<Value<typeof csvObjects>, Record<string, string>>>
@@ -307,7 +309,7 @@ type Used =
   | InnerJoinValue
   | LeftJoinValue
   | ReducedWithoutInitial
-  | WrappedValue
+  | MappedPromiseValue
   | CsvObject
   | CsvArray
   | JsonRowValue

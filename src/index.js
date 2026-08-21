@@ -50,8 +50,9 @@ installMethod(
 installMethod('stopOnError', function (fn) {
   return operators.stopOnError(fn, this)
 })
-installMethod('map', function (fn, options = null) {
-  return operators.map(fn, options, this)
+installMethod('map', function (fn) {
+  if (arguments.length > 1) throw Error('error in .map(). options are no longer supported')
+  return operators.map(fn, this)
 })
 installMethod('withContext', function (fn = null) {
   return operators.withContext(fn, this)

@@ -194,22 +194,18 @@ test('error recovery in mapAsync', async () => {
   expect(res).toEqual([1, 2, 3, 4, 6])
 })
 
-test('error in wrapped promise contains exstreamInput', async () => {
+test('error in mapped promise contains exstreamInput', async () => {
   const catched = vi.fn()
 
   const res = await _([1, 2, 3])
-    .map(
-      async (x) => {
-        if (x === 2) throw Error('an error')
-        else return x * 2
-      },
-      { wrap: true },
-    )
+    .map(async (x) => {
+      if (x === 2) throw Error('an error')
+      else return x * 2
+    })
     .mapAsync((value) => value)
     .errors((e) => {
       if (e.exstreamInput === 2) catched()
     })
-    .pluck('output')
     .toArray()
 
   expect(res).toEqual([2, 6])

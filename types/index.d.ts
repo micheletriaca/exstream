@@ -154,11 +154,6 @@ declare namespace exstream {
     push: Push<U, NextContext>,
   ) => void
 
-  interface MapOptions {
-    /** Include both the input and output in each result. */
-    wrap?: boolean
-  }
-
   interface MapAsyncRetry<T, C extends object> {
     /** Number of additional attempts after the first failure. */
     retries?: number
@@ -519,21 +514,8 @@ declare namespace exstream {
     consumeSync<U = T, NextContext extends object = C>(
       fn: SyncConsumer<T, U, C, NextContext>,
     ): Exstream<U, NextContext>
-    /** Transforms every value and keeps the input beside the output. */
-    map<U>(
-      fn: (value: T, context: CallbackContext<T, C>) => U,
-      options: { wrap: true },
-    ): Exstream<
-      U extends PromiseLike<infer R>
-        ? Promise<{ input: T; output: Awaited<R> }>
-        : { input: T; output: U },
-      MaterializedContext<C, T>
-    >
     /** Transforms every value and infers the new stream value type. */
-    map<U>(
-      fn: (value: T, context: CallbackContext<T, C>) => U,
-      options?: MapOptions | null,
-    ): Exstream<U, NextContext<C, U>>
+    map<U>(fn: (value: T, context: CallbackContext<T, C>) => U): Exstream<U, NextContext<C, U>>
     /** Adds fields to the record context without changing the value. */
     withContext(): Exstream<T, C>
     withContext<A extends object | void>(
@@ -754,17 +736,7 @@ declare namespace exstream {
     /** Creates a native Node Transform with this pipeline as its writable-to-readable body. */
     toNodeTransform(): NodeTransformLike<Input, Output>
     /** Adds a value transform to this reusable pipeline. */
-    map<U>(
-      fn: (value: Output, context: C) => U,
-      options: { wrap: true },
-    ): Pipeline<
-      Input,
-      U extends PromiseLike<infer R>
-        ? Promise<{ input: Output; output: Awaited<R> }>
-        : { input: Output; output: U },
-      C
-    >
-    map<U>(fn: (value: Output, context: C) => U, options?: MapOptions | null): Pipeline<Input, U, C>
+    map<U>(fn: (value: Output, context: C) => U): Pipeline<Input, U, C>
     /** Adds fields to the context of this reusable pipeline. */
     withContext<A extends object | void>(
       fn: (value: Output, context: C) => A,

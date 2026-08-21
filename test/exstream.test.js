@@ -106,25 +106,6 @@ test('map1', async () => {
   )
 })
 
-test('map wrap', async () => {
-  const res = await _(k)
-    .map((x) => x * 2, { wrap: true })
-    .toArray()
-
-  expect(res.length).toEqual(k2.length)
-  expect(res[345]).toEqual({ input: 345, output: 690 })
-})
-
-test('async map wrap', async () => {
-  const res = await _(k)
-    .map(async (x) => x * 2, { wrap: true })
-    .mapAsync((value) => value)
-    .toArray()
-
-  expect(res.length).toEqual(k2.length)
-  expect(res[345]).toEqual({ input: 345, output: 690 })
-})
-
 test('map set', async () => {
   const x = new Set([1, 2, 3])
   await ((res) => {
