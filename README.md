@@ -6,6 +6,8 @@
 
 **Composable streaming ETL for JavaScript.**
 
+**[Read the documentation →](https://exstream-js.github.io/docs/)**
+
 Exstream connects data sources, synchronous and asynchronous transformations,
 and one or more destinations into a single backpressured pipeline. It is built
 for jobs where records may number in the millions, I/O must run concurrently
