@@ -6,16 +6,16 @@ test('an Error supplied as a source value is routed through the error channel', 
 
   const values = await _([1, reason, 2])
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(values).toEqual([1, 2])
   expect(errors).toEqual([reason])
 })
 
-test('an error-like object remains an ordinary data value', () => {
+test('an error-like object remains an ordinary data value', async () => {
   const value = { message: 'looks like an error', code: 'NOT_AN_ERROR' }
 
-  expect(_([value]).values()).toEqual([value])
+  expect(await _([value]).toArray()).toEqual([value])
 })
 
 test('pushing an Error through the data argument does not reclassify it', async () => {
@@ -28,19 +28,19 @@ test('pushing an Error through the data argument does not reclassify it', async 
       else push(null, reason)
     })
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(values).toEqual([reason])
   expect(errors).toEqual([])
 })
 
-test('an Error can be marked as data in an iterable source', () => {
+test('an Error can be marked as data in an iterable source', async () => {
   const reason = Error('business value')
 
   expect(
-    _([_.data(reason)])
+    await _([_.data(reason)])
       .map((value) => value)
-      .values(),
+      .toArray(),
   ).toEqual([reason])
 })
 
@@ -48,9 +48,9 @@ test('writeData writes an Error without routing it through the error channel', a
   const reason = Error('manual value')
   const source = _()
   const errors = []
-  const result = source.errors((error) => errors.push(error)).toPromise()
+  const result = source.errors((error) => errors.push(error)).toArray()
 
-  source.writeData(reason)
+  source.write(_.data(reason))
   source.end()
 
   await expect(result).resolves.toEqual([reason])
@@ -61,14 +61,14 @@ test('writeData rejects values after stream termination', () => {
   const source = _()
   source.end()
 
-  expect(() => source.writeData('late value')).toThrow('Cannot write to stream after nil')
+  expect(() => source.write(_.data('late value'))).toThrow('Cannot write to stream after nil')
 })
 
 test('an Error data value remains data across reliable forks', async () => {
   const reason = Error('forked value')
   const source = _([_.data(reason)])
-  const first = source.fork().toPromise()
-  const second = source.fork().toPromise()
+  const first = source.fork().toArray()
+  const second = source.fork().toArray()
 
   await expect(Promise.all([first, second])).resolves.toEqual([[reason], [reason]])
 })
@@ -80,7 +80,7 @@ test('merge does not reclassify an Error data value', async () => {
   const values = await _([_([_.data(reason)])])
     .merge()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(values).toEqual([reason])
   expect(errors).toEqual([])
@@ -94,11 +94,11 @@ test('an error record is delivered to every fork without ending data flow', asyn
   const first = source
     .fork()
     .errors((error) => firstErrors.push(error))
-    .toPromise()
+    .toArray()
   const second = source
     .fork()
     .errors((error) => secondErrors.push(error))
-    .toPromise()
+    .toArray()
 
   const [firstValues, secondValues] = await Promise.all([first, second])
 
@@ -114,7 +114,7 @@ test('a buffered error record retains its channel until consumption starts', asy
   const errors = []
   const source = _()
   source.write(reason)
-  const result = source.errors((error) => errors.push(error)).toPromise()
+  const result = source.errors((error) => errors.push(error)).toArray()
 
   source.end()
 
@@ -127,7 +127,7 @@ test('an error record overflowing an observer aborts only that observer', async 
   const source = _()
   const observer = source.observe({ bufferLimit: 0 })
   const errors = []
-  const result = source.errors((error) => errors.push(error)).toPromise()
+  const result = source.errors((error) => errors.push(error)).toArray()
 
   source.write(reason)
   source.end()
@@ -139,7 +139,7 @@ test('an error record overflowing an observer aborts only that observer', async 
 })
 
 test('merge rejects values that are not streams', async () => {
-  await expect(_([1]).merge().toPromise()).rejects.toThrow(
+  await expect(_([1]).merge().toArray()).rejects.toThrow(
     '.merge() can merge ONLY exstream instances',
   )
 })

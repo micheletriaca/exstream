@@ -2,13 +2,14 @@ vi.setConfig({ testTimeout: 2000 })
 
 const { Writable } = require('stream')
 const _ = require('../src/index.js')
+const { kResume } = require('../src/stream-control.js')
 const { waitFor } = require('./invariant-helpers.js')
 
 const controlledConsumer = (stream) => {
   const releases = []
   const values = []
   const done = new Promise((resolve, reject) => {
-    stream
+    const sink = stream
       .consume((err, value, push, next) => {
         if (err) {
           push(err)
@@ -22,7 +23,7 @@ const controlledConsumer = (stream) => {
       })
       .once('error', reject)
       .once('end', resolve)
-      .resume()
+    sink[kResume]()
   })
   return { done, releases, values }
 }
@@ -30,22 +31,18 @@ const controlledConsumer = (stream) => {
 test('a slow reliable fork stops the source and bounds run-ahead', async () => {
   const total = 20
   let produced = 0
-  const source = _((write, next) => {
-    if (produced === total) {
-      write(_.nil)
-    } else {
-      write(produced++)
-      next()
-    }
-  })
+  function* values() {
+    while (produced < total) yield produced++
+  }
+  const source = _(values())
   const fastValues = []
   const fastResult = source
-    .fork(true)
+    .fork()
     .tap((value) => fastValues.push(value))
-    .toPromise()
-  const slow = controlledConsumer(source.fork(true))
+    .toArray()
+  const slow = controlledConsumer(source.fork())
 
-  await source.start()
+  //await source.start()
 
   for (let index = 0; index < total; index++) {
     await waitFor(() => slow.releases.length > index, `slow fork did not receive item ${index}`)
@@ -64,14 +61,10 @@ test('a slow reliable fork stops the source and bounds run-ahead', async () => {
 test('a blocked observer does not slow the main flow', async () => {
   const total = 20
   let produced = 0
-  const source = _((write, next) => {
-    if (produced === total) {
-      write(_.nil)
-    } else {
-      write(produced++)
-      next()
-    }
-  })
+  function* values() {
+    while (produced < total) yield produced++
+  }
+  const source = _(values())
   const callbacks = []
   const observedValues = []
   const observerWritable = new Writable({
@@ -91,9 +84,9 @@ test('a blocked observer does not slow the main flow', async () => {
       })
       .once('error', reject)
   })
-  source.observe().pipe(observerWritable)
+  source.observe().pipeTo(observerWritable)
 
-  const mainResult = await source.toPromise()
+  const mainResult = await source.toArray()
 
   expect(mainResult).toEqual(Array.from({ length: total }, (_, index) => index))
   expect(produced).toBe(total)

@@ -1,4 +1,5 @@
 declare const exstreamDataValue: unique symbol
+declare const exstreamDestinationInput: unique symbol
 declare const exstreamLazyContext: unique symbol
 
 declare function exstream<T, C extends object>(
@@ -34,9 +35,18 @@ declare namespace exstream {
   type SortDirection = 'asc' | 'desc'
   type JoinType = 'inner' | 'left' | 'right'
   type PropertyKeyOf<T> = Extract<keyof T, PropertyKey>
+  type JoinKeySelector<T, C extends object> =
+    | ((value: T, context: CallbackContext<T, C>) => unknown)
+    | PropertyKeyOf<T>
+  type JoinKey<T, Selector> = Selector extends (...args: any[]) => infer K
+    ? K
+    : Selector extends keyof T
+      ? T[Selector]
+      : never
   type Falsy = false | 0 | '' | null | undefined
   type FlatValue<T> = T extends string ? T : T extends Iterable<infer U> ? U : T
-  type ResolvedValue<T> = T extends PromiseLike<infer U> ? Awaited<U> : never
+  type MergeValue<T> = T extends Exstream<infer U, any> ? U : never
+  type MergeContext<T> = T extends Exstream<any, infer C> ? C : never
   type ContextAddition<T> = Awaited<T> extends object ? Awaited<T> : object
   type ValueOf<S> = S extends Exstream<infer T, any> ? T : never
   type ContextOf<S> = S extends Exstream<infer T, infer C> ? CallbackContext<T, C> : never
@@ -85,6 +95,8 @@ declare namespace exstream {
     overflow?: OverflowPolicy
     /** Cancels the stream when this signal is aborted. */
     signal?: AbortSignal
+    /** Activates on downstream demand, or waits for an explicit start(). Defaults to "auto". */
+    start?: 'auto' | 'manual'
   }
 
   /** Wraps a value so an Error can travel as normal data. */
@@ -112,19 +124,18 @@ declare namespace exstream {
     off(event: string | symbol, listener: (...args: any[]) => void): this
   }
 
-  /** A Node transform returned by toNodeStream(). */
+  /** Minimal shape returned when a reusable pipeline becomes a Node Transform stream. */
   interface NodeTransformLike<Input = unknown, Output = Input>
     extends NodeReadableLike<Output>, NodeWritableLike<Input> {}
 
-  type GeneratorWrite<T> = (value: T | Error | DataValue<T> | Nil) => boolean
-  type GeneratorNext<T> = (source?: StreamSource<T>) => void
-  type StreamGenerator<T> = (write: GeneratorWrite<T>, next: GeneratorNext<T>) => void
-  type StreamSource<T> =
-    | Iterable<T>
-    | AsyncIterable<T>
-    | ReadableStream<T>
-    | NodeReadableLike<T>
-    | StreamGenerator<T>
+  type StreamSource<T> = Iterable<T> | AsyncIterable<T> | ReadableStream<T> | NodeReadableLike<T>
+
+  type DeferredStreamSource<T, C extends object = LazyRecordContext<T>> =
+    | Exstream<T, C>
+    | StreamSource<T>
+  type DeferredStreamFactory<T, C extends object = LazyRecordContext<T>> = () =>
+    | DeferredStreamSource<T, C>
+    | PromiseLike<DeferredStreamSource<T, C>>
 
   type Push<T, C extends object> = (
     error?: unknown | null,
@@ -142,11 +153,6 @@ declare namespace exstream {
     value: T | Nil,
     push: Push<U, NextContext>,
   ) => void
-
-  interface MapOptions {
-    /** Include both the input and output in each result. */
-    wrap?: boolean
-  }
 
   interface MapAsyncRetry<T, C extends object> {
     /** Number of additional attempts after the first failure. */
@@ -169,13 +175,40 @@ declare namespace exstream {
     ) => boolean | PromiseLike<boolean>
   }
 
-  interface MapAsyncOptions<T, C extends object> {
-    /** Maximum number of operations running at once. Defaults to 1. */
+  /** Chooses how a failed mapAsync attempt should continue. */
+  interface MapAsyncFailurePush<Input, Output> {
+    /** Recovers the record with a replacement output. */
+    (error: null | undefined, value: Output): void
+    /** Propagates a record error, optionally associating a replacement input with it. */
+    (error: unknown, input?: Input): void
+  }
+
+  /** Restarts the mapAsync callback, with the same input or a replacement input. */
+  interface MapAsyncRetryAttempt<Input> {
+    (): void
+    (input: Input): void
+  }
+
+  type MapAsyncOnFail<Input, Output, C extends object> = {
+    bivarianceHack(
+      error: ExstreamError<Input>,
+      input: Input,
+      push: MapAsyncFailurePush<Input, Output>,
+      attempt: number,
+      retry: MapAsyncRetryAttempt<Input>,
+      context: C,
+    ): void | PromiseLike<void>
+  }['bivarianceHack']
+
+  interface MapAsyncOptions<T, C extends object, Output = unknown> {
+    /** Maximum active operations plus completed results awaiting downstream demand. Defaults to 1. */
     concurrency?: number
     /** Keep results in input order. Defaults to true. */
     ordered?: boolean
     /** Retry policy, or a number of retries. */
     retry?: number | MapAsyncRetry<T, C> | null
+    /** Handles a failed attempt locally. Cannot be combined with retry. */
+    onFail?: MapAsyncOnFail<T, Output, C> | null
     /** Maximum time in milliseconds for each attempt. */
     timeout?: number | null
     /** Cancels this operator when aborted. */
@@ -298,6 +331,18 @@ declare namespace exstream {
   }
 
   interface ObserveOptions extends StreamOptions {}
+  interface MergeOptions {
+    /** Maximum active inner streams. Defaults to Infinity. */
+    concurrency?: number
+    /** Preserve outer-stream order. Defaults to false. */
+    ordered?: boolean
+  }
+  interface RateLimitOptions {
+    /** Maximum number of values emitted during one interval. */
+    limit: number
+    /** Window duration in milliseconds. */
+    interval: number
+  }
   interface PipeOptions {
     /** End the destination when the source ends. Defaults to true. */
     end?: boolean
@@ -308,22 +353,30 @@ declare namespace exstream {
     /** Leaves the destination open after a successful transfer. */
     preventClose?: boolean
   }
+  interface DestinationPipeOptions {
+    /** Cancels the destination and its source branch when this signal aborts. */
+    signal?: AbortSignal
+  }
+  interface DestinationContext {
+    /** Cancels when the transfer or its source branch is aborted. */
+    readonly signal: AbortSignal
+  }
   /** Describes where an error first entered an Exstream pipeline. */
   interface ErrorInfo<Input = unknown> {
     readonly origin: ErrorOrigin
     readonly stage?: string
     readonly input?: Input
   }
+
+  /** A reusable terminal consumer accepted by pipeTo(). */
+  interface Destination<Input = unknown> {
+    readonly __exstream_destination__: true
+    /** @internal Keeps the consumed value type available for inference. */
+    readonly [exstreamDestinationInput]: (input: Input) => void
+  }
   interface ToWebReadableOptions {
     signal?: AbortSignal
     strategy?: QueuingStrategy<unknown>
-  }
-  interface AsyncIteratorOptions {
-    signal?: AbortSignal
-  }
-  interface ThroughOptions {
-    /** Treat a Node stream as write-only. */
-    writable?: boolean
   }
   interface RoutedErrors<T, C extends object> {
     output: Exstream<T, C>
@@ -333,10 +386,26 @@ declare namespace exstream {
     key: K
     values: T[]
   }
-  interface SortedJoinResult<K, A, B> {
-    key: K
-    a: A | null
-    b: B | null
+  type SortedJoinResult<K, Left, Right, Type extends JoinType = JoinType> = Type extends 'inner'
+    ? { key: K; left: Left; right: Right }
+    : Type extends 'left'
+      ? { key: K; left: Left; right: Right | null }
+      : { key: K; left: Left | null; right: Right }
+  interface SortedJoinOptions<
+    Left,
+    LeftContext extends object,
+    Right,
+    RightContext extends object,
+    LeftSelector extends JoinKeySelector<Left, LeftContext>,
+    RightSelector extends JoinKeySelector<Right, RightContext>,
+    Type extends JoinType = 'inner',
+  > {
+    leftKey: LeftSelector
+    rightKey: RightSelector
+    type?: Type
+    order?:
+      | SortDirection
+      | ((left: JoinKey<Left, LeftSelector>, right: JoinKey<Right, RightSelector>) => number)
   }
 
   /** An error raised while processing one input value. */
@@ -407,12 +476,6 @@ declare namespace exstream {
     readonly bufferLimit: number
     readonly overflowPolicy: OverflowPolicy
     readonly paused: boolean
-    readonly pausedFromOutside: boolean
-    readonly pausedFromInside: boolean
-    /** The stream that feeds this stream, when connected. */
-    readonly source?: Exstream<unknown, object> | null
-    /** The last stream in a connected chain, when one is assigned. */
-    readonly endOfChain?: Exstream<unknown, object>
 
     /** Adds an event listener. */
     on(event: string | symbol, listener: (...args: any[]) => void): this
@@ -430,30 +493,20 @@ declare namespace exstream {
     removeAllListeners(event?: string | symbol): this
     /** Sets the listener warning limit where the runtime supports it. */
     setMaxListeners(count: number): this
+    /** Iterates lazily with backpressure and cancels the branch when iteration stops early. */
+    [Symbol.asyncIterator](): AsyncIterableIterator<T>
 
-    /** Writes one value. Error objects become error records; use writeData() to keep them as data. */
+    /** Writes one value. Error objects become error records; wrap them with data() to keep them as data. */
     write(value: T | Error | DataValue<T> | Nil): boolean
-    /** Writes one value as data, including Error objects. */
-    writeData(value: T): boolean
     /**
-     * Starts a source whose automatic startup was disabled, typically with `fork(true)`.
-     * This releases the producer once downstream consumers are ready; it is not a terminal
-     * consumer and the returned promise does not wait for the stream to finish. Use `drain()`
-     * to run a pipeline that has no writer or whose output should be discarded.
+     * Activates a graph created with `{ start: 'manual' }` and freezes reliable fork registration.
+     * This releases the producer once downstream consumers are ready; it is not a terminal consumer
+     * and the returned promise does not wait for the stream to finish. Use `drain()` to run a
+     * pipeline that has no writer or whose output should be discarded.
      */
     start(): Promise<void>
     /** Ends this stream after its buffered values. */
     end(): void
-    /** Stops this stream and releases its resources. */
-    destroy(): void
-    /** Cancels this stream and its connected work. */
-    abort(reason?: unknown): void
-    /** Ends the pipeline with a fatal error. */
-    fail(reason: unknown, input?: unknown): void
-    /** Pauses value delivery. */
-    pause(fromInside?: boolean): this
-    /** Resumes value delivery. */
-    resume(fromInside?: boolean): this
 
     /** Creates a custom asynchronous operator. Call next() when ready for another value. */
     consume<U = T, NextContext extends object = C>(
@@ -463,33 +516,8 @@ declare namespace exstream {
     consumeSync<U = T, NextContext extends object = C>(
       fn: SyncConsumer<T, U, C, NextContext>,
     ): Exstream<U, NextContext>
-    /** Reads the next value, using a callback when provided. */
-    pull(): Promise<T | Nil>
-    pull(
-      fn: (
-        error: ExstreamError<T> | null | undefined,
-        value: T | Nil,
-        context: C | undefined,
-      ) => void,
-    ): void
-    /** Runs a function for every value and starts the stream. */
-    each(fn: (value: T, context: C) => void): void
-
-    /** Transforms every value and keeps the input beside the output. */
-    map<U>(
-      fn: (value: T, context: CallbackContext<T, C>) => U,
-      options: { wrap: true },
-    ): Exstream<
-      U extends PromiseLike<infer R>
-        ? Promise<{ input: T; output: Awaited<R> }>
-        : { input: T; output: U },
-      MaterializedContext<C, T>
-    >
     /** Transforms every value and infers the new stream value type. */
-    map<U>(
-      fn: (value: T, context: CallbackContext<T, C>) => U,
-      options?: MapOptions | null,
-    ): Exstream<U, NextContext<C, U>>
+    map<U>(fn: (value: T, context: CallbackContext<T, C>) => U): Exstream<U, NextContext<C, U>>
     /** Adds fields to the record context without changing the value. */
     withContext(): Exstream<T, C>
     withContext<A extends object | void>(
@@ -520,34 +548,25 @@ declare namespace exstream {
     filter(fn: (value: T, context: C) => unknown): Exstream<T, C>
     /** Removes values that pass the test. */
     reject(fn: (value: T, context: C) => unknown): Exstream<T, C>
-    /** Keeps values that pass an asynchronous test. */
-    asyncFilter(fn: (value: T, context: C) => unknown | PromiseLike<unknown>): Exstream<T, C>
     /** Emits each value, then stops when the test passes. */
     stopWhen(fn: (value: T, context: C) => unknown): Exstream<T, C>
     /** Emits items from iterable values; non-iterable values pass through unchanged. */
     flatten(): Exstream<FlatValue<T>, C>
     /** Keeps only the first occurrence of each value. */
     uniq(): Exstream<T, C>
-    /** Keeps the first value for each selected key. */
-    uniqBy<K>(fn: (value: T, context: C) => K): Exstream<T, C>
-    uniqBy<K extends PropertyKeyOf<T>>(fields: K | readonly K[]): Exstream<T, C>
+    /** Keeps the first value for each key returned by the selector. */
+    uniq<K>(selector: (value: T, context: C) => K): Exstream<T, C>
+    /** Keeps the first value for each selected field or field tuple. */
+    uniq<K extends PropertyKeyOf<T>>(selector: K | readonly K[]): Exstream<T, C>
     /** Collects all values into one array. */
     collect(): Exstream<T[], AggregateOutputContext<C, T[]>>
     /** Groups values into arrays of the requested maximum size. */
     batch(size: number): Exstream<T[], AggregateOutputContext<C, T[]>>
 
-    /** Applies then() to every promise in the stream. */
-    massThen<U>(fn: (value: ResolvedValue<T>, context: C) => U): Exstream<Promise<Awaited<U>>, C>
-    /** Applies catch() to every promise in the stream. */
-    massCatch<U>(
-      fn: (error: unknown, context: C) => U,
-    ): Exstream<Promise<ResolvedValue<T> | Awaited<U>>, C>
-    /** Waits for promises, with optional parallelism and ordered output. */
-    resolve(parallelism?: number, preserveOrder?: boolean): Exstream<ResolvedValue<T>, C>
-    /** Runs an asynchronous transform with concurrency, ordering, retry and timeout controls. */
+    /** Runs an asynchronous transform with concurrency, ordering, recovery and timeout controls. */
     mapAsync<U>(
       fn: (value: T, context: C) => U | PromiseLike<U>,
-      options?: MapAsyncOptions<T, C> | null,
+      options?: MapAsyncOptions<T, C, Awaited<U>> | null,
     ): Exstream<Awaited<U>, C>
 
     /** Handles error records and can emit replacement values with push(). */
@@ -598,29 +617,17 @@ declare namespace exstream {
     drop(n: number): Exstream<T, C>
     /** Emits at most one value during each time window. */
     throttle(milliseconds: number): Exstream<T, C>
-    /** Emits no more than num values during each time window. */
-    ratelimit(num: number, milliseconds: number): Exstream<T, C>
+    /** Emits no more than limit values during each local time window. */
+    rateLimit(options: RateLimitOptions): Exstream<T, C>
 
     /** Combines all values into one result. */
-    reduce<A, F extends (accumulator: A, value: T, context: CallbackContext<T, C>) => A>(
-      fn: F,
-      initialValue: A,
-    ): Exstream<
-      A,
-      AggregateOutputContext<C, A, Parameters<F> extends [any, any, any, ...any[]] ? true : false>
-    >
-    /** Combines all values, using the first value as the initial result. */
-    reduce1<F extends (accumulator: T, value: T, context: CallbackContext<T, C>) => T>(
+    reduce<F extends (accumulator: T, value: T, context: CallbackContext<T, C>) => T>(
       fn: F,
     ): Exstream<
       T,
       AggregateOutputContext<C, T, Parameters<F> extends [any, any, any, ...any[]] ? true : false>
     >
-    /** Combines all values with an asynchronous reducer. */
-    asyncReduce<
-      A,
-      F extends (accumulator: A, value: T, context: CallbackContext<T, C>) => A | PromiseLike<A>,
-    >(
+    reduce<A, F extends (accumulator: A, value: T, context: CallbackContext<T, C>) => A>(
       fn: F,
       initialValue: A,
     ): Exstream<
@@ -635,15 +642,13 @@ declare namespace exstream {
     keyBy<K extends PropertyKey>(
       fn: ((value: T, context: C) => K) | PropertyKeyOf<T>,
     ): Exstream<Record<K, T>, AggregateContext<Record<K, T>, C>>
-    /** Sorts values using their string representation. */
-    sort(): Exstream<T, C>
-    /** Sorts values with a comparison function. */
-    sortBy(fn: (left: T, right: T, leftContext: C, rightContext: C) => number): Exstream<T, C>
+    /** Sorts values using their string representation or a comparison function. */
+    sort(compare?: (left: T, right: T, leftContext: C, rightContext: C) => number): Exstream<T, C>
 
     /** Decodes byte chunks and splits them on line endings. */
     split(encoding?: string): Exstream<string, C>
     /** Decodes byte chunks and splits them with a regular expression. */
-    splitBy(separator: RegExp, encoding?: string): Exstream<string, C>
+    split(separator: RegExp, encoding?: string): Exstream<string, C>
     /** Encodes chunks as base64 text. */
     encode(encoding: 'base64'): Exstream<string, C>
     /** Decodes base64 text into byte chunks. */
@@ -651,13 +656,6 @@ declare namespace exstream {
     /** Periodically yields to the event loop during long synchronous runs. */
     makeAsync(maxSyncExecutionTime: number): Exstream<T, C>
 
-    /** Passes values to a Node-style writable, a Web WritableStream or another Exstream. */
-    pipe<D extends NodeWritableLike<T>>(destination: D, options?: PipeOptions): D
-    pipe(destination: WritableStream<T>, options?: PipeOptions): Promise<WritableStream<T>>
-    pipe<U, NextContext extends object>(
-      destination: Exstream<U, NextContext> | Pipeline<T, U, NextContext>,
-      options?: PipeOptions,
-    ): Exstream<U, NextContext>
     /**
      * Writes every value to a destination and settles only when the transfer is complete.
      * Unhandled record errors, source failures, destination failures and cancellation reject the
@@ -667,43 +665,33 @@ declare namespace exstream {
       destination: NodeWritableLike<T> | WritableStream<T>,
       options?: PipeOptions,
     ): Promise<void>
-    /** Creates an independent consuming branch. Context objects are copied at the boundary. */
-    fork(disableAutostart?: boolean): Exstream<T, C>
+    /** Runs a reusable Exstream destination against this source. */
+    pipeTo(destination: Destination<T>, options?: DestinationPipeOptions): Promise<void>
+    /** Creates an independent consuming branch before the source graph is activated. */
+    fork(): Exstream<T, C>
     /** Creates a non-blocking branch that may drop buffered values by policy. */
     observe(options?: ObserveOptions | null): Exstream<T, C>
-    /** Connects this stream to a reusable pipeline, stream or transform function. */
+    /** Connects this stream to a reusable pipeline, transform function, or Node transform. */
     through<U>(
       target: <InputContext extends object>(
         stream: Exstream<T, InputContext>,
       ) => Exstream<U, InputContext>,
-      options?: ThroughOptions,
     ): Exstream<U, C>
     through<U, NextContext extends object>(
-      target:
-        | Pipeline<T, U, NextContext>
-        | Exstream<U, NextContext>
-        | ((stream: Exstream<T, C>) => Exstream<U, NextContext>),
-      options?: ThroughOptions,
+      target: Pipeline<T, U, NextContext> | ((stream: Exstream<T, C>) => Exstream<U, NextContext>),
     ): Exstream<U, NextContext>
-    through(target?: null | undefined, options?: ThroughOptions): Exstream<T, C>
+    through<U>(target: NodeTransformLike<T, U>): Exstream<U, C>
     /** Merges the Exstreams carried by this stream. */
     merge(
-      parallelism?: number,
-      preserveOrder?: boolean,
-    ): Exstream<
-      T extends Exstream<infer U, any> ? U : never,
-      T extends Exstream<any, infer InnerC> ? InnerC : C
-    >
-    /** Converts values to a Node Transform stream. */
-    toNodeStream(options?: object): NodeTransformLike<unknown, T>
+      this: [T] extends [Exstream<any, any>] ? Exstream<T, C> : never,
+      options?: MergeOptions | null,
+    ): Exstream<MergeValue<T>, MergeContext<T>>
+    /** Adapts this pipeline to a lazy Node readable stream. */
+    toNodeReadable(options?: object | null): NodeReadableLike<T>
     /** Converts values to a Web ReadableStream. */
     toWebReadable(options?: ToWebReadableOptions | null): ReadableStream<T>
-    /** Returns an async iterator that respects stream errors and cancellation. */
-    toAsyncIterator(options?: AsyncIteratorOptions | null): AsyncIterableIterator<T>
-    /** Collects all values and calls the callback. */
-    toArray(fn: (values: T[], context: AggregateContext<T[], C>) => void): void
-    /** Collects all values in a promise. */
-    toPromise(): Promise<T[]>
+    /** Collects every output value and settles when the pipeline completes. */
+    toArray(): Promise<T[]>
     /**
      * Runs this pipeline to completion while discarding every output value.
      * Use this terminal operation for side-effecting pipelines that have no writer, or whenever
@@ -711,12 +699,8 @@ declare namespace exstream {
      * demand and its promise settles when the pipeline finishes or encounters an unhandled error.
      */
     drain(): Promise<void>
-    /** Returns the only value, and fails when more than one value exists. */
-    value(): T | undefined | Promise<T | undefined>
-    /** Returns values synchronously and fails for an asynchronous stream. */
-    valuesSync(): T[]
-    /** Returns values now for a synchronous stream, or in a promise for an asynchronous stream. */
-    values(): T[] | Promise<T[]>
+    /** Returns the only value, undefined for empty input, and rejects when a second value arrives. */
+    single(): Promise<T | undefined>
 
     /** Keeps objects whose listed fields equal the provided values. */
     where(properties: Partial<T>): Exstream<T, C>
@@ -726,36 +710,30 @@ declare namespace exstream {
     sortedGroupBy<K>(
       fn: ((value: T, context: C) => K) | PropertyKeyOf<T>,
     ): Exstream<SortedGroup<K, T>, AggregateContext<SortedGroup<K, T>, C>>
-    /** Joins two sorted Exstreams carried by this stream. */
-    sortedJoin<K, A, B>(
-      this: Exstream<readonly [Exstream<A, object>, Exstream<B, object>], C>,
-      leftKey: ((value: A, context: object) => K) | PropertyKeyOf<A>,
-      rightKey: ((value: B, context: object) => K) | PropertyKeyOf<B>,
-      type?: JoinType,
-      direction?:
-        | SortDirection
-        | ((left: K, right: K, leftContext: object, rightContext: object) => boolean),
-      buffer?: number,
-    ): Exstream<SortedJoinResult<K, A, B>, AggregateContext<SortedJoinResult<K, A, B>, object>>
+    /** Merge-joins this sorted stream with another sorted stream. */
+    sortedJoin<
+      Right,
+      RightContext extends object,
+      LeftSelector extends JoinKeySelector<T, C>,
+      RightSelector extends JoinKeySelector<Right, RightContext>,
+      Type extends JoinType = 'inner',
+      Key = JoinKey<T, LeftSelector> | JoinKey<Right, RightSelector>,
+      Output = SortedJoinResult<Key, T, Right, Type>,
+    >(
+      right: Exstream<Right, RightContext>,
+      options: SortedJoinOptions<T, C, Right, RightContext, LeftSelector, RightSelector, Type>,
+    ): Exstream<Output, AggregateContext<Output, C | RightContext>>
   }
 
   /** A reusable list of operators that can be attached with through(). */
   interface Pipeline<Input = unknown, Output = Input, C extends object = RecordContext<Input>> {
     readonly __exstream_pipeline__: true
-    /** Creates a fresh stream containing this pipeline's operators. */
-    generateStream(): Exstream<Output, C>
+    /** Closes this operator definition into a reusable terminal destination. */
+    drain(): Destination<Input>
+    /** Creates a native Node Transform with this pipeline as its writable-to-readable body. */
+    toNodeTransform(): NodeTransformLike<Input, Output>
     /** Adds a value transform to this reusable pipeline. */
-    map<U>(
-      fn: (value: Output, context: C) => U,
-      options: { wrap: true },
-    ): Pipeline<
-      Input,
-      U extends PromiseLike<infer R>
-        ? Promise<{ input: Output; output: Awaited<R> }>
-        : { input: Output; output: U },
-      C
-    >
-    map<U>(fn: (value: Output, context: C) => U, options?: MapOptions | null): Pipeline<Input, U, C>
+    map<U>(fn: (value: Output, context: C) => U): Pipeline<Input, U, C>
     /** Adds fields to the context of this reusable pipeline. */
     withContext<A extends object | void>(
       fn: (value: Output, context: C) => A,
@@ -769,18 +747,14 @@ declare namespace exstream {
     filter(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
     /** Adds a rejecting filter. */
     reject(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
-    /** Adds an asynchronous filter. */
-    asyncFilter(
-      fn: (value: Output, context: C) => unknown | PromiseLike<unknown>,
-    ): Pipeline<Input, Output, C>
     /** Adds a stop condition. */
     stopWhen(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
     /** Adds a map followed by flatten. */
     flatMap<U>(fn: (value: Output, context: C) => U): Pipeline<Input, FlatValue<U>, C>
-    /** Adds an asynchronous transform to this reusable pipeline. */
+    /** Adds an asynchronous transform with per-record recovery to this reusable pipeline. */
     mapAsync<U>(
       fn: (value: Output, context: C) => U | PromiseLike<U>,
-      options?: MapAsyncOptions<Output, C> | null,
+      options?: MapAsyncOptions<Output, C, Awaited<U>> | null,
     ): Pipeline<Input, Awaited<U>, C>
     /** Adds a flattening step to this reusable pipeline. */
     flatten(): Pipeline<Input, FlatValue<Output>, C>
@@ -798,19 +772,16 @@ declare namespace exstream {
     ): Pipeline<Input, Omit<Output, K>, C>
     /** Adds duplicate removal. */
     uniq(): Pipeline<Input, Output, C>
-    /** Adds duplicate removal by key. */
-    uniqBy<K>(fn: (value: Output, context: C) => K): Pipeline<Input, Output, C>
+    /** Adds duplicate removal by a computed key. */
+    uniq<K>(selector: (value: Output, context: C) => K): Pipeline<Input, Output, C>
+    /** Adds duplicate removal by one field or a field tuple. */
+    uniq<K extends PropertyKeyOf<Output>>(selector: K | readonly K[]): Pipeline<Input, Output, C>
     /** Adds first-match selection. */
     find(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
     /** Adds collection into one array. */
     collect(): Pipeline<Input, Output[], AggregateContext<Output[], C>>
     /** Adds a fixed-size batching step. */
     batch(size: number): Pipeline<Input, Output[], AggregateContext<Output[], C>>
-    /** Adds promise resolution. */
-    resolve(
-      parallelism?: number,
-      preserveOrder?: boolean,
-    ): Pipeline<Input, ResolvedValue<Output>, C>
     /** Adds recoverable-error handling. */
     errors<U = Output>(
       fn: (error: ExstreamError<Output>, push: Push<U, C>, context: C) => void,
@@ -829,22 +800,20 @@ declare namespace exstream {
     slice(start: number, end?: number): Pipeline<Input, Output, C>
     /** Adds a maximum output count. */
     take(count: number): Pipeline<Input, Output, C>
+    /** Adds first-value selection. */
+    head(): Pipeline<Input, Output, C>
+    /** Adds last-value selection. */
+    last(): Pipeline<Input, Output, C>
     /** Adds an initial skip count. */
     drop(count: number): Pipeline<Input, Output, C>
     /** Adds a synchronous reducer. */
+    reduce(
+      fn: (accumulator: Output, value: Output, context: C) => Output,
+    ): Pipeline<Input, Output, AggregateContext<Output, C>>
     reduce<A>(
       fn: (accumulator: A, value: Output, context: C) => A,
       initialValue: A,
     ): Pipeline<Input, A, AggregateContext<A, C>>
-    /** Adds an asynchronous reducer. */
-    asyncReduce<A>(
-      fn: (accumulator: A, value: Output, context: C) => A | PromiseLike<A>,
-      initialValue: A,
-    ): Pipeline<Input, A, AggregateContext<A, C>>
-    /** Adds a reducer that starts with the first value. */
-    reduce1(
-      fn: (accumulator: Output, value: Output, context: C) => Output,
-    ): Pipeline<Input, Output, AggregateContext<Output, C>>
     /** Adds grouping by key. */
     groupBy<K extends PropertyKey>(
       fn: (value: Output, context: C) => K,
@@ -871,16 +840,14 @@ declare namespace exstream {
     jsonStringify<FinalProperties extends object = Record<string, unknown>>(
       options?: JsonStringifyOptions<FinalProperties> | null,
     ): Pipeline<Input, string | Uint8Array, C>
-    /** Adds string-value sorting. */
-    sort(): Pipeline<Input, Output, C>
-    /** Adds comparison sorting. */
-    sortBy(
-      fn: (left: Output, right: Output, leftContext: C, rightContext: C) => number,
+    /** Adds string-value or comparison sorting. */
+    sort(
+      compare?: (left: Output, right: Output, leftContext: C, rightContext: C) => number,
     ): Pipeline<Input, Output, C>
     /** Adds line splitting. */
     split(encoding?: string): Pipeline<Input, string, C>
     /** Adds regular-expression splitting. */
-    splitBy(separator: RegExp, encoding?: string): Pipeline<Input, string, C>
+    split(separator: RegExp, encoding?: string): Pipeline<Input, string, C>
     /** Adds base64 encoding. */
     encode(encoding: 'base64'): Pipeline<Input, string, C>
     /** Adds base64 decoding. */
@@ -890,7 +857,7 @@ declare namespace exstream {
     /** Adds output throttling. */
     throttle(milliseconds: number): Pipeline<Input, Output, C>
     /** Adds output rate limiting. */
-    ratelimit(count: number, milliseconds: number): Pipeline<Input, Output, C>
+    rateLimit(options: RateLimitOptions): Pipeline<Input, Output, C>
     /** Adds object matching. */
     where(properties: Partial<Output>): Pipeline<Input, Output, C>
     /** Adds first-object matching. */
@@ -904,18 +871,33 @@ declare namespace exstream {
       target: <InputContext extends object>(
         stream: Exstream<Output, InputContext>,
       ) => Exstream<NextOutput, InputContext>,
-      options?: ThroughOptions,
     ): Pipeline<Input, NextOutput, C>
     through<NextOutput, NextContext extends object>(
       target:
         | Pipeline<Output, NextOutput, NextContext>
         | ((stream: Exstream<Output, C>) => Exstream<NextOutput, NextContext>),
-      options?: ThroughOptions,
     ): Pipeline<Input, NextOutput, NextContext>
   }
 
   /** Creates a reusable pipeline definition. */
   function pipeline<T = unknown>(): Pipeline<T, T, RecordContext<T>>
+  /** Creates a source whose factory is invoked once, only when its graph is activated by demand. */
+  function defer<T, C extends object>(
+    factory: DeferredStreamFactory<T, C>,
+    options?: StreamOptions | null,
+  ): Exstream<T, C>
+  /** Creates a deferred source with lazily materialized record context. */
+  function defer<T>(
+    factory: DeferredStreamFactory<T>,
+    options?: StreamOptions | null,
+  ): Exstream<T, LazyRecordContext<T>>
+  /** Creates a reusable terminal destination with high-level Exstream lifecycle access. */
+  function destination<T = unknown>(
+    run: (
+      source: Exstream<T, LazyRecordContext<T>>,
+      context: DestinationContext,
+    ) => PromiseLike<void>,
+  ): Destination<T>
   /** Creates a stream from repeated events. */
   function fromEvent<Args extends unknown[], T = Args extends [infer Only] ? Only : Args>(
     target: EventTargetLike | EventEmitterLike,
@@ -924,564 +906,9 @@ declare namespace exstream {
   ): Exstream<T, RecordContext<T>> & { received: number }
   /** Wraps a value so Error objects are treated as data. */
   function data<T>(value: T): DataValue<T>
-  /** Adds a method to every Exstream instance. */
-  function extend(name: string, fn: (this: Exstream<any, any>, ...args: any[]) => unknown): void
 
-  /** Builds a curried map operator. Pass a stream as the last argument to run it immediately. */
-  function map<T, U, C extends object>(
-    fn: (value: T, context: C) => U,
-    options: MapOptions | null,
-    stream: Exstream<T, C>,
-  ): Exstream<U, C>
-  function map<T, U>(
-    fn: (value: T, context: RecordContext<T>) => U,
-    options?: MapOptions | null,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<U, C>
-  /** Builds a curried context initializer. */
-  function withContext<T, C extends object, A extends object | void>(
-    fn: ((value: T, context: C) => A) | null,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C & ContextAddition<A>>
-  function withContext<T, A extends object | void>(
-    fn?: ((value: T, context: RecordContext<T>) => A) | null,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C & ContextAddition<A>>
-  /** Builds a curried asynchronous context initializer. */
-  function extendContext<T, C extends object, A extends object | void | PromiseLike<object | void>>(
-    fn: (value: T, context: C) => A,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C & ContextAddition<A>>
-  function extendContext<T, A extends object | void | PromiseLike<object | void>>(
-    fn: (value: T, context: RecordContext<T>) => A,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C & ContextAddition<A>>
-  /** Builds a curried map followed by flatten. */
-  function flatMap<T, U, C extends object>(
-    fn: (value: T, context: C) => U,
-    stream: Exstream<T, C>,
-  ): Exstream<FlatValue<U>, C>
-  function flatMap<T, U>(
-    fn: (value: T, context: RecordContext<T>) => U,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<FlatValue<U>, C>
-  /** Builds a curried side-effect operator. */
-  function tap<T, C extends object>(
-    fn: (value: T, context: C) => unknown,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function tap<T>(
-    fn: (value: T, context: RecordContext<T>) => unknown,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Removes falsey values from a stream. */
-  function compact<T, C extends object>(stream: Exstream<T, C>): Exstream<Exclude<T, Falsy>, C>
-  /** Builds a curried first-match operator. */
-  function find<T, C extends object>(
-    fn: (value: T, context: C) => unknown,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function find<T>(
-    fn: (value: T, context: RecordContext<T>) => unknown,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried field reader. */
-  function pluck<T, K extends PropertyKeyOf<T>, C extends object>(
-    field: K,
-    defaultValue: undefined,
-    stream: Exstream<T, C>,
-  ): Exstream<T[K], C>
-  function pluck(
-    field: string,
-    defaultValue?: unknown,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<unknown, C>
-  /** Builds a curried field selection operator. */
-  function pick<T, K extends PropertyKeyOf<T>, C extends object>(
-    fields: readonly K[],
-    stream: Exstream<T, C>,
-  ): Exstream<Pick<T, K>, C>
-  function pick<K extends PropertyKey>(
-    fields: readonly K[],
-  ): <T extends Record<K, unknown>, C extends object>(
-    stream: Exstream<T, C>,
-  ) => Exstream<Pick<T, K>, C>
-  /** Builds a curried field removal operator. */
-  function omit<T, K extends PropertyKeyOf<T>, C extends object>(
-    fields: K | readonly K[],
-    stream: Exstream<T, C>,
-  ): Exstream<Omit<T, K>, C>
-  function omit<K extends PropertyKey>(
-    fields: K | readonly K[],
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<Omit<T, Extract<K, keyof T>>, C>
-  /** Builds a curried filtering operator. */
-  function filter<T, S extends T, C extends object>(
-    fn: (value: T, context: C) => value is S,
-    stream: Exstream<T, C>,
-  ): Exstream<S, C>
-  function filter<T, C extends object>(
-    fn: (value: T, context: C) => unknown,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function filter<T>(
-    fn: (value: T, context: RecordContext<T>) => unknown,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried rejecting filter. */
-  function reject<T, C extends object>(
-    fn: (value: T, context: C) => unknown,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function reject<T>(
-    fn: (value: T, context: RecordContext<T>) => unknown,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried asynchronous filter. */
-  function asyncFilter<T, C extends object>(
-    fn: (value: T, context: C) => unknown | PromiseLike<unknown>,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function asyncFilter<T>(
-    fn: (value: T, context: RecordContext<T>) => unknown | PromiseLike<unknown>,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried stop condition. */
-  function stopWhen<T, C extends object>(
-    fn: (value: T, context: C) => unknown,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function stopWhen<T>(
-    fn: (value: T, context: RecordContext<T>) => unknown,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Flattens iterable values from a stream. */
-  function flatten<T, C extends object>(stream: Exstream<T, C>): Exstream<FlatValue<T>, C>
-  /** Keeps unique values from a stream. */
-  function uniq<T, C extends object>(stream: Exstream<T, C>): Exstream<T, C>
-  /** Builds a curried unique-key operator. */
-  function uniqBy<T, K, C extends object>(
-    selector: ((value: T, context: C) => K) | PropertyKeyOf<T> | readonly PropertyKeyOf<T>[],
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function uniqBy<T>(
-    selector:
-      | ((value: T, context: RecordContext<T>) => unknown)
-      | PropertyKeyOf<T>
-      | readonly PropertyKeyOf<T>[],
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Collects a stream into one array value. */
-  function collect<T, C extends object>(
-    stream: Exstream<T, C>,
-  ): Exstream<T[], AggregateContext<T[], C>>
-  /** Builds a curried batching operator. */
-  function batch<T, C extends object>(
-    size: number,
-    stream: Exstream<T, C>,
-  ): Exstream<T[], AggregateContext<T[], C>>
-  function batch(
-    size: number,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T[], AggregateContext<T[], C>>
-  /** Builds a curried promise success handler. */
-  function massThen<T, U, C extends object>(
-    fn: (value: ResolvedValue<T>, context: C) => U,
-    stream: Exstream<T, C>,
-  ): Exstream<Promise<Awaited<U>>, C>
-  function massThen<T, U>(
-    fn: (value: ResolvedValue<T>, context: RecordContext<T>) => U,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<Promise<Awaited<U>>, C>
-  /** Builds a curried promise failure handler. */
-  function massCatch<T, U, C extends object>(
-    fn: (error: unknown, context: C) => U,
-    stream: Exstream<T, C>,
-  ): Exstream<Promise<ResolvedValue<T> | Awaited<U>>, C>
-  function massCatch<U>(
-    fn: (error: unknown, context: object) => U,
-  ): <T, C extends object>(
-    stream: Exstream<T, C>,
-  ) => Exstream<Promise<ResolvedValue<T> | Awaited<U>>, C>
-  /** Builds a curried promise resolution operator. */
-  function resolve<T, C extends object>(
-    parallelism: number,
-    preserveOrder: boolean,
-    stream: Exstream<T, C>,
-  ): Exstream<ResolvedValue<T>, C>
-  function resolve(
-    parallelism?: number,
-    preserveOrder?: boolean,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<ResolvedValue<T>, C>
-  /** Builds a curried concurrent asynchronous transform. */
-  function mapAsync<T, U, C extends object>(
-    fn: (value: T, context: C) => U | PromiseLike<U>,
-    options: MapAsyncOptions<T, C> | null,
-    stream: Exstream<T, C>,
-  ): Exstream<Awaited<U>, C>
-  function mapAsync<T, U>(
-    fn: (value: T, context: RecordContext<T>) => U | PromiseLike<U>,
-    options?: MapAsyncOptions<T, RecordContext<T>> | null,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<Awaited<U>, C>
-  /** Builds a curried error handler. */
-  function errors<T, U, C extends object>(
-    fn: (error: ExstreamError<T>, push: Push<U, C>, context: C) => void,
-    stream: Exstream<T, C>,
-  ): Exstream<T | U, C>
-  function errors<T, U>(
-    fn: (
-      error: ExstreamError<T>,
-      push: Push<U, RecordContext<T>>,
-      context: RecordContext<T>,
-    ) => void,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T | U, C>
-  /** Builds a curried error-dropping operator. */
-  function skipErrors<T, C extends object>(
-    predicate: ((error: ExstreamError<T>, input: T, context: C) => unknown) | null,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function skipErrors<T>(
-    predicate?: ((error: ExstreamError<T>, input: T, context: RecordContext<T>) => unknown) | null,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Turns error records into fatal failures. */
-  function failOnError<T, C extends object>(stream: Exstream<T, C>): Exstream<T, C>
-  /** Splits errors from normal output. */
-  function routeErrors<T, C extends object>(stream: Exstream<T, C>): RoutedErrors<T, C>
-  /** Builds a curried first-error handler. */
-  function stopOnError<T, U, C extends object>(
-    fn: (error: ExstreamError<T>, push: Push<U, C>, context: C) => void,
-    stream: Exstream<T, C>,
-  ): Exstream<T | U, C>
-  function stopOnError<T, U>(
-    fn: (
-      error: ExstreamError<T>,
-      push: Push<U, RecordContext<T>>,
-      context: RecordContext<T>,
-    ) => void,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T | U, C>
-  /** Parses CSV with a stream passed as the last argument. */
-  function csv<T, C extends object, H extends readonly PropertyKey[] | boolean = false>(
-    options: CsvOptions<H> | null,
-    stream: Exstream<T, C>,
-  ): Exstream<CsvRow<H>, C>
-  function csv<H extends readonly PropertyKey[] | boolean = false>(
-    options?: CsvOptions<H> | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<CsvRow<H>, C>
-  /** Stringifies CSV with a stream passed as the last argument. */
-  function csvStringify<T, C extends object, H extends readonly PropertyKey[] | boolean = false>(
-    options: CsvStringifyOptions<H> | null,
-    stream: Exstream<T, C>,
-  ): Exstream<string | Uint8Array, C>
-  function csvStringify<H extends readonly PropertyKey[] | boolean = false>(
-    options?: CsvStringifyOptions<H> | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string | Uint8Array, C>
-  /** Parses JSON with a stream passed as the last argument. */
-  function json<U = unknown, T = unknown, C extends object = object>(
-    options: JsonOptions | null,
-    stream: Exstream<T, C>,
-  ): Exstream<U, C>
-  function json<U = unknown>(
-    options?: JsonOptions | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<U, C>
-  /** Parses JSON Lines with a stream passed as the last argument. */
-  function jsonl<U = unknown, T = unknown, C extends object = object>(
-    options: JsonlOptions | null,
-    stream: Exstream<T, C>,
-  ): Exstream<U, C>
-  function jsonl<U = unknown>(
-    options?: JsonlOptions | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<U, C>
-  /** Stringifies JSON Lines with a stream passed as the last argument. */
-  function jsonlStringify<T, C extends object>(
-    options: JsonlStringifyOptions | null,
-    stream: Exstream<T, C>,
-  ): Exstream<string | Uint8Array, C>
-  function jsonlStringify(
-    options?: JsonlStringifyOptions | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string | Uint8Array, C>
-  /** Stringifies a streaming JSON array or envelope with a stream passed as the last argument. */
-  function jsonStringify<
-    T,
-    C extends object,
-    FinalProperties extends object = Record<string, unknown>,
-  >(
-    options: JsonStringifyOptions<FinalProperties> | null,
-    stream: Exstream<T, C>,
-  ): Exstream<string | Uint8Array, C>
-  function jsonStringify<FinalProperties extends object = Record<string, unknown>>(
-    options?: JsonStringifyOptions<FinalProperties> | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string | Uint8Array, C>
-  /** Builds a curried slice operator. */
-  function slice<T, C extends object>(
-    start: number,
-    end: number,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function slice(
-    start: number,
-    end?: number,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried first-n operator. */
-  function take<T, C extends object>(count: number, stream: Exstream<T, C>): Exstream<T, C>
-  function take(count: number): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Emits the first value from a stream. */
-  function head<T, C extends object>(stream: Exstream<T, C>): Exstream<T, C>
-  /** Emits the last value from a stream. */
-  function last<T, C extends object>(stream: Exstream<T, C>): Exstream<T, C>
-  /** Builds a curried skip-first-n operator. */
-  function drop<T, C extends object>(count: number, stream: Exstream<T, C>): Exstream<T, C>
-  function drop(count: number): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried throttling operator. */
-  function throttle<T, C extends object>(
-    milliseconds: number,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function throttle(
-    milliseconds: number,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried rate-limit operator. */
-  function ratelimit<T, C extends object>(
-    count: number,
-    milliseconds: number,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function ratelimit(
-    count: number,
-    milliseconds: number,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried reducer. */
-  function reduce<T, A, C extends object>(
-    fn: (accumulator: A, value: T, context: C) => A,
-    initialValue: A,
-    stream: Exstream<T, C>,
-  ): Exstream<A, AggregateContext<A, C>>
-  function reduce<T, A>(
-    fn: (accumulator: A, value: T, context: RecordContext<T>) => A,
-    initialValue: A,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<A, AggregateContext<A, C>>
-  /** Builds a curried reducer that starts with the first value. */
-  function reduce1<T, C extends object>(
-    fn: (accumulator: T, value: T, context: C) => T,
-    stream: Exstream<T, C>,
-  ): Exstream<T, AggregateContext<T, C>>
-  function reduce1<T>(
-    fn: (accumulator: T, value: T, context: RecordContext<T>) => T,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, AggregateContext<T, C>>
-  /** Builds a curried asynchronous reducer. */
-  function asyncReduce<T, A, C extends object>(
-    fn: (accumulator: A, value: T, context: C) => A | PromiseLike<A>,
-    initialValue: A,
-    stream: Exstream<T, C>,
-  ): Exstream<A, AggregateContext<A, C>>
-  function asyncReduce<T, A>(
-    fn: (accumulator: A, value: T, context: RecordContext<T>) => A | PromiseLike<A>,
-    initialValue: A,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<A, AggregateContext<A, C>>
-  /** Builds a curried grouping operator. */
-  function groupBy<T, K extends PropertyKey, C extends object>(
-    selector: ((value: T, context: C) => K) | PropertyKeyOf<T>,
-    stream: Exstream<T, C>,
-  ): Exstream<Record<K, T[]>, AggregateContext<Record<K, T[]>, C>>
-  function groupBy<T, K extends PropertyKey>(
-    selector: ((value: T, context: RecordContext<T>) => K) | PropertyKeyOf<T>,
-  ): <C extends object>(
-    stream: Exstream<T, C>,
-  ) => Exstream<Record<K, T[]>, AggregateContext<Record<K, T[]>, C>>
-  /** Builds a curried unique indexing operator. */
-  function keyBy<T, K extends PropertyKey, C extends object>(
-    selector: ((value: T, context: C) => K) | PropertyKeyOf<T>,
-    stream: Exstream<T, C>,
-  ): Exstream<Record<K, T>, AggregateContext<Record<K, T>, C>>
-  function keyBy<T, K extends PropertyKey>(
-    selector: ((value: T, context: RecordContext<T>) => K) | PropertyKeyOf<T>,
-  ): <C extends object>(
-    stream: Exstream<T, C>,
-  ) => Exstream<Record<K, T>, AggregateContext<Record<K, T>, C>>
-  /** Sorts one stream by string value. */
-  function sort<T, C extends object>(stream: Exstream<T, C>): Exstream<T, C>
-  /** Builds a curried comparison sort. */
-  function sortBy<T, C extends object>(
-    fn: (left: T, right: T, leftContext: C, rightContext: C) => number,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function sortBy<T>(
-    fn: (
-      left: T,
-      right: T,
-      leftContext: RecordContext<T>,
-      rightContext: RecordContext<T>,
-    ) => number,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried line splitter. */
-  function split<T, C extends object>(encoding: string, stream: Exstream<T, C>): Exstream<string, C>
-  function split(
-    encoding?: string,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string, C>
-  /** Builds a curried regular-expression splitter. */
-  function splitBy<T, C extends object>(
-    separator: RegExp,
-    encoding: string,
-    stream: Exstream<T, C>,
-  ): Exstream<string, C>
-  function splitBy(
-    separator: RegExp,
-    encoding?: string,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string, C>
-  /** Builds a curried base64 encoder. */
-  function encode<T, C extends object>(
-    encoding: 'base64',
-    stream: Exstream<T, C>,
-  ): Exstream<string, C>
-  function encode(
-    encoding: 'base64',
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<string, C>
-  /** Builds a curried base64 decoder. */
-  function decode<T, C extends object>(
-    encoding: 'base64',
-    stream: Exstream<T, C>,
-  ): Exstream<Uint8Array, C>
-  function decode(
-    encoding: 'base64',
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<Uint8Array, C>
-  /** Builds a curried event-loop yielding operator. */
-  function makeAsync<T, C extends object>(
-    milliseconds: number,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function makeAsync(
-    milliseconds: number,
-  ): <T, C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried object matcher. */
-  function where<T, C extends object>(
-    properties: Partial<T>,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function where<T>(
-    properties: Partial<T>,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried first object matcher. */
-  function findWhere<T, C extends object>(
-    properties: Partial<T>,
-    stream: Exstream<T, C>,
-  ): Exstream<T, C>
-  function findWhere<T>(
-    properties: Partial<T>,
-  ): <C extends object>(stream: Exstream<T, C>) => Exstream<T, C>
-  /** Builds a curried adjacent grouping operator for sorted input. */
-  function sortedGroupBy<T, K, C extends object>(
-    selector: ((value: T, context: C) => K) | PropertyKeyOf<T>,
-    stream: Exstream<T, C>,
-  ): Exstream<SortedGroup<K, T>, AggregateContext<SortedGroup<K, T>, C>>
-  function sortedGroupBy<T, K>(
-    selector: ((value: T, context: RecordContext<T>) => K) | PropertyKeyOf<T>,
-  ): <C extends object>(
-    stream: Exstream<T, C>,
-  ) => Exstream<SortedGroup<K, T>, AggregateContext<SortedGroup<K, T>, C>>
-  /** Joins two sorted streams passed as the final argument. */
-  function sortedJoin<K, A, B, C extends object>(
-    leftKey: ((value: A, context: object) => K) | PropertyKeyOf<A>,
-    rightKey: ((value: B, context: object) => K) | PropertyKeyOf<B>,
-    type: JoinType,
-    direction: SortDirection,
-    buffer: number,
-    stream: Exstream<readonly [Exstream<A, object>, Exstream<B, object>], C>,
-  ): Exstream<SortedJoinResult<K, A, B>, AggregateContext<SortedJoinResult<K, A, B>, object>>
-  /** Calls a callback with all values from a stream. */
-  function toArray<T, C extends object>(
-    fn: (values: T[], context: AggregateContext<T[], C>) => void,
-    stream: Exstream<T, C>,
-  ): void
-  function toArray<T>(
-    fn: (values: T[], context: AggregateContext<T[], RecordContext<T>>) => void,
-  ): <C extends object>(stream: Exstream<T, C>) => void
-  /** Collects a stream into a promise. */
-  function toPromise<T, C extends object>(stream: Exstream<T, C>): Promise<T[]>
-  /**
-   * Runs a stream to completion and discards its output without collecting it in memory.
-   * Use this terminal operation when a pipeline has no writer; use `stream.start()` instead only
-   * to release a source whose automatic startup was disabled.
-   */
-  function drain<T, C extends object>(stream: Exstream<T, C>): Promise<void>
-  /** Writes a stream to a destination and rejects when any unhandled failure reaches the terminal. */
-  function pipeTo<T, C extends object>(
-    destination: NodeWritableLike<T> | WritableStream<T>,
-    options: PipeOptions | null,
-    stream: Exstream<T, C>,
-  ): Promise<void>
-  function pipeTo<T, C extends object>(
-    destination: NodeWritableLike<T> | WritableStream<T>,
-    stream: Exstream<T, C>,
-  ): Promise<void>
-  function pipeTo<T>(
-    destination: NodeWritableLike<T> | WritableStream<T>,
-    options?: PipeOptions | null,
-  ): <C extends object>(stream: Exstream<T, C>) => Promise<void>
-  /** Converts a stream to a Node Transform. */
-  function toNodeStream<T, C extends object>(
-    options: object | undefined,
-    stream: Exstream<T, C>,
-  ): NodeTransformLike<unknown, T>
-  function toNodeStream(
-    options?: object,
-  ): <T, C extends object>(stream: Exstream<T, C>) => NodeTransformLike<unknown, T>
-  /** Converts a stream to a Web ReadableStream. */
-  function toWebReadable<T, C extends object>(
-    options: ToWebReadableOptions | null,
-    stream: Exstream<T, C>,
-  ): ReadableStream<T>
-  function toWebReadable(
-    options?: ToWebReadableOptions | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => ReadableStream<T>
-  /** Converts a stream to an async iterator. */
-  function toAsyncIterator<T, C extends object>(
-    options: AsyncIteratorOptions | null,
-    stream: Exstream<T, C>,
-  ): AsyncIterableIterator<T>
-  function toAsyncIterator(
-    options?: AsyncIteratorOptions | null,
-  ): <T, C extends object>(stream: Exstream<T, C>) => AsyncIterableIterator<T>
-
-  /** Returns true for Exstream instances. */
-  function isExstream(value: unknown): value is Exstream<unknown, RecordContext<unknown>>
-  /** Returns true for reusable Exstream pipelines. */
-  function isExstreamPipeline(value: unknown): value is Pipeline
-  /** Returns true unless the value is null or undefined. */
-  function isDefined<T>(value: T | null | undefined): value is T
-  /** Returns true when an object owns the requested field. */
-  function has<K extends PropertyKey>(value: unknown, property: K): value is Record<K, unknown>
-  /** Returns true for synchronous iterables. */
-  function isIterable<T = unknown>(value: unknown): value is Iterable<T>
-  /** Returns true for native promises. */
-  function isPromise<T = unknown>(value: unknown): value is Promise<T>
-  /** Returns true for asynchronous iterables. */
-  function isAsyncIterable<T = unknown>(value: unknown): value is AsyncIterable<T>
-  /** Returns true for functions. */
-  function isFunction(value: unknown): value is (...args: any[]) => unknown
-  /** Returns true for strings. */
-  function isString(value: unknown): value is string
-  /** Returns true for Error objects. */
-  function isError(value: unknown): value is Error
-  /** Returns true for Node-style streams. */
-  function isNodeStream(value: unknown): value is NodeReadableLike | NodeWritableLike
   /** Returns Exstream provenance metadata without replacing the original error. */
   function errorInfo<Input = unknown>(error: unknown): ErrorInfo<Input>
-  /** Converts a valid positive integer, or returns null. */
-  function asPositiveInteger(value: unknown, allowInfinity?: boolean): number | null
-  /** Converts a valid non-negative finite number, or returns null. */
-  function asNonNegativeFiniteNumber(value: unknown): number | null
-  /** Escapes special characters for use inside a regular expression. */
-  function escapeRegExp(text: string): string
-  /** Pre-fills the first arguments of a function. */
-  function partial<F extends (...args: any[]) => any>(
-    fn: F,
-    ...args: any[]
-  ): (...rest: any[]) => ReturnType<F>
-  /** Curries a function up to the requested argument count. */
-  function ncurry<F extends (...args: any[]) => any>(count: number, fn: F, ...args: any[]): unknown
-  /** Curries a function using its declared argument count. */
-  function curry<F extends (...args: any[]) => any>(fn: F, ...args: any[]): unknown
-  /** Splits a dot or bracket field path into its parts. */
-  function splitFieldPath(path: string): string[]
-  /** Reads a value by path, returning the default when it is missing. */
-  function traverse<T, D = undefined>(
-    value: T,
-    path: readonly string[],
-    defaultValue?: D,
-    index?: number,
-  ): unknown | D
-  /** Builds a function that reads one field path. */
-  function makeGetter<T = unknown, D = undefined>(
-    path: string,
-    defaultValue?: D,
-  ): (value: T) => unknown | D
-  /** Reads one field path from an object. */
-  function get<T, K extends PropertyKeyOf<T>>(object: T, field: K): T[K]
-  function get<D = undefined>(object: unknown, fieldPath: string, defaultValue?: D): unknown | D
 }
 
 export = exstream

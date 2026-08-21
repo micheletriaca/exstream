@@ -6,7 +6,7 @@ test('JSONL syntax errors remain record-scoped when the next line is safe to par
   const values = await _(['{"id":1}\ninvalid\n{"id":2}\n'])
     .jsonl()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(values).toEqual([{ id: 1 }, { id: 2 }])
   expect(errors).toHaveLength(1)
@@ -20,7 +20,7 @@ test('JSONL stringify errors remain record-scoped because no partial line was em
   const values = await _([1, void 0, 2])
     .jsonlStringify()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(values).toEqual(['1\n', '2\n'])
   expect(errors).toHaveLength(1)
@@ -36,7 +36,7 @@ test('a JSONL size violation terminates the branch even when record errors are h
   const result = _(['12345\n1\n'])
     .jsonl({ maxRecordBytes: 4 })
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   await expect(result).rejects.toMatchObject({ code: 'EXSTREAM_JSONL_MAX_RECORD_BYTES' })
   expect(errors).toHaveLength(1)
@@ -49,7 +49,7 @@ test.each([
   const errors = []
   const result = create()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   const failure = await result.catch((error) => error)
   expect(failure).toBe(errors[0])
@@ -64,7 +64,7 @@ test('JSON document stringify failures cannot be handled into a successful parti
   const result = _([1, cyclic])
     .jsonStringify()
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   const failure = await result.catch((error) => error)
   expect(failure).toBe(errors[0])

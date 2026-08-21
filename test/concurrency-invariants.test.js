@@ -3,7 +3,7 @@ vi.setConfig({ testTimeout: 2000 })
 const _ = require('../src/index.js')
 const { deferred, waitFor } = require('./invariant-helpers.js')
 
-test('resolve(n) never runs more than n promises concurrently', async () => {
+test('mapAsync never runs more than the configured concurrency', async () => {
   const parallelism = 3
   const values = Array.from({ length: 12 }, (_, index) => index)
   const releases = []
@@ -22,12 +22,12 @@ test('resolve(n) never runs more than n promises concurrently', async () => {
           })
         }),
     )
-    .resolve(parallelism, false)
-    .toPromise()
+    .mapAsync((value) => value, { concurrency: parallelism, ordered: false })
+    .toArray()
 
   await waitFor(
     () => releases.length >= parallelism,
-    'resolve() did not start the initial promise window',
+    'mapAsync() did not start the initial promise window',
   )
   expect(releases).toHaveLength(parallelism)
   expect(active).toBe(parallelism)
@@ -51,16 +51,17 @@ test('merge(n) never activates more than n source streams concurrently', async (
   let maxActive = 0
 
   const streams = values.map((value) =>
-    _(async (write) => {
-      active++
-      maxActive = Math.max(maxActive, active)
-      await new Promise((resolve) => releases.push(resolve))
-      active--
-      write(value)
-      write(_.nil)
-    }),
+    _(
+      (async function* () {
+        active++
+        maxActive = Math.max(maxActive, active)
+        await new Promise((resolve) => releases.push(resolve))
+        active--
+        yield value
+      })(),
+    ),
   )
-  const resultPromise = _(streams).merge(parallelism, false).toPromise()
+  const resultPromise = _(streams).merge({ concurrency: parallelism, ordered: false }).toArray()
 
   await waitFor(
     () => releases.length >= parallelism,
@@ -80,7 +81,7 @@ test('merge(n) never activates more than n source streams concurrently', async (
   expect([...result].sort((a, b) => a - b)).toEqual(values)
 })
 
-test('resolve preserves input order only when requested', async () => {
+test('mapAsync preserves input order only when requested', async () => {
   const values = [0, 1, 2, 3, 4]
   const orderedGates = values.map(() => deferred())
   const unorderedGates = values.map(() => deferred())
@@ -93,16 +94,16 @@ test('resolve preserves input order only when requested', async () => {
       orderedStarted.push(value)
       return orderedGates[value].promise.then(() => value)
     })
-    .resolve(3, true)
-    .toPromise()
+    .mapAsync((value) => value, { concurrency: 3, ordered: true })
+    .toArray()
   const unorderedResult = _(values)
     .map((value) => {
       unorderedStarted.push(value)
       return unorderedGates[value].promise.then(() => value)
     })
-    .resolve(3, false)
+    .mapAsync((value) => value, { concurrency: 3, ordered: false })
     .tap((value) => unorderedEmitted.push(value))
-    .toPromise()
+    .toArray()
 
   await waitFor(() => orderedStarted.length === 3 && unorderedStarted.length === 3)
 
@@ -131,21 +132,22 @@ test('ordered merge activates n streams but emits each complete stream in input 
   let active = 0
 
   const controlledStream = (name, gate) =>
-    _(async (write) => {
-      active++
-      await gate.promise
-      write(`${name}-1`)
-      write(`${name}-2`)
-      completed.push(name)
-      write(_.nil)
-    })
+    _(
+      (async function* () {
+        active++
+        await gate.promise
+        yield `${name}-1`
+        yield `${name}-2`
+        completed.push(name)
+      })(),
+    )
   const resultPromise = _([
     controlledStream('first', firstGate),
     controlledStream('second', secondGate),
   ])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .tap((value) => emitted.push(value))
-    .toPromise()
+    .toArray()
 
   await waitFor(() => active === 2, 'ordered merge did not activate both streams')
   secondGate.resolve()

@@ -1,27 +1,20 @@
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
 
-test('piping an error', () => {
+test('pipeTo rejects an unhandled error', async () => {
   const res = []
-  const errs = []
-  return new Promise((resolve) => {
+  await expect(
     _([1, 2, 3])
       .map((i) => {
         if (i > 1) throw Error('NOO')
         return i
       })
-      .pipe(h.getSlowWritable(res, 0, 10))
-      .on('error', (e) => errs.push(e))
-      .on('finish', () => {
-        resolve()
-        expect(res).toEqual([1])
-        expect(errs.length).toBe(2)
-        expect(errs[1].message).toBe('NOO')
-      })
-  })
+      .pipeTo(h.getSlowWritable(res, 0, 10)),
+  ).rejects.toThrow('NOO')
+  expect(res).toEqual([1])
 })
 
-test('piping an error with pipeline', () => {
+test('pipeTo succeeds when pipeline errors are handled', async () => {
   const res = []
   const errs = []
 
@@ -31,49 +24,36 @@ test('piping an error with pipeline', () => {
       throw Error('NOO')
     })
 
-  return new Promise((resolve) => {
-    _([1, 2, 3])
-      .through(p.generateStream())
-      .errors((e) => errs.push(e))
-      .pipe(h.getSlowWritable(res, 0, 10))
-      .on('finish', () => {
-        resolve()
-        expect(res).toEqual([])
-        expect(errs.length).toBe(3)
-        expect(errs[2].message).toBe('NOO')
-      })
-  })
+  await _([1, 2, 3])
+    .through(p)
+    .errors((e) => errs.push(e))
+    .pipeTo(h.getSlowWritable(res, 0, 10))
+  expect(res).toEqual([])
+  expect(errs.length).toBe(3)
+  expect(errs[2].message).toBe('NOO')
 })
 
 test('piping an error after promise', async () => {
   const res = []
-  const error = await new Promise((resolve) => {
-    _([1])
-      .map(async (x) => x)
-      .resolve()
-      .map(() => {
-        throw Error('an error')
-      })
-      .pipe(h.getSlowWritable(res))
-      .on('error', resolve)
-  })
-
-  expect(error.message).toBe('an error')
-})
-
-test('piping an error after promise with through', async () => {
-  const res = []
-  let err
-  await _([1])
+  const result = _([1])
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
     .map(() => {
       throw Error('an error')
     })
-    .through(h.getSlowWritable(res), { writable: true })
-    .toPromise()
-    .catch((e) => {
-      err = e
+    .pipeTo(h.getSlowWritable(res))
+
+  await expect(result).rejects.toThrow('an error')
+})
+
+test('pipeTo rejects an error after an asynchronous stage', async () => {
+  const res = []
+  const result = _([1])
+    .map(async (x) => x)
+    .mapAsync((value) => value)
+    .map(() => {
+      throw Error('an error')
     })
-  expect(err.message).toBe('an error')
+    .pipeTo(h.getSlowWritable(res))
+  await expect(result).rejects.toThrow('an error')
 })

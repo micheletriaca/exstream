@@ -1,8 +1,9 @@
 const _ = require('../src/index.js')
 const { deferred, nextTurn } = require('./invariant-helpers.js')
+const { kFail } = require('../src/stream-control.js')
 
-test('toAsyncIterator is a self-iterable pull-based async iterator', async () => {
-  const iterator = _([1, 2, 3]).toAsyncIterator()
+test('Symbol.asyncIterator returns a self-iterable pull-based async iterator', async () => {
+  const iterator = _([1, 2, 3])[Symbol.asyncIterator]()
 
   expect(iterator[Symbol.asyncIterator]()).toBe(iterator)
   expect(await iterator.next()).toEqual({ done: false, value: 1 })
@@ -12,16 +13,16 @@ test('toAsyncIterator is a self-iterable pull-based async iterator', async () =>
   expect(await iterator.next()).toEqual({ done: true, value: undefined })
 })
 
-test('toAsyncIterator supports for-await-of', async () => {
+test('Exstream supports for-await-of directly', async () => {
   const values = []
 
-  for await (const value of _([1, 2, 3]).toAsyncIterator()) values.push(value * 10)
+  for await (const value of _([1, 2, 3])) values.push(value * 10)
 
   expect(values).toEqual([10, 20, 30])
 })
 
-test('toAsyncIterator serializes concurrent next calls without reading ahead', async () => {
-  const iterator = _([1, 2, 3]).toAsyncIterator()
+test('async iteration serializes concurrent next calls without reading ahead', async () => {
+  const iterator = _([1, 2, 3])[Symbol.asyncIterator]()
 
   await expect(Promise.all([iterator.next(), iterator.next(), iterator.next()])).resolves.toEqual([
     { done: false, value: 1 },
@@ -31,15 +32,13 @@ test('toAsyncIterator serializes concurrent next calls without reading ahead', a
   await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
 })
 
-test('toAsyncIterator pulls exactly one generator record per next call', async () => {
+test('async iteration pulls exactly one source record per next call', async () => {
   let produced = 0
-  const source = _((write, next) => {
-    produced++
-    write(produced)
-    if (produced === 3) write(_.nil)
-    else next()
-  })
-  const iterator = source.toAsyncIterator()
+  function* values() {
+    while (produced < 3) yield ++produced
+  }
+  const source = _(values())
+  const iterator = source[Symbol.asyncIterator]()
 
   await nextTurn()
   expect(produced).toBe(0)
@@ -59,7 +58,7 @@ test('return releases an iterator branch and cancels its active record context',
     signal = context.signal
     return value
   })
-  const iterator = source.toAsyncIterator()
+  const iterator = source[Symbol.asyncIterator]()
 
   await expect(iterator.next()).resolves.toEqual({ done: false, value: 1 })
   await expect(iterator.return('finished')).resolves.toEqual({ done: true, value: 'finished' })
@@ -73,7 +72,7 @@ test('return releases an iterator branch and cancels its active record context',
 test('breaking from for-await-of releases the source', async () => {
   const source = _([1, 2, 3])
 
-  for await (const value of source.toAsyncIterator()) {
+  for await (const value of source) {
     expect(value).toBe(1)
     break
   }
@@ -83,7 +82,7 @@ test('breaking from for-await-of releases the source', async () => {
 
 test('a record error rejects iteration and closes the iterator branch', async () => {
   const reason = Error('record failure')
-  const iterator = _([1, reason, 2]).toAsyncIterator()
+  const iterator = _([1, reason, 2])[Symbol.asyncIterator]()
 
   await expect(iterator.next()).resolves.toEqual({ done: false, value: 1 })
   await expect(iterator.next()).rejects.toBe(reason)
@@ -93,10 +92,10 @@ test('a record error rejects iteration and closes the iterator branch', async ()
 test('a fatal graph failure rejects a pending iterator read with the same reason', async () => {
   const reason = Error('fatal source')
   const source = _()
-  const iterator = source.toAsyncIterator()
+  const iterator = source[Symbol.asyncIterator]()
   const pending = iterator.next()
 
-  source.fail(reason, 'input')
+  source[kFail](reason, 'input')
 
   await expect(pending).rejects.toBe(reason)
   await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
@@ -107,11 +106,13 @@ test('an external signal aborts a pending iterator read and releases the source'
   const controller = new AbortController()
   const reason = Error('cancel iterator')
   const started = deferred()
-  const source = _(async () => {
+  async function* values() {
     started.resolve()
     await new Promise(() => {})
-  })
-  const iterator = source.toAsyncIterator({ signal: controller.signal })
+    yield 1
+  }
+  const source = _(values(), { signal: controller.signal })
+  const iterator = source[Symbol.asyncIterator]()
   const pending = iterator.next()
 
   await started.promise
@@ -127,7 +128,11 @@ test('a pre-aborted signal prevents the iterator source from starting', async ()
   const reason = Error('already aborted')
   const sourceStarted = vi.fn()
   controller.abort(reason)
-  const iterator = _(async () => sourceStarted()).toAsyncIterator({ signal: controller.signal })
+  async function* values() {
+    sourceStarted()
+    yield 1
+  }
+  const iterator = _(values(), { signal: controller.signal })[Symbol.asyncIterator]()
 
   await expect(iterator.next()).rejects.toBe(reason)
   expect(sourceStarted).not.toHaveBeenCalled()
@@ -137,7 +142,7 @@ test('a pre-aborted signal prevents the iterator source from starting', async ()
 test('throw aborts the iterator branch and rejects with the supplied reason', async () => {
   const reason = Error('consumer failure')
   const source = _()
-  const iterator = source.toAsyncIterator()
+  const iterator = source[Symbol.asyncIterator]()
 
   await expect(iterator.throw(reason)).rejects.toBe(reason)
   expect(source.state).toBe('aborted')
@@ -147,7 +152,7 @@ test('throw aborts the iterator branch and rejects with the supplied reason', as
 
 test('return resolves a pending read and does not leave the source active', async () => {
   const source = _()
-  const iterator = source.toAsyncIterator()
+  const iterator = source[Symbol.asyncIterator]()
   const pending = iterator.next()
 
   await iterator.return()
@@ -156,9 +161,9 @@ test('return resolves a pending read and does not leave the source active', asyn
   expect(source.state).toBe('destroyed')
 })
 
-test('toAsyncIterator removes an external abort listener after normal completion', async () => {
+test('async iteration removes an external abort listener after normal completion', async () => {
   const controller = new AbortController()
-  const iterator = _([1]).toAsyncIterator({ signal: controller.signal })
+  const iterator = _([1], { signal: controller.signal })[Symbol.asyncIterator]()
 
   await iterator.next()
   await iterator.next()
@@ -166,16 +171,4 @@ test('toAsyncIterator removes an external abort listener after normal completion
   await nextTurn()
 
   expect(await iterator.next()).toEqual({ done: true, value: undefined })
-})
-
-test.each([null, [], 1])('toAsyncIterator validates options: %j', (options) => {
-  if (options === null) {
-    expect(() => _([]).toAsyncIterator(options)).not.toThrow()
-  } else {
-    expect(() => _([]).toAsyncIterator(options)).toThrow('options must be an object')
-  }
-})
-
-test('toAsyncIterator validates its external signal', () => {
-  expect(() => _([]).toAsyncIterator({ signal: {} })).toThrow('signal must be an AbortSignal')
 })

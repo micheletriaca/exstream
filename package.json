@@ -1,6 +1,6 @@
 {
   "name": "exstream.js",
-  "version": "0.34.0",
+  "version": "1.0.0",
   "description": "Composable streaming ETL pipelines for JavaScript",
   "keywords": [
     "async",
@@ -22,6 +22,7 @@
     "url": "https://github.com/micheletriaca/exstream"
   },
   "files": [
+    "dist",
     "src",
     "types",
     "CHANGELOG.md",
@@ -36,6 +37,8 @@
     "./src/node-runtime.js": "./src/web-runtime.js"
   },
   "types": "types/index.d.ts",
+  "unpkg": "dist/exstream.iife.min.js",
+  "jsdelivr": "dist/exstream.iife.min.js",
   "exports": {
     ".": {
       "types": "./types/index.d.ts",
@@ -67,6 +70,8 @@
     }
   },
   "scripts": {
+    "build:browser": "node scripts/build-browser.mjs",
+    "prepack": "npm run build:browser",
     "test": "vitest run --coverage && npm run test:types",
     "ci:test": "vitest run --coverage && npm run test:types",
     "test:browser": "node test/browser/run-browser-tests.mjs",
@@ -79,6 +84,7 @@
     "benchmark:csv:smoke": "node test/benchmarks/streaming-csv.mjs --preset=smoke --no-write",
     "benchmark:csv:stream": "node test/benchmarks/streaming-csv.mjs --preset=quick",
     "benchmark:json": "node test/benchmarks/streaming-json.mjs",
+    "benchmark:runtime": "node test/benchmarks/runtime-parity.mjs",
     "benchmark:update": "node test/benchmarks/update-baseline.mjs",
     "lint": "oxlint --report-unused-disable-directives-severity=error --deny-warnings .",
     "lint:fix": "oxlint --fix .",

@@ -1,11 +1,12 @@
 const { EventEmitter } = require('events')
 const _ = require('../src/index.js')
 const { nextTurn } = require('./invariant-helpers.js')
+const { kDestroy } = require('../src/stream-control.js')
 
 test('fromEvent consumes EventEmitter payloads and unsubscribes on end', async () => {
   const emitter = new EventEmitter()
   const source = _.fromEvent(emitter, 'row')
-  const result = source.toPromise()
+  const result = source.toArray()
 
   emitter.emit('row', 1)
   emitter.emit('row', 2)
@@ -23,7 +24,7 @@ test('fromEvent consumes EventTarget events through a mapper', async () => {
     error: false,
     map: (event) => event.data,
   })
-  const result = source.toPromise()
+  const result = source.toArray()
 
   target.dispatchEvent(new MessageEvent('row', { data: 1 }))
   target.dispatchEvent(new MessageEvent('row', { data: 2 }))
@@ -37,7 +38,7 @@ test('fromEvent treats Error payloads as data', async () => {
   const emitter = new EventEmitter()
   const reason = Error('business value')
   const source = _.fromEvent(emitter, 'row')
-  const result = source.toPromise()
+  const result = source.toArray()
 
   emitter.emit('row', reason)
   emitter.emit('end')
@@ -48,7 +49,7 @@ test('fromEvent treats Error payloads as data', async () => {
 test('fromEvent preserves multiple EventEmitter arguments by default', async () => {
   const emitter = new EventEmitter()
   const source = _.fromEvent(emitter, 'row')
-  const result = source.toPromise()
+  const result = source.toArray()
 
   emitter.emit('row', 1, 'Ada')
   emitter.emit('end')
@@ -64,7 +65,7 @@ test('fromEvent mapper failures abort the source and unsubscribe', async () => {
       throw reason
     },
   })
-  const result = source.toPromise()
+  const result = source.toArray()
 
   emitter.emit('row', 1)
 
@@ -77,7 +78,7 @@ test('fromEvent maps its configured error event to a fatal graph failure', async
   const emitter = new EventEmitter()
   const reason = Error('source failure')
   const source = _.fromEvent(emitter, 'row')
-  const result = source.toPromise()
+  const result = source.toArray()
 
   emitter.emit('error', reason)
 
@@ -90,7 +91,7 @@ test('fromEvent unwraps an EventTarget error event', async () => {
   const target = new EventTarget()
   const reason = Error('wrapped target failure')
   const source = _.fromEvent(target, 'row')
-  const result = source.toPromise()
+  const result = source.toArray()
   const event = new Event('error')
   event.error = reason
 
@@ -113,7 +114,7 @@ test('fromEvent pauses and resumes a pausable producer with source backpressure'
   expect(source.buffered).toBe(1)
   expect(emitter.pause).toHaveBeenCalledOnce()
 
-  const result = source.toPromise()
+  const result = source.toArray()
   await nextTurn()
   expect(emitter.resume).toHaveBeenCalledOnce()
 
@@ -134,7 +135,7 @@ test('fromEvent pauses a pausable producer only once while its buffer remains fu
   emitter.emit('row', 2)
 
   expect(emitter.pause).toHaveBeenCalledOnce()
-  const result = source.toPromise()
+  const result = source.toArray()
   emitter.emit('end')
   await expect(result).resolves.toEqual([1, 2])
 })
@@ -155,7 +156,7 @@ test.each([
   expect(source.peakBuffered).toBe(2)
   expect(source.dropped).toBe(1)
 
-  const result = source.toPromise()
+  const result = source.toArray()
   emitter.emit('end')
   await expect(result).resolves.toEqual(expected)
 })
@@ -178,7 +179,7 @@ test('fromEvent abort signal unsubscribes before later events', async () => {
   const controller = new AbortController()
   const reason = Error('cancel events')
   const source = _.fromEvent(emitter, 'row', { signal: controller.signal })
-  const result = source.toPromise()
+  const result = source.toArray()
 
   emitter.emit('row', 1)
   controller.abort(reason)
@@ -193,7 +194,7 @@ test('fromEvent destruction unsubscribes every source listener', () => {
   const emitter = new EventEmitter()
   const source = _.fromEvent(emitter, 'row', { end: 'complete', error: 'failed' })
 
-  source.destroy()
+  source[kDestroy]()
 
   expect(emitter.eventNames()).toEqual([])
 })
@@ -201,7 +202,7 @@ test('fromEvent destruction unsubscribes every source listener', () => {
 test('fromEvent allows end and error listeners to be disabled explicitly', async () => {
   const emitter = new EventEmitter()
   const source = _.fromEvent(emitter, 'row', { end: false, error: false })
-  const result = source.toPromise()
+  const result = source.toArray()
 
   emitter.emit('row', 1)
   source.end()

@@ -14,6 +14,39 @@ Regenerate `baseline.json` after an intentional performance change:
 npm run benchmark:update
 ```
 
+## Node and browser runtime parity
+
+The runtime parity harness executes the same verified reduction in Node and in a
+Chrome module worker. It covers a synchronous iterable, an immediately resolving
+async iterable, and a Web `ReadableStream`. Each sample verifies both the exact
+record count and the reduced value before its timing is accepted.
+
+```shell
+npm run benchmark:runtime
+```
+
+The report prints each median and the Chrome-worker/Node ratio. The default
+parity band is symmetric, from `0.2x` through `5x`; it rejects either runtime
+being more than five times slower than its sibling. Classification is
+informational by default; use `--assert-order` to make a mismatch fail the
+command:
+
+```shell
+npm run benchmark:runtime -- --assert-order
+```
+
+The workload and sampling policy can be changed without making the two runtimes
+diverge:
+
+```shell
+npm run benchmark:runtime -- --records=5000 --runs=5 --warmups=2 --max-ratio=5
+```
+
+Use `--json` for the complete raw samples and runtime metadata. Chrome or
+Chromium is required; set `CHROME_BIN` when it is not installed in one of the
+standard locations. Browser and Node measurements run sequentially so they do
+not contend for the same CPU during a sample.
+
 ## Reproducible CSV comparison
 
 The CSV harness compares Exstream with the exact Node CSV, Fast-CSV, CSV Parser,

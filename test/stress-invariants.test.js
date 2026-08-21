@@ -3,6 +3,7 @@ vi.setConfig({ testTimeout: 5000 })
 const { finished } = require('stream/promises')
 const { Writable } = require('stream')
 const _ = require('../src/index.js')
+const { kDestroy } = require('../src/stream-control.js')
 const { nextTurn, waitFor } = require('./invariant-helpers.js')
 
 test('reliable fan-out remains bounded with a slow writer over many records', async () => {
@@ -12,14 +13,10 @@ test('reliable fan-out remains bounded with a slow writer over many records', as
   let maxPendingWrites = 0
   const slowValues = []
   const fastValues = []
-  const source = _((write, next) => {
-    if (produced === total) {
-      write(_.nil)
-    } else {
-      write(produced++)
-      next()
-    }
-  })
+  function* values() {
+    while (produced < total) yield produced++
+  }
+  const source = _(values(), { start: 'manual' })
   const slowWriter = new Writable({
     objectMode: true,
     highWaterMark: 1,
@@ -33,11 +30,11 @@ test('reliable fan-out remains bounded with a slow writer over many records', as
     },
   })
   const slowDone = finished(slowWriter, { cleanup: true })
-  source.fork(true).pipe(slowWriter)
+  source.fork().pipeTo(slowWriter)
   const fastResult = source
-    .fork(true)
+    .fork()
     .tap((value) => fastValues.push(value))
-    .toPromise()
+    .toArray()
 
   await source.start()
   await slowDone
@@ -70,7 +67,7 @@ test('a late transform error drains through a backpressured writer without data 
       return value
     })
     .errors((error) => errors.push(error))
-    .pipe(destination)
+    .pipeTo(destination)
 
   await destinationDone
 
@@ -93,18 +90,18 @@ test('destroy terminates a backpressured fork/merge graph without later activity
     },
   })
   const destinationDone = finished(destination, { cleanup: true })
-  const source = _((write, next) => {
-    write(produced++)
-    next()
-  })
-  const first = source.fork(true).map((value) => `a${value}`)
-  const second = source.fork(true).map((value) => `b${value}`)
-  const merged = _([first, second]).merge(2, false)
-  merged.pipe(destination)
+  function* values() {
+    while (true) yield produced++
+  }
+  const source = _(values(), { start: 'manual' })
+  const first = source.fork().map((value) => `a${value}`)
+  const second = source.fork().map((value) => `b${value}`)
+  const merged = _([first, second]).merge({ concurrency: 2, ordered: false })
+  merged.pipeTo(destination)
 
   await source.start()
   await waitFor(() => callbacks.length === 1, 'destination did not apply backpressure')
-  merged.destroy()
+  merged[kDestroy]()
   const producedAtDestroy = produced
   callbacks[0]()
 
@@ -124,9 +121,9 @@ test('repeated fork/merge lifecycles do not accumulate listeners', async () => {
     const source = _([1, 2, 3])
     const first = source.fork().map((value) => value * 2)
     const second = source.fork().map((value) => value * 3)
-    const merged = _([first, second]).merge(2, false)
+    const merged = _([first, second]).merge({ concurrency: 2, ordered: false })
 
-    expect(await merged.toPromise()).toHaveLength(6)
+    expect(await merged.toArray()).toHaveLength(6)
     for (const stream of [source, first, second, merged]) {
       expect(stream.eventNames()).toEqual([])
     }

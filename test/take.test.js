@@ -5,44 +5,37 @@ const h = require('./helpers')
   This is a rare edge case in which a paused .take() ends with remaining data in buffer,
   causing an infinite end loop fixed destroying the stream instead of ending it in .slice()
 */
-test('overpushing a paused take', () =>
-  new Promise((resolve) => {
-    const res = []
-    _([1, 2, 3, 4, 5, 6])
-      .collect()
-      .flatten()
-      .take(2)
-      .pipe(h.getSlowWritable(res, 0, 0))
-      .on('finish', () => {
-        resolve()
-        expect(res).toEqual([1, 2])
-      })
-  }))
+test('overpushing a paused take', async () => {
+  const res = []
+  await _([1, 2, 3, 4, 5, 6])
+    .collect()
+    .flatten()
+    .take(2)
+    .pipeTo(h.getSlowWritable(res, 0, 0))
+  expect(res).toEqual([1, 2])
+})
 
-test('fork and back pressure', () =>
-  new Promise((resolve) => {
-    const res = []
-    const stream = _([1, 2, 3, 4, 5]).map(String)
-    // stream.on('end', () => console.log('stream end'))
-    const l = stream.fork()
-    const r = stream.fork()
-    r // .on('end', () => console.log('r end'))
-      .take(2)
-      // .on('end', () => console.log('r take end'))
-      .pipe(h.getSlowWritable(res, 0))
-    // .on('finish', () => console.log('r finish'))
-    l.on('end', () => {
-      // console.log('l end')
-      resolve()
-      expect(res).toEqual(['1', '1', '2', '2', '3', '4', '5'])
-    }).pipe(h.getSlowWritable(res, 0))
-    // .on('finish', () => console.log('l finish'))
-  }))
+test('fork and back pressure', async () => {
+  const res = []
+  const stream = _([1, 2, 3, 4, 5]).map(String)
+  // stream.on('end', () => console.log('stream end'))
+  const l = stream.fork()
+  const r = stream.fork()
+  const rightDone = r // .on('end', () => console.log('r end'))
+    .take(2)
+    // .on('end', () => console.log('r take end'))
+    .pipeTo(h.getSlowWritable(res, 0))
+  // .on('finish', () => console.log('r finish'))
+  const leftDone = l.pipeTo(h.getSlowWritable(res, 0))
+  // .on('finish', () => console.log('l finish'))
+  await Promise.all([rightDone, leftDone])
+  expect(res).toEqual(['1', '1', '2', '2', '3', '4', '5'])
+})
 
-test('slice validation', () => {
+test('slice validation', async () => {
   let e = null
   try {
-    _([1, 2, 3, 4, 5]).slice(3, 2).values()
+    await _([1, 2, 3, 4, 5]).slice(3, 2).toArray()
   } catch (ex) {
     e = ex
   }
@@ -73,17 +66,17 @@ test('slice parameter validation', () => {
   expect(ex.message).toBe('error in .slice(). start and end must be numbers')
 })
 
-test('head', () => {
-  const res = _([1, 2, 3]).head().value()
+test('head', async () => {
+  const res = await _([1, 2, 3]).head().single()
   expect(res).toBe(1)
 })
 
-test('last', () => {
-  const res = _([1, 2, 3]).last().value()
+test('last', async () => {
+  const res = await _([1, 2, 3]).last().single()
   expect(res).toBe(3)
 })
 
-test('last without source', () => {
-  const res = _([]).last().values()
+test('last without source', async () => {
+  const res = await _([]).last().toArray()
   expect(res).toEqual([])
 })

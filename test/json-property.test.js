@@ -40,24 +40,24 @@ const randomChunks = (text) => {
   return chunks
 }
 
-test('json matches JSON.parse over varied documents and arbitrary chunk boundaries', () => {
+test('json matches JSON.parse over varied documents and arbitrary chunk boundaries', async () => {
   for (let iteration = 0; iteration < 300; iteration++) {
     const expected = jsonValue()
     const input = JSON.stringify(expected)
-    expect(_(randomChunks(input)).json().values()).toEqual([expected])
+    expect(await _(randomChunks(input)).json().toArray()).toEqual([expected])
   }
 })
 
-test('json wildcard selection matches a reference selector over varied documents', () => {
+test('json wildcard selection matches a reference selector over varied documents', async () => {
   for (let iteration = 0; iteration < 200; iteration++) {
     const rows = Array.from({ length: Math.floor(random() * 8) }, () => jsonValue(2))
     const document = { metadata: jsonValue(2), payload: { rows }, tail: jsonValue(2) }
     const input = JSON.stringify(document)
-    expect(_(randomChunks(input)).json({ path: '$.payload.rows[*]' }).values()).toEqual(rows)
+    expect(await _(randomChunks(input)).json({ path: '$.payload.rows[*]' }).toArray()).toEqual(rows)
   }
 })
 
-test('json path state matches reference selectors across depths and container shapes', () => {
+test('json path state matches reference selectors across depths and container shapes', async () => {
   for (let iteration = 0; iteration < 100; iteration++) {
     const rows = Array.from({ length: Math.floor(random() * 8) }, () => jsonValue(2))
     const groups = Array.from({ length: Math.floor(random() * 5) }, () => ({
@@ -76,14 +76,14 @@ test('json path state matches reference selectors across depths and container sh
     ]
 
     for (const [path, expected] of selections) {
-      expect(_(randomChunks(input)).json({ path }).values()).toEqual(expected)
+      expect(await _(randomChunks(input)).json({ path }).toArray()).toEqual(expected)
     }
   }
 })
 
-test('jsonl matches JSON.parse for varied records and byte-at-a-time input', () => {
+test('jsonl matches JSON.parse for varied records and byte-at-a-time input', async () => {
   const records = Array.from({ length: 100 }, () => jsonValue())
   const input = records.map((value) => JSON.stringify(value)).join('\r\n')
   const chunks = [...Buffer.from(input)].map((byte) => Buffer.from([byte]))
-  expect(_(chunks).jsonl().values()).toEqual(records)
+  expect(await _(chunks).jsonl().toArray()).toEqual(records)
 })

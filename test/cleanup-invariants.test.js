@@ -1,8 +1,8 @@
 vi.setConfig({ testTimeout: 2000 })
 
-const { finished } = require('stream/promises')
 const { Writable } = require('stream')
 const _ = require('../src/index.js')
+const { kDestroy, kResume } = require('../src/stream-control.js')
 const { nextTurn, waitFor } = require('./invariant-helpers.js')
 
 const listenerSnapshot = (emitter, events) =>
@@ -27,19 +27,18 @@ const writableWithSentinels = () => {
   }
 }
 
-test('pipe removes every listener it installs on a destination', async () => {
+test('pipeTo removes every listener it installs on a destination', async () => {
   const { destination, events, removeSentinels } = writableWithSentinels()
   const baseline = listenerSnapshot(destination, events)
 
-  _([1, 2, 3]).pipe(destination)
-  await finished(destination, { cleanup: true })
+  await _([1, 2, 3]).pipeTo(destination)
   await nextTurn()
 
   expect(listenerSnapshot(destination, events)).toEqual(baseline)
   removeSentinels()
 })
 
-test('destroying a destination early stops its source and removes pipe listeners', async () => {
+test('destroying a destination early aborts its source and removes pipeTo listeners', async () => {
   let close
   const closed = new Promise((resolve) => {
     close = resolve
@@ -55,28 +54,28 @@ test('destroying a destination early stops its source and removes pipe listeners
   destination.on('close', close)
   const baseline = listenerSnapshot(destination, events)
   let produced = 0
-  const source = _((write, next) => {
-    write(produced++)
-    next()
-  })
+  function* values() {
+    while (true) yield produced++
+  }
+  const source = _(values())
 
-  source.pipe(destination)
+  const transfer = source.pipeTo(destination)
   await closed
+  await expect(transfer).rejects.toMatchObject({ code: 'ERR_STREAM_PREMATURE_CLOSE' })
   await nextTurn()
 
-  expect(source.state).toBe('destroyed')
+  expect(source.state).toBe('aborted')
   expect(produced).toBe(1)
   expect(listenerSnapshot(destination, events)).toEqual(baseline)
   destination.off('close', close)
 })
 
-test('pipe with end disabled releases destination listeners when its source ends', async () => {
+test('pipeTo with end disabled releases destination listeners when its source ends', async () => {
   const { destination, events, removeSentinels } = writableWithSentinels()
   const baseline = listenerSnapshot(destination, events)
   const source = _([1, 2, 3])
 
-  source.pipe(destination, { end: false })
-  await new Promise((resolve) => source.once('end', resolve))
+  await source.pipeTo(destination, { end: false })
   await nextTurn()
 
   expect(destination.writableEnded).toBe(false)
@@ -85,26 +84,13 @@ test('pipe with end disabled releases destination listeners when its source ends
   destination.destroy()
 })
 
-test('through writable removes every listener it installs on a destination', async () => {
-  const { destination, events, removeSentinels } = writableWithSentinels()
-  const baseline = listenerSnapshot(destination, events)
-
-  _([1, 2, 3]).through(destination, { writable: true })
-  await finished(destination, { cleanup: true })
-  await nextTurn()
-  await nextTurn()
-
-  expect(listenerSnapshot(destination, events)).toEqual(baseline)
-  removeSentinels()
-})
-
 test('fork and merge release stream listeners after completion', async () => {
   const source = _([1, 2, 3, 4])
   const first = source.fork().map((value) => value * 2)
   const second = source.fork().map((value) => value * 3)
-  const merged = _([first, second]).merge(2, false)
+  const merged = _([first, second]).merge({ concurrency: 2, ordered: false })
 
-  expect(await merged.toPromise()).toHaveLength(8)
+  expect(await merged.toArray()).toHaveLength(8)
   await nextTurn()
 
   for (const stream of [source, first, second, merged]) {
@@ -113,7 +99,7 @@ test('fork and merge release stream listeners after completion', async () => {
   }
 })
 
-test('destroy prevents pending resolve work from starting more tasks', async () => {
+test('destroy prevents pending mapAsync work from starting more tasks', async () => {
   const started = []
   const releases = []
   const received = []
@@ -125,17 +111,16 @@ test('destroy prevents pending resolve work from starting more tasks', async () 
           releases.push(() => resolve(value))
         }),
     )
-    .resolve(2, false)
-  resolved
-    .consumeSync((err, value, push) => {
-      if (err) push(err)
-      else if (value === _.nil) push(null, _.nil)
-      else received.push(value)
-    })
-    .resume()
+    .mapAsync((value) => value, { concurrency: 2, ordered: false })
+  const sink = resolved.consumeSync((err, value, push) => {
+    if (err) push(err)
+    else if (value === _.nil) push(null, _.nil)
+    else received.push(value)
+  })
+  sink[kResume]()
 
-  await waitFor(() => started.length === 2, 'resolve() did not fill its initial window')
-  resolved.destroy()
+  await waitFor(() => started.length === 2, 'mapAsync() did not fill its initial window')
+  resolved[kDestroy]()
   for (const release of releases) release()
   await nextTurn()
   await nextTurn()
@@ -146,14 +131,14 @@ test('destroy prevents pending resolve work from starting more tasks', async () 
   expect(resolved.eventNames()).toEqual([])
 })
 
-test('destroy clears a pending ratelimit timer', () => {
+test('destroy clears a pending rateLimit timer', () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   try {
-    const limited = _([1, 2]).ratelimit(1, 1000)
-    limited.resume()
+    const limited = _([1, 2]).rateLimit({ limit: 1, interval: 1000 })
+    limited[kResume]()
 
     expect(vi.getTimerCount()).toBe(1)
-    limited.destroy()
+    limited[kDestroy]()
     expect(vi.getTimerCount()).toBe(0)
   } finally {
     vi.useRealTimers()
@@ -166,11 +151,76 @@ test('destroy cancels a pending makeAsync turn', () => {
   clock.mockReturnValueOnce(0).mockReturnValueOnce(1)
   try {
     const asynchronous = _([1, 2]).makeAsync(0)
-    asynchronous.resume()
+    asynchronous[kResume]()
 
     expect(vi.getTimerCount()).toBe(1)
-    asynchronous.destroy()
+    asynchronous[kDestroy]()
     expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    clock.mockRestore()
+    vi.useRealTimers()
+  }
+})
+
+test('makeAsync counts work performed by the first record after a yielded turn', async () => {
+  vi.useFakeTimers({ toFake: ['setImmediate', 'clearImmediate'] })
+  let now = 0
+  const clock = vi.spyOn(globalThis.performance, 'now').mockImplementation(() => now)
+  const received = []
+  try {
+    const asynchronous = _([1, 2, 3]).makeAsync(5)
+    const sink = asynchronous.consumeSync((error, value) => {
+      if (error || value === _.nil) return
+      received.push(value)
+      now += 6
+    })
+    sink[kResume]()
+
+    expect(received).toEqual([1])
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersToNextTimer()
+    await Promise.resolve()
+    expect(received).toEqual([1, 2])
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersToNextTimer()
+    await Promise.resolve()
+    expect(received).toEqual([1, 2, 3])
+    sink[kDestroy]()
+  } finally {
+    clock.mockRestore()
+    vi.useRealTimers()
+  }
+})
+
+test('makeAsync applies its time budget to record errors', () => {
+  vi.useFakeTimers({ toFake: ['setImmediate', 'clearImmediate'] })
+  const clock = vi.spyOn(globalThis.performance, 'now').mockReturnValue(0)
+  const received = []
+  try {
+    const source = _()
+    const asynchronous = source.makeAsync(0)
+    const sink = asynchronous.consume((error, value, push, next) => {
+      if (value === _.nil) push(null, _.nil)
+      else {
+        received.push(error)
+        next()
+      }
+    })
+    sink[kResume]()
+
+    const first = Error('first')
+    const second = Error('second')
+    source.write(first)
+    source.write(second)
+
+    expect(received).toEqual([first])
+    expect(vi.getTimerCount()).toBe(1)
+
+    vi.advanceTimersToNextTimer()
+    expect(received).toEqual([first, second])
+    sink[kDestroy]()
   } finally {
     clock.mockRestore()
     vi.useRealTimers()

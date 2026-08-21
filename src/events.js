@@ -1,4 +1,6 @@
 const { Exstream } = require('./exstream.js')
+const { dataValue } = require('./protocol.js')
+const { kFail } = require('./stream-control.js')
 
 const asEventInterface = (target) => {
   if (
@@ -48,6 +50,7 @@ const fromEvent = (target, event, options = null) => {
     bufferLimit: highWaterMark,
     overflow,
     signal: options.signal,
+    start: options.start,
   })
   source.received = 0
   let producerPaused = false
@@ -73,13 +76,13 @@ const fromEvent = (target, event, options = null) => {
     source.received++
     try {
       const value = map(...args)
-      if (!source.writeData(value)) pauseProducer()
+      if (!source.write(dataValue(value))) pauseProducer()
     } catch (error) {
-      source.fail(error, args)
+      source[kFail](error, args)
     }
   }
   const onEnd = () => source.end()
-  const onError = (error) => source.fail(error?.error || error)
+  const onError = (error) => source[kFail](error?.error || error)
   const endEvent = options.end === void 0 ? 'end' : options.end
   const errorEvent = options.error === void 0 ? 'error' : options.error
 

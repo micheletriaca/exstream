@@ -1,78 +1,57 @@
 const _ = require('../src/index.js')
 const h = require('./helpers')
 
-const increment = ({ begin, end }) =>
-  _((push, next) => {
-    // console.log({ begin, end })
-    const current = begin + 1
-    if (current < end) {
-      push(current)
-      return next(increment({ begin: current, end }))
-    }
-    push(current)
-    return push(_.nil)
-  })
+function* increment({ begin, end }) {
+  const current = begin + 1
+  yield current
+  if (current < end) yield* increment({ begin: current, end })
+}
 
-const incrementAsync = ({ begin, end }) =>
-  _(async (push, next) => {
-    await h.sleep(1)
-    const current = begin + 1
-    if (current < end) {
-      push(current)
-      next(incrementAsync({ begin: current, end }))
-    } else {
-      push(current)
-      push(_.nil)
-    }
-  })
+async function* incrementAsync({ begin, end }) {
+  await h.sleep(1)
+  const current = begin + 1
+  yield current
+  if (current < end) yield* incrementAsync({ begin: current, end })
+}
 
 test('iterate', async () => {
-  const values = await _(increment({ begin: 0, end: 10 }))
-    // .tap(console.log)
-    .toPromise()
-  expect(values).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  await expect(_(increment({ begin: 0, end: 10 })).toArray()).resolves.toEqual([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  ])
 })
 
 test('iterateAsync', async () => {
-  const values = await _(incrementAsync({ begin: 0, end: 10 })).toPromise()
-  expect(values).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  await expect(_(incrementAsync({ begin: 0, end: 10 })).toArray()).resolves.toEqual([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  ])
 })
 
-test('iteratePassingStream', async () => {
-  const values = await _((push, next) => {
-    push(1)
-    next(_([1, 2, 3]))
-  }).values()
-  expect(values).toEqual([1, 1, 2, 3])
-})
-
-test('iteratePassingGenerator', async () => {
-  const gen = (x) => (push, next) => {
-    if (x < 5) {
-      push(x)
-      next(gen(x + 1))
-    } else {
-      push(_.nil)
-    }
+test('yield delegates to another iterable', async () => {
+  function* source() {
+    yield 1
+    yield* [1, 2, 3]
   }
 
-  const values = await _(gen(0)).values()
-  expect(values).toEqual([0, 1, 2, 3, 4])
+  await expect(_(source()).toArray()).resolves.toEqual([1, 1, 2, 3])
 })
 
-test('recursive passing a generator - another example', async () => {
-  const generator = (questions) =>
-    _((write, next) => {
-      const i = questions.pop()
-      if (i > 0) write(_.nil)
-      else {
-        write(i)
-        next(generator(questions))
-      }
-    })
+test('recursive delegation remains pull-based', async () => {
+  function* source(value) {
+    if (value >= 5) return
+    yield value
+    yield* source(value + 1)
+  }
 
-  const questions = [-1, 2, -3, -5]
-  const res = await _(generator(questions)).toPromise()
+  await expect(_(source(0)).toArray()).resolves.toEqual([0, 1, 2, 3, 4])
+})
 
-  expect(res).toEqual([-5, -3])
+test('a recursive iterator can stop without a source handoff protocol', async () => {
+  function* source(questions) {
+    const value = questions.pop()
+    if (value > 0) return
+    yield value
+    yield* source(questions)
+  }
+
+  await expect(_(source([-1, 2, -3, -5])).toArray()).resolves.toEqual([-5, -3])
 })

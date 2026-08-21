@@ -24,6 +24,17 @@ test('pipeTo writes with backpressure and resolves only after the Node destinati
   expect(destination.writableFinished).toBe(true)
 })
 
+test('pipeTo ignores drain events when no write is waiting', async () => {
+  const values = []
+  const destination = collectingWritable(values)
+  const result = _([1]).pipeTo(destination)
+
+  destination.emit('drain')
+
+  await expect(result).resolves.toBeUndefined()
+  expect(values).toEqual([1])
+})
+
 test('pipeTo rejects an unhandled record error and does not finish partial output', async () => {
   const reason = Error('bad record')
   const values = []
@@ -92,9 +103,9 @@ test('pipeTo identifies Node writer failures as sink errors', async () => {
 
 test('a pipeTo sink failure aborts only its fork while reliable siblings continue', async () => {
   const reason = Error('one destination failed')
-  const source = _([1, 2, 3])
-  const failed = source.fork(true)
-  const sibling = source.fork(true)
+  const source = _([1, 2, 3], { start: 'manual' })
+  const failed = source.fork()
+  const sibling = source.fork()
   const destination = new Writable({
     objectMode: true,
     write(value, encoding, callback) {
@@ -103,7 +114,7 @@ test('a pipeTo sink failure aborts only its fork while reliable siblings continu
   })
 
   const failedResult = failed.pipeTo(destination)
-  const siblingResult = sibling.toPromise()
+  const siblingResult = sibling.toArray()
   await source.start()
 
   await expect(failedResult).rejects.toBe(reason)
@@ -237,20 +248,6 @@ test.each([[], 1])('pipeTo rejects invalid options: %j', async (options) => {
   destination.destroy()
 })
 
-test('pipeTo supports standalone direct and curried forms', async () => {
-  const directValues = []
-  const curriedValues = []
-  const explicitValues = []
-
-  await _.pipeTo(collectingWritable(directValues), _([1, 2]))
-  await _.pipeTo(collectingWritable(curriedValues))(_([3, 4]))
-  await _.pipeTo(collectingWritable(explicitValues), { end: true }, _([5, 6]))
-
-  expect(directValues).toEqual([1, 2])
-  expect(curriedValues).toEqual([3, 4])
-  expect(explicitValues).toEqual([5, 6])
-})
-
 test.each([null, {}, { aborted: false, addEventListener() {}, removeEventListener: 1 }])(
   'pipeTo rejects invalid signals: %j',
   async (signal) => {
@@ -265,7 +262,7 @@ test.each([null, {}, { aborted: false, addEventListener() {}, removeEventListene
 
 test('pipeTo rejects invalid destinations', async () => {
   await expect(_([1]).pipeTo(null)).rejects.toThrow(
-    'destination must be a Node writable or WritableStream',
+    'destination must be an Exstream Destination, Node writable, or WritableStream',
   )
 })
 

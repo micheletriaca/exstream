@@ -10,13 +10,23 @@ const {
   setContextSignal,
 } = require('./context.js')
 const { runtime } = require('./runtime.js')
+const { createDestination } = require('./destination.js')
+const { dataFrame, errorFrame } = require('./protocol.js')
+const { registerPipeline } = require('./pipeline-control.js')
+const { kAbort, kDestroy, kFail, kPause, kResume } = require('./stream-control.js')
 
 const _m = (module.exports = {})
 const noCancel = () => undefined
+const pipelineOperators = new Set(['through'])
 
-_m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
+Object.defineProperty(_m, 'registerPipelineOperator', {
+  value: (name, enabled = true) =>
+    enabled ? pipelineOperators.add(name) : pipelineOperators.delete(name),
+})
 
-_m.splitBy = _.curry((regexp, encoding, s) => {
+_m.destination = createDestination
+
+_m.split = _.curry((regexp, encoding, s) => {
   const decoder = runtime.createStringDecoder(encoding)
   let buffer = ''
 
@@ -82,7 +92,7 @@ _m.decode = _.curry((encoding, s) => {
   })
 })
 
-_m.map = _.curry((fn, options, s) => {
+_m.map = (fn, s) => {
   const usesContext = fn.length >= 2
   let result
   const consumer = (err, x, push) => {
@@ -101,17 +111,7 @@ _m.map = _.curry((fn, options, s) => {
           res = res.catch((e) => {
             throw new ExstreamError(e, x, { origin: 'operator', stage: 'map' })
           })
-        if (!options || !options.wrap) {
-          return push(null, res, nextContext)
-        } else if (probablyPromise) {
-          push(
-            null,
-            res.then((y) => ({ input: x, output: y })),
-            nextContext,
-          )
-        } else {
-          push(null, { input: x, output: res }, nextContext)
-        }
+        push(null, res, nextContext)
       } catch (e) {
         push(new ExstreamError(e, x, { origin: 'operator', stage: 'map' }), null, nextContext)
       }
@@ -119,7 +119,7 @@ _m.map = _.curry((fn, options, s) => {
   }
   result = s.consumeSync(consumer)
   return result
-})
+}
 
 _m.withContext = _.curry((fn, s) => {
   let result
@@ -186,13 +186,18 @@ _m.where = _.curry((props, s) =>
 
 _m.findWhere = _.curry((props, s) => s.where(props).take(1))
 
-_m.ratelimit = _.curry((num, ms, s) => {
-  num = _.asPositiveInteger(num)
-  ms = _.asNonNegativeFiniteNumber(ms)
-  if (num === null) throw Error('error in .ratelimit(). num must be a positive integer')
-  if (ms === null) throw Error('error in .ratelimit(). ms must be a non-negative finite number')
+_m.rateLimit = _.curry((options, s) => {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw Error('error in .rateLimit(). options must be an object')
+  }
+  const limit = _.asPositiveInteger(options.limit)
+  const interval = _.asNonNegativeFiniteNumber(options.interval)
+  if (limit === null) throw Error('error in .rateLimit(). limit must be a positive integer')
+  if (interval === null) {
+    throw Error('error in .rateLimit(). interval must be a non-negative finite number')
+  }
   let sent = 0
-  let startWindow
+  let windowEndsAt
   let timer
   const result = s.consume((err, x, push, next) => {
     if (err) {
@@ -200,30 +205,34 @@ _m.ratelimit = _.curry((num, ms, s) => {
       next()
     } else if (x === _.nil) {
       push(null, _.nil)
-    } else if (sent === 0) {
-      startWindow = monotonicNow()
-      sent++
-      push(null, x)
-      next()
-    } else if (sent < num) {
-      sent++
-      push(null, x)
-      next()
-    } else if (monotonicNow() - startWindow > ms) {
-      startWindow = monotonicNow()
-      sent = 1
-      push(null, x)
-      next()
     } else {
-      timer = setTimeout(
-        () => {
-          startWindow = monotonicNow()
+      const now = monotonicNow()
+      if (sent === 0 || now >= windowEndsAt) {
+        windowEndsAt = now + interval
+        sent = 1
+        push(null, x)
+        next()
+      } else if (sent < limit) {
+        sent++
+        push(null, x)
+        next()
+      } else {
+        const release = () => {
+          timer = void 0
+          if (result.ended) return
+          const releaseTime = monotonicNow()
+          const remaining = windowEndsAt - releaseTime
+          if (remaining > 0) {
+            timer = setTimeout(release, remaining)
+            return
+          }
+          windowEndsAt = releaseTime + interval
           sent = 1
           push(null, x)
           next()
-        },
-        ms - Math.round(monotonicNow() - startWindow),
-      )
+        }
+        timer = setTimeout(release, windowEndsAt - now)
+      }
     }
   })
   result.once('end', () => {
@@ -296,21 +305,6 @@ _m.flatten = (s) => {
 
 _m.flatMap = _.curry((fn, s) => s.map(fn).flatten())
 
-_m.toArray = _.curry((fn, s) => {
-  const collected = s.collect()
-  const handleResult = (err, x, context) => {
-    if (err) {
-      ;(s.endOfChain || s).emit('error', err)
-    } else if (fn.length >= 2) {
-      fn(x, context)
-    } else {
-      fn(x)
-    }
-  }
-  if (fn.length >= 2) collected.pull(handleResult)
-  else collected.pull((err, x) => handleResult(err, x))
-})
-
 _m.filter = _.curry((fn, s) => {
   const usesContext = fn.length >= 2
   let result
@@ -358,36 +352,6 @@ _m.reject = _.curry((fn, s) => {
   return result
 })
 
-_m.asyncFilter = _.curry((fn, s) => {
-  const usesContext = fn.length >= 2
-  let result
-  result = s.consume(async (err, x, push, next) => {
-    if (err) {
-      push(err)
-      next()
-    } else if (x === _.nil) {
-      push(err, x)
-    } else {
-      const context = usesContext ? result._recordContext : void 0
-      const nextContext =
-        usesContext && context === void 0 ? createContext(x, result.signal) : context
-      try {
-        const res = usesContext ? await fn(x, nextContext) : await fn(x)
-        if (res) push(null, x, nextContext)
-        next()
-      } catch (e) {
-        push(
-          new ExstreamError(e, x, { origin: 'operator', stage: 'asyncFilter' }),
-          null,
-          nextContext,
-        )
-        next()
-      }
-    }
-  })
-  return result
-})
-
 _m.batch = _.curry((size, s) => {
   let buffer = []
   let contexts
@@ -420,18 +384,54 @@ _m.batch = _.curry((size, s) => {
   return result
 })
 
-_m.uniq = (s) => {
+_m.uniq = (selector, hasSelector, s) => {
   const seen = new Set()
-  return s.consumeSync((err, x, push) => {
+  const seenComposite = new Map()
+  const compositeLeaf = Symbol('uniq composite leaf')
+  const isFn = hasSelector && _.isFunction(selector)
+  const fields = hasSelector && !isFn ? (Array.isArray(selector) ? selector : [selector]) : null
+  const usesContext = isFn && selector.length >= 2
+  let result
+
+  function hasSeenCompositeKey(key) {
+    let level = seenComposite
+    for (const part of key) {
+      if (!level.has(part)) level.set(part, new Map())
+      level = level.get(part)
+    }
+    if (level.has(compositeLeaf)) return true
+    level.set(compositeLeaf, true)
+    return false
+  }
+
+  result = s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
-    } else if (!seen.has(x)) {
-      seen.add(x)
-      push(null, x)
+    } else {
+      const context = usesContext ? result._recordContext : void 0
+      const nextContext =
+        usesContext && context === void 0 ? createContext(x, result.signal) : context
+      try {
+        const key = !hasSelector
+          ? x
+          : isFn
+            ? usesContext
+              ? selector(x, nextContext)
+              : selector(x)
+            : fields.map((field) => x[field])
+        const alreadySeen = fields ? hasSeenCompositeKey(key) : seen.has(key)
+        if (!alreadySeen) {
+          if (!fields) seen.add(key)
+          push(null, x, nextContext)
+        }
+      } catch (e) {
+        push(new ExstreamError(e, x, { origin: 'operator', stage: 'uniq' }), null, nextContext)
+      }
     }
   })
+  return result
 }
 
 _m.pluck = _.curry((field, defaultValue, s) => {
@@ -475,69 +475,6 @@ _m.omit = _.curry((fields, s) =>
   }),
 )
 
-_m.uniqBy = _.curry((cfg, s) => {
-  const seen = new Set()
-  const seenComposite = new Map()
-  const compositeLeaf = Symbol('uniqBy composite leaf')
-  const isFn = _.isFunction(cfg)
-  if (!isFn && !Array.isArray(cfg)) cfg = [cfg]
-
-  const fn = !isFn ? (x) => cfg.map((f) => x[f]) : cfg
-  const usesContext = isFn && fn.length >= 2
-  let result
-
-  function hasSeenCompositeKey(key) {
-    let level = seenComposite
-    for (const part of key) {
-      if (!level.has(part)) level.set(part, new Map())
-      level = level.get(part)
-    }
-    if (level.has(compositeLeaf)) return true
-    level.set(compositeLeaf, true)
-    return false
-  }
-
-  result = s.consumeSync((err, x, push) => {
-    if (err) {
-      push(err)
-    } else if (x === _.nil) {
-      push(err, x)
-    } else {
-      const context = usesContext ? result._recordContext : void 0
-      const nextContext =
-        usesContext && context === void 0 ? createContext(x, result.signal) : context
-      try {
-        const k = usesContext ? fn(x, nextContext) : fn(x)
-        const alreadySeen = isFn ? seen.has(k) : hasSeenCompositeKey(k)
-        if (!alreadySeen) {
-          if (isFn) seen.add(k)
-          push(null, x, nextContext)
-        }
-      } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
-      }
-    }
-  })
-  return result
-})
-
-_m.massThen = _.curry((fn, s) =>
-  fn.length >= 2
-    ? s.map((x, context) => x.then((value) => fn(value, context)))
-    : s.map((x) => x.then(fn)),
-)
-
-_m.massCatch = _.curry((fn, s) =>
-  fn.length >= 2
-    ? s.map((x, context) => x.catch((error) => fn(error, context)))
-    : s.map((x) => x.catch(fn)),
-)
-
-const emitConcurrentResult = (task, error, value) => {
-  if (task.context === void 0) task.push(error, value)
-  else task.push(error, value, task.context)
-}
-
 class MapAsyncTimeoutError extends Error {
   constructor(timeout, attempt) {
     super(`mapAsync attempt ${attempt} timed out after ${timeout} ms`)
@@ -560,7 +497,6 @@ const asNonNegativeInteger = (value) => {
   return Number.isInteger(number) && number >= 0 ? number : null
 }
 
-/* v8 ignore next 23 -- V8 does not attribute these explicitly tested policy branches. */
 const normalizeMapAsyncRetry = (retry) => {
   if (retry === void 0 || retry === null) return { delay: 0, retries: 0, when: null }
   if (typeof retry !== 'object' || Array.isArray(retry)) {
@@ -585,7 +521,6 @@ const normalizeMapAsyncRetry = (retry) => {
   return { delay, retries, when }
 }
 
-/* v8 ignore next 8 -- V8 misses the valid path covered by timeout policy tests. */
 const normalizeMapAsyncTimeout = (timeout) => {
   if (timeout === void 0 || timeout === null) return null
   timeout = _.asNonNegativeFiniteNumber(timeout)
@@ -619,11 +554,9 @@ const createAttemptTimeoutCoordinator = () => {
   let timer
 
   const schedule = () => {
-    /* v8 ignore next -- Re-entrant and post-close scheduling are defensive no-ops. */
     if (closed || timer) return
     let deadline = Infinity
     for (const attempt of attempts) deadline = Math.min(deadline, attempt.deadline)
-    /* v8 ignore next -- A stale shared timer may legitimately find no active attempts. */
     if (deadline === Infinity) return
     scheduledDeadline = deadline
     timer = setTimeout(expire, Math.max(0, deadline - monotonicNow()))
@@ -674,7 +607,6 @@ const runMapAsyncAttempt = async ({
   value,
 }) => {
   if (baseSignal.aborted) throw baseSignal.reason
-  /* v8 ignore next -- Both timeout paths are exercised but V8 misses the async branch. */
   if (timeout === null) return usesContext ? fn(value, context) : fn(value)
 
   if (context === void 0) {
@@ -724,12 +656,14 @@ const runMapAsyncTask = async (
   result,
   fn,
   usesContext,
+  onFail,
   retry,
   timeout,
   timeoutCoordinator,
 ) => {
   const baseSignal = context === void 0 ? result.signal : context.signal
   let attempt = 0
+  let currentValue = value
   while (true) {
     attempt++
     try {
@@ -741,14 +675,63 @@ const runMapAsyncTask = async (
         timeout,
         timeoutCoordinator,
         usesContext,
-        value,
+        value: currentValue,
       })
     } catch (reason) {
-      const error = new ExstreamError(reason, value)
-      if (error.exstreamFatal || attempt > retry.retries) throw error
-      if (retry.when && !(await retry.when(error, value, context, attempt))) throw error
+      const error = new ExstreamError(reason, currentValue, {
+        origin: 'operator',
+        stage: 'mapAsync',
+      })
+      if (error.exstreamFatal) throw error
+      if (baseSignal.aborted) throw baseSignal.reason
+      if (onFail) {
+        let decision = null
+        const decide = (nextDecision) => {
+          if (decision) {
+            throw Error('error in .mapAsync(). onFail settled more than once', { cause: reason })
+          }
+          decision = nextDecision
+        }
+        const push = (nextError, output) => {
+          if (nextError) {
+            decide({ error: nextError, input: output, type: 'error' })
+          } else {
+            decide({ type: 'value', value: output })
+          }
+        }
+        function retryWith(nextValue) {
+          decide({
+            type: 'retry',
+            value: arguments.length === 0 ? currentValue : nextValue,
+          })
+        }
+        try {
+          await onFail(error, currentValue, push, attempt, retryWith, context)
+        } catch (handlerError) {
+          throw new ExstreamError(handlerError, currentValue, {
+            origin: 'operator',
+            stage: 'mapAsync',
+          })
+        }
+        if (!decision) throw error
+        if (decision.type === 'error') {
+          const errorInput = decision.input === void 0 ? currentValue : decision.input
+          const propagatedError = new ExstreamError(decision.error, errorInput, {
+            origin: 'operator',
+            stage: 'mapAsync',
+          })
+          propagatedError.exstreamInput = errorInput
+          throw propagatedError
+        }
+        if (decision.type === 'value') return decision.value
+        currentValue = decision.value
+        if (baseSignal.aborted) throw baseSignal.reason
+        continue
+      }
+      if (attempt > retry.retries) throw error
+      if (retry.when && !(await retry.when(error, currentValue, context, attempt))) throw error
       const delay = _.isFunction(retry.delay)
-        ? await retry.delay(attempt, error, value, context)
+        ? await retry.delay(attempt, error, currentValue, context)
         : retry.delay
       const delayMs = _.asNonNegativeFiniteNumber(delay)
       if (delayMs === null) {
@@ -756,7 +739,6 @@ const runMapAsyncTask = async (
         throw error
       }
       if (baseSignal.aborted) throw baseSignal.reason
-      /* v8 ignore next -- Zero and positive delays are both covered in map-async.test.js. */
       if (delayMs > 0) await abortableDelay(delayMs, baseSignal)
     }
   }
@@ -764,7 +746,6 @@ const runMapAsyncTask = async (
 /* oxlint-enable no-await-in-loop */
 
 const validateMapAsyncSignal = (signal) => {
-  /* v8 ignore next -- Tests cover absent, valid, invalid, and pre-aborted signals. */
   if (signal === void 0) return
   if (
     !signal ||
@@ -778,102 +759,158 @@ const validateMapAsyncSignal = (signal) => {
 
 const linkAbortSignal = (result, signal) => {
   if (signal === void 0) return
-  const abort = () => result.abort(signal.reason)
+  const abort = () => result[kAbort](signal.reason)
   const cleanup = () => signal.removeEventListener('abort', abort)
   result.once('end', cleanup)
   if (signal.aborted) {
-    result.pause(true)
+    result[kPause](true)
     scheduleMicrotask(abort)
   } else {
     signal.addEventListener('abort', abort, { once: true })
   }
 }
 
-const concurrentTransform = (s, options) => {
-  const { concurrency, createTask, ordered, requirePromise, signal } = options
+const slidingConcurrentTransform = (s, options) => {
+  const { concurrency, createTask, ordered, signal } = options
   const tasks = []
+  const readyTasks = []
   let sourceEnded = false
+  let outputRequest = null
+  let outputClosed = false
+  let started = false
+  let sink
   let result
 
+  const hasReadyTask = () =>
+    ordered ? tasks[0]?.settled === true && tasks[0].delivered !== true : readyTasks.length > 0
+
+  const takeReadyTask = () => {
+    const task = ordered ? tasks[0] : readyTasks.shift()
+    task.delivered = true
+    return task
+  }
+
+  const outputItem = () => {
+    const task = takeReadyTask()
+    const frame = task.error
+      ? errorFrame(task.error, task.error.exstreamInput, false, task.context)
+      : dataFrame(task.result, task.context)
+    frame.afterWrite = () => {
+      tasks.splice(tasks.indexOf(task), 1)
+      if (!result.ended && sink && !sink.ended) task.next()
+    }
+    return { done: false, value: frame }
+  }
+
+  const wakeOutput = () => {
+    if (!outputRequest) return
+    if (!hasReadyTask() && !(sourceEnded && tasks.length === 0)) return
+    const request = outputRequest
+    outputRequest = null
+    request.resolve(hasReadyTask() ? outputItem() : { done: true, value: void 0 })
+  }
+
   const handleTaskResult = (isError, value, task) => {
-    const index = tasks.indexOf(task)
-    /* v8 ignore next -- A late task completion after abort is covered explicitly. */
     if (result.ended) {
-      if (index !== -1) tasks.splice(index, 1)
+      tasks.splice(tasks.indexOf(task), 1)
       return
     }
-    /* v8 ignore next -- Fatal and record failures are both exercised through mapAsync. */
     if (isError && value.exstreamFatal) {
-      result.fail(value, value.exstreamInput)
+      result[kFail](value, value.exstreamInput)
       return
     }
     task.error = isError ? value : null
     task.result = value
     task.settled = true
-
-    if (ordered) {
-      while (tasks[0] && tasks[0].settled) {
-        const ready = tasks.shift()
-        emitConcurrentResult(ready, ready.error, ready.result)
-      }
-    } else {
-      tasks.splice(index, 1)
-      emitConcurrentResult(task, task.error, task.result)
-    }
-
-    if (sourceEnded && tasks.length === 0) task.push(null, _.nil)
-    else if (!ordered || index === 0) task.next()
+    if (!ordered) readyTasks.push(task)
+    wakeOutput()
   }
 
-  result = s.consume((error, value, push, next) => {
+  const output = {
+    next() {
+      if (outputClosed) return Promise.resolve({ done: true, value: void 0 })
+      if (!started) {
+        started = true
+        sink[kResume]()
+      }
+      if (hasReadyTask()) return Promise.resolve(outputItem())
+      if (sourceEnded && tasks.length === 0) {
+        outputClosed = true
+        return Promise.resolve({ done: true, value: void 0 })
+      }
+      return new Promise((resolve) => {
+        outputRequest = { resolve }
+      })
+    },
+    return(value) {
+      outputClosed = true
+      if (outputRequest) {
+        outputRequest.resolve({ done: true, value })
+        outputRequest = null
+      }
+      if (sink && !sink.ended) sink[kDestroy]()
+      return Promise.resolve({ done: true, value })
+    },
+    [Symbol.asyncIterator]() {
+      return this
+    },
+  }
+
+  result = Exstream.fromFrames(output)
+
+  sink = s.consume((error, value, push, next) => {
+    if (result.ended) return
     if (error) {
-      push(error)
-      next()
+      const task = {
+        context: sink._recordContext,
+        error,
+        next,
+        settled: true,
+      }
+      tasks.push(task)
+      if (!ordered) readyTasks.push(task)
+      if (tasks.length < concurrency) next()
+      wakeOutput()
     } else if (value === _.nil) {
-      if (tasks.length === 0) push(null, _.nil)
-      else sourceEnded = true
+      sourceEnded = true
+      push(null, _.nil)
+      wakeOutput()
     } else {
-      let context = result._recordContext
+      let context = sink._recordContext
       const taskResult = createTask(value, context, result)
       context = taskResult.context
-      const promise = taskResult.value
-
-      if (requirePromise && !_.isPromise(promise)) {
-        push(new ExstreamError(Error('error in .resolve(). item must be a promise'), value))
-        next()
-        return
-      }
-
-      const task = { context, next, push, settled: false }
+      const task = { context, next, settled: false }
       tasks.push(task)
-      Promise.resolve(promise)
+      Promise.resolve(taskResult.value)
         .then((resolved) => handleTaskResult(false, resolved, task))
-        .catch((reason) => handleTaskResult(true, new ExstreamError(reason, value), task))
+        .catch((reason) =>
+          handleTaskResult(
+            true,
+            new ExstreamError(reason, value, { origin: 'operator', stage: 'mapAsync' }),
+            task,
+          ),
+        )
       if (tasks.length < concurrency) next()
     }
+  })
+
+  result.once('abort', (reason) => {
+    sink[kAbort](reason)
+  })
+  result.once('end', () => {
+    outputRequest = null
+    if (!sink.ended) sink[kDestroy]()
+  })
+  sink.once('abort', (reason) => {
+    if (!result.ended) result[kAbort](reason)
   })
   linkAbortSignal(result, signal)
   return result
 }
 
-_m.resolve = _.curry((parallelism, preserveOrder, s) => {
-  parallelism = _.asPositiveInteger(parallelism, true)
-  if (parallelism === null) {
-    throw Error('error in .resolve(). parallelism must be a positive integer or Infinity')
-  }
-  return concurrentTransform(s, {
-    concurrency: parallelism,
-    createTask: (value, context) => ({ context, value }),
-    ordered: preserveOrder,
-    requirePromise: true,
-  })
-})
-
 _m.mapAsync = _.curry((fn, options, s) => {
-  /* v8 ignore next -- The public validation test exercises both paths. */
   if (!_.isFunction(fn)) throw Error('error in .mapAsync(). fn must be a function')
   if (options === null || options === void 0) options = {}
-  /* v8 ignore next -- Object, scalar, and array options are explicitly tested. */
   if (typeof options !== 'object' || Array.isArray(options)) {
     throw Error('error in .mapAsync(). options must be an object')
   }
@@ -885,21 +922,28 @@ _m.mapAsync = _.curry((fn, options, s) => {
     throw Error('error in .mapAsync(). concurrency must be a positive integer or Infinity')
   }
   const ordered = options.ordered === void 0 ? true : options.ordered
-  /* v8 ignore next -- Boolean and invalid ordered options are explicitly tested. */
   if (typeof ordered !== 'boolean') {
     throw Error('error in .mapAsync(). ordered must be a boolean')
   }
   validateMapAsyncSignal(options.signal)
+  const onFail = options.onFail
+  if (onFail !== void 0 && onFail !== null && !_.isFunction(onFail)) {
+    throw Error('error in .mapAsync(). onFail must be a function')
+  }
+  if (onFail && options.retry !== void 0 && options.retry !== null) {
+    throw Error('error in .mapAsync(). onFail cannot be combined with retry')
+  }
   const retry = normalizeMapAsyncRetry(options.retry)
   const timeout = normalizeMapAsyncTimeout(options.timeout)
   const usesContext = fn.length >= 2
   const needsContext =
     usesContext ||
+    (onFail && onFail.length >= 6) ||
     (retry.when && retry.when.length >= 3) ||
     (_.isFunction(retry.delay) && retry.delay.length >= 4)
-  const hasTaskPolicy = retry.retries > 0 || timeout !== null
+  const hasTaskPolicy = Boolean(onFail) || retry.retries > 0 || timeout !== null
   const timeoutCoordinator = timeout === null ? null : createAttemptTimeoutCoordinator()
-  const result = concurrentTransform(s, {
+  const result = slidingConcurrentTransform(s, {
     concurrency,
     createTask: (value, context, result) => {
       if (needsContext && context === void 0) context = createContext(value, result.signal)
@@ -907,7 +951,12 @@ _m.mapAsync = _.curry((fn, options, s) => {
         try {
           return { context, value: usesContext ? fn(value, context) : fn(value) }
         } catch (reason) {
-          return { context, value: Promise.reject(new ExstreamError(reason, value)) }
+          return {
+            context,
+            value: Promise.reject(
+              new ExstreamError(reason, value, { origin: 'operator', stage: 'mapAsync' }),
+            ),
+          }
         }
       }
       return {
@@ -918,6 +967,7 @@ _m.mapAsync = _.curry((fn, options, s) => {
           result,
           fn,
           usesContext,
+          onFail,
           retry,
           timeout,
           timeoutCoordinator,
@@ -925,7 +975,6 @@ _m.mapAsync = _.curry((fn, options, s) => {
       }
     },
     ordered,
-    requirePromise: false,
     signal: options.signal,
   })
   if (timeoutCoordinator) result.once('end', timeoutCoordinator.close)
@@ -995,7 +1044,7 @@ _m.failOnError = (s) => {
     if (x === _.nil) {
       push(null, _.nil)
     } else if (err) {
-      result.fail(err, err.exstreamInput)
+      result[kFail](err, err.exstreamInput)
     } else {
       push(null, x)
     }
@@ -1040,7 +1089,7 @@ _m.stopOnError = _.curry((fn, s) => {
           fn(err, contextualPush, nextContext)
         }
       }
-      s1.destroy()
+      s1[kDestroy]()
     } else {
       push(null, x)
     }
@@ -1060,192 +1109,10 @@ _m.stopWhen = _.curry((fn, s) => {
       const context = usesContext ? s1._recordContext : void 0
       const nextContext = usesContext && context === void 0 ? createContext(x, s1.signal) : context
       push(null, x, nextContext)
-      if (usesContext ? fn(x, nextContext) : fn(x)) s1.destroy()
+      if (usesContext ? fn(x, nextContext) : fn(x)) s1[kDestroy]()
     }
   })
   return s1
-})
-
-_m.toPromise = (s) =>
-  new Promise((resolve, reject) =>
-    s.once('error', reject).toArray((res) => {
-      s.off('error', reject)
-      resolve(res)
-    }),
-  )
-
-_m.drain = (s) =>
-  new Promise((resolve, reject) => {
-    let settled = false
-    let sink
-
-    const rejectOnce = (error) => {
-      if (settled) return
-      settled = true
-      reject(error)
-    }
-    const cleanup = () => {
-      sink.off('error', rejectOnce)
-      sink.off('abort', onAbort)
-      sink.off('end', onEnd)
-    }
-    const onAbort = (reason) => {
-      rejectOnce(reason)
-      cleanup()
-    }
-    const onEnd = () => {
-      cleanup()
-      if (settled) return
-      settled = true
-      resolve()
-    }
-
-    sink = s.consumeSync((err, x, push) => {
-      if (err) {
-        rejectOnce(err)
-        sink.abort(err)
-      } else if (x === _.nil) push(null, _.nil)
-    })
-    sink.on('error', rejectOnce).once('abort', onAbort).once('end', onEnd).resume()
-  })
-
-_m.pipeTo = function (destination, options, s) {
-  if (s) return s.pipeTo(destination, options)
-  if (_.isExstream(options)) return options.pipeTo(destination)
-  return (stream) => stream.pipeTo(destination, options)
-}
-
-_m.toNodeStream = _.curry((options, s) => s.pipe(runtime.createNodeTransform(options)))
-
-_m.toWebReadable = _.curry((options, s) => {
-  if (typeof globalThis.ReadableStream !== 'function') {
-    throw Error('toWebReadable() requires ReadableStream support')
-  }
-  if (options === null || options === void 0) options = {}
-  const iterator = s.toAsyncIterator({ signal: options.signal })
-  return new globalThis.ReadableStream(
-    {
-      async pull(controller) {
-        try {
-          const item = await iterator.next()
-          if (item.done) controller.close()
-          else controller.enqueue(item.value)
-        } catch (error) {
-          controller.error(error)
-        }
-      },
-      async cancel(reason) {
-        if (reason === void 0) await iterator.return()
-        else await iterator.throw(reason).catch(() => {})
-      },
-    },
-    options.strategy,
-  )
-})
-
-_m.toAsyncIterator = _.curry((options, s) => {
-  /* v8 ignore next -- Default and explicit options are both covered by iterator tests. */
-  if (options === null || options === void 0) options = {}
-  if (typeof options !== 'object' || Array.isArray(options)) {
-    throw Error('error in .toAsyncIterator(). options must be an object')
-  }
-  const signal = options.signal
-  if (
-    signal !== void 0 &&
-    (!signal ||
-      typeof signal.aborted !== 'boolean' ||
-      typeof signal.addEventListener !== 'function' ||
-      typeof signal.removeEventListener !== 'function')
-  ) {
-    throw Error('error in .toAsyncIterator(). signal must be an AbortSignal')
-  }
-
-  let closed = false
-  let pending
-  let sequence = Promise.resolve()
-  let sink
-  let terminalError
-
-  const cleanup = () => {
-    if (signal !== void 0) signal.removeEventListener('abort', abortFromSignal)
-  }
-  const finish = (error) => {
-    if (closed) return
-    closed = true
-    cleanup()
-    if (pending) {
-      const request = pending
-      pending = null
-      if (error) request.reject(error)
-      else request.resolve({ done: true, value: void 0 })
-    } else if (error) terminalError = error
-  }
-  const abortFromSignal = () => sink.abort(signal.reason)
-
-  sink = s.consumeSync((error, value) => {
-    if (closed) return
-    if (value === _.nil) {
-      finish()
-      return
-    }
-
-    sink.pause()
-    const request = pending
-    pending = null
-    if (error) {
-      closed = true
-      cleanup()
-      request.reject(error)
-      sink.destroy()
-    } else {
-      request.resolve({ done: false, value })
-    }
-  })
-  sink.once('error', finish)
-
-  if (signal !== void 0) {
-    if (signal.aborted) scheduleMicrotask(abortFromSignal)
-    else signal.addEventListener('abort', abortFromSignal, { once: true })
-  }
-
-  const readOne = () => {
-    if (closed) {
-      if (terminalError) {
-        const error = terminalError
-        terminalError = null
-        return Promise.reject(error)
-      }
-      return Promise.resolve({ done: true, value: void 0 })
-    }
-    return new Promise((resolve, reject) => {
-      pending = { reject, resolve }
-      sink.resume()
-    })
-  }
-
-  const iterator = {
-    next() {
-      const request = sequence.then(readOne)
-      sequence = request.then(noCancel, noCancel)
-      return request
-    },
-    return(value) {
-      terminalError = null
-      finish()
-      sink.destroy()
-      return Promise.resolve({ done: true, value })
-    },
-    throw(error) {
-      sink.abort(error)
-      terminalError = null
-      return Promise.reject(error)
-    },
-    [Symbol.asyncIterator]() {
-      return this
-    },
-  }
-
-  return iterator
 })
 
 _m.slice = _.curry((start, end, s) => {
@@ -1264,11 +1131,9 @@ _m.slice = _.curry((start, end, s) => {
       push(null, _.nil)
     } else {
       if (index >= end) {
-        // if I'm terminating the stream before the end of its source,
-        // I've to call .end() or .destroy() instead of pushing nil in
-        // order to back propagate destroy and to remove the stream from
-        // the consumers of its source
-        s1.destroy()
+        // Terminate the branch instead of pushing nil so shutdown propagates
+        // upstream and removes this stream from its source's consumers.
+        s1[kDestroy]()
       } else if (index >= start) {
         push(null, x)
       }
@@ -1282,54 +1147,20 @@ _m.take = _.curry((n, s) => s.slice(0, n))
 
 _m.drop = _.curry((n, s) => s.slice(n, Infinity))
 
-_m.reduce = _.curry((fn, accumulator, s) => {
+_m.reduce = (fn, accumulator, initialized, s) => {
   const usesContext = fn.length >= 3
   let contexts
   let inputCount = 0
   let s1
   s1 = s.consumeSync((err, x, push) => {
     if (x === _.nil) {
-      push(
-        null,
-        accumulator,
-        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
-      )
-      push(null, _.nil)
-    } else if (err) {
-      push(err)
-    } else {
-      const context = s1._recordContext
-      const nextContext = context === void 0 && usesContext ? createContext(x, s1.signal) : context
-      contexts = appendContext(contexts, nextContext, inputCount++)
-      try {
-        accumulator = usesContext ? fn(accumulator, x, nextContext) : fn(accumulator, x)
-      } catch (e) {
-        try {
-          push(new ExstreamError(e, x), null, nextContext)
-        } finally {
-          accumulator = void 0
-          s1.destroy()
-        }
+      if (initialized) {
+        push(
+          null,
+          accumulator,
+          contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
+        )
       }
-    }
-  })
-  return s1
-})
-
-_m.reduce1 = _.curry((fn, s) => {
-  const usesContext = fn.length >= 3
-  let init = false
-  let accumulator
-  let contexts
-  let inputCount = 0
-  let s1
-  s1 = s.consumeSync((err, x, push) => {
-    if (x === _.nil) {
-      push(
-        null,
-        accumulator,
-        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
-      )
       push(null, _.nil)
     } else if (err) {
       push(err)
@@ -1337,8 +1168,8 @@ _m.reduce1 = _.curry((fn, s) => {
       const context = s1._recordContext
       const nextContext = context === void 0 && usesContext ? createContext(x, s1.signal) : context
       contexts = appendContext(contexts, nextContext, inputCount++)
-      if (!init) {
-        init = true
+      if (!initialized) {
+        initialized = true
         accumulator = x
         return
       }
@@ -1349,49 +1180,13 @@ _m.reduce1 = _.curry((fn, s) => {
           push(new ExstreamError(e, x), null, nextContext)
         } finally {
           accumulator = void 0
-          s1.destroy()
+          s1[kDestroy]()
         }
       }
     }
   })
   return s1
-})
-
-_m.asyncReduce = _.curry((fn, accumulator, s) => {
-  const usesContext = fn.length >= 3
-  let contexts
-  let inputCount = 0
-  let s1
-  s1 = s.consume(async (err, x, push, next) => {
-    if (x === _.nil) {
-      push(
-        null,
-        accumulator,
-        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
-      )
-      push(null, _.nil)
-    } else if (err) {
-      push(err)
-      next()
-    } else {
-      const context = s1._recordContext
-      const nextContext = context === void 0 && usesContext ? createContext(x, s1.signal) : context
-      contexts = appendContext(contexts, nextContext, inputCount++)
-      try {
-        accumulator = usesContext ? await fn(accumulator, x, nextContext) : await fn(accumulator, x)
-        next()
-      } catch (e) {
-        try {
-          push(new ExstreamError(e, x), null, nextContext)
-        } finally {
-          accumulator = void 0
-          s1.destroy()
-        }
-      }
-    }
-  })
-  return s1
-})
+}
 
 _m.groupBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString
@@ -1424,7 +1219,7 @@ _m.keyBy = _.curry((fnOrString, s) => {
     : s.reduce((accumulator, x) => add(accumulator, x), {})
 })
 
-_m.sortBy = _.curry((fn, s) => {
+_m.sort = (fn, s) => {
   const usesContext = fn && fn.length >= 3
   const entries = []
   let result
@@ -1468,40 +1263,39 @@ _m.sortBy = _.curry((fn, s) => {
     }
   })
   return result
-})
-
-_m.sort = (s) => _m.sortBy(void 0, s)
+}
 
 _m.makeAsync = _.curry((maxSyncExecutionTime, s) => {
   maxSyncExecutionTime = _.asNonNegativeFiniteNumber(maxSyncExecutionTime)
   if (maxSyncExecutionTime === null) {
     throw Error('error in .makeAsync(). maxSyncExecutionTime must be a non-negative finite number')
   }
-  let lastSnapshot = null
   let start = null
-  let end = null
   let cancelTurn = noCancel
   const result = s.consume((err, x, push, next) => {
-    if (err) {
-      push(err)
-      next()
-    } else if (x === _.nil) {
+    if (x === _.nil) {
       push(null, _.nil)
+      return
+    }
+
+    const forward = () => {
+      if (err) push(err)
+      else push(null, x)
+      next()
+    }
+    const now = monotonicNow()
+    if (start === null) {
+      start = now
+      forward()
+    } else if (now - start >= maxSyncExecutionTime) {
+      cancelTurn = scheduleNextTurn(() => {
+        cancelTurn = noCancel
+        if (result.ended) return
+        start = monotonicNow()
+        forward()
+      })
     } else {
-      lastSnapshot = monotonicNow()
-      if (start === null) start = lastSnapshot
-      else end = lastSnapshot
-      if (end !== null && end - start > maxSyncExecutionTime) {
-        cancelTurn = scheduleNextTurn(() => {
-          cancelTurn = noCancel
-          push(null, x)
-          start = monotonicNow()
-          next()
-        })
-      } else {
-        push(null, x)
-        next()
-      }
+      forward()
     }
   })
   result.once('end', () => {
@@ -1548,28 +1342,60 @@ _m.last = (s) => {
   return result
 }
 
-_m.pipeline = () =>
-  new Proxy(
-    {
-      __exstream_pipeline__: true,
-      definitions: [],
-      generateStream: function () {
-        const s = new Exstream()
-        let curr = s
-        for (const { method, args } of this.definitions) curr = curr[method](...args)
-        s.endOfChain = curr.endOfChain || curr
-        return s
-      },
+const clonePipelineDefinitions = (definitions) =>
+  definitions.map(({ method, args }) => ({ method, args: [...args] }))
+
+const unavailablePipelineMethod = (method) => () => {
+  const advice =
+    method === 'toNodeReadable'
+      ? ' Use toNodeTransform() instead.'
+      : ' Attach the pipeline to an Exstream before calling this method.'
+  throw Error(`error in pipeline(). ${method}() is not available on reusable pipelines.${advice}`)
+}
+
+const materializePipeline = (definitions) => {
+  const input = new Exstream()
+  let output = input
+  for (const { method, args } of definitions) output = output[method](...args)
+  return { input, output }
+}
+
+const createPipeline = (definitions = []) => {
+  const target = {
+    __exstream_pipeline__: true,
+    drain: function () {
+      const snapshot = createPipeline(clonePipelineDefinitions(definitions))
+      return createDestination((source) => source.through(snapshot).drain())
     },
-    {
-      get(target, propKey, receiver) {
-        if (target[propKey] || !Exstream.prototype[propKey]) {
-          return Reflect.get(target, propKey, receiver)
-        }
+    toNodeTransform: function () {
+      if (!runtime.duplexFromPipeline) {
+        throw Error('toNodeTransform() is not available in this runtime')
+      }
+      const { input, output } = materializePipeline(clonePipelineDefinitions(definitions))
+      return runtime.duplexFromPipeline(input, output)
+    },
+  }
+  const pipeline = new Proxy(target, {
+    get(target, propKey, receiver) {
+      if (Reflect.has(target, propKey)) {
+        return Reflect.get(target, propKey, receiver)
+      }
+      if (typeof propKey !== 'string') return undefined
+      if (pipelineOperators.has(propKey)) {
         return (...args) => {
-          target.definitions.push({ method: propKey, args })
+          definitions.push({ method: propKey, args })
           return receiver
         }
-      },
+      }
+      if (propKey in Exstream.prototype) return unavailablePipelineMethod(propKey)
+      return undefined
     },
+  })
+  return registerPipeline(
+    pipeline,
+    () => materializePipeline(definitions),
+    () => definitions.length === 0,
   )
+}
+
+_m.pipeline = () => createPipeline()

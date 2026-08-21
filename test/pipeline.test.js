@@ -9,18 +9,21 @@ const sourceInput = vi.fn()
 
 const innerPipeline = _.pipeline()
   .map(query1)
-  .resolve()
+  .mapAsync((value) => value)
   // .tap(item => console.log(item))
   .filter((result) => result === '1')
 
 const mainFlow = (param) => {
   const source = _([param]).through(innerPipeline)
 
-  const fork1 = source.fork().map(query2).resolve()
+  const fork1 = source
+    .fork()
+    .map(query2)
+    .mapAsync((value) => value)
 
   const fork2 = source.fork()
 
-  return _([fork1, fork2]).merge(2, true).tap(exit)
+  return _([fork1, fork2]).merge({ concurrency: 2, ordered: true }).tap(exit)
 }
 
 beforeEach(() => {
@@ -29,7 +32,7 @@ beforeEach(() => {
 })
 
 test('through before 2 forks should be executed', async () => {
-  const results = await mainFlow('existing').toPromise()
+  const results = await mainFlow('existing').toArray()
   // console.log(results)
   expect(results).toHaveLength(2)
   expect(results).toEqual(['11', '1'])
@@ -39,7 +42,7 @@ test('through before 2 forks should be executed', async () => {
 })
 
 test('zero results from main pipe -> nothing goes through forks', async () => {
-  const results = await mainFlow('wrong').toPromise()
+  const results = await mainFlow('wrong').toArray()
   expect(results).toEqual([])
   expect(sourceInput).toHaveBeenCalledTimes(0)
   expect(exit).toHaveBeenCalledTimes(0)
@@ -48,7 +51,7 @@ test('zero results from main pipe -> nothing goes through forks', async () => {
 test('pipeline with fork', async () => {
   const p = _.pipeline()
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
 
   const s = _([1, 2, 3]).through(p)
   const forks = [
@@ -56,56 +59,52 @@ test('pipeline with fork', async () => {
     s
       .fork()
       .map(async (x) => x * 3)
-      .resolve(),
+      .mapAsync((value) => value),
   ]
-  const res = await _(forks).merge().toPromise()
+  const res = await _(forks).merge().toArray()
   expect(res).toEqual([2, 3, 4, 6, 6, 9])
 })
 
 test('pipeline with pipe and multiple through', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
-    .resolve()
+    .mapAsync((value) => value)
   const res = []
 
-  await new Promise((resolve) => {
-    _([1, 2, 3])
-      .through(p)
-      .through(p)
-      .pipe(h.getSlowWritable(res, 0, 0))
-      .on('finish', resolve)
-  })
+  await _([1, 2, 3])
+    .through(p)
+    .through(p)
+    .pipeTo(h.getSlowWritable(res, 0, 0))
 
   expect(res).toEqual([4, 8, 12])
 })
 
-test('pipeline in pipe', async () => {
+test('pipeline in through', async () => {
   const p = _.pipeline()
     .map(async (x) => x * 2)
-    .resolve()
+    .mapAsync((value) => value)
   const res = []
 
-  await new Promise((resolve) => {
-    _([1, 2, 3])
-      .pipe(p)
-      .pipe(p)
-      .pipe(h.getSlowWritable(res, 0, 0))
-      .on('finish', resolve)
-  })
+  await _([1, 2, 3])
+    .through(p)
+    .through(p)
+    .pipeTo(h.getSlowWritable(res, 0, 0))
 
   expect(res).toEqual([4, 8, 12])
 })
 
-test('pipeline as node stream toArray', async () => {
+test('pipeline attachments create independent operator state', async () => {
   const p = _.pipeline()
-    .map(async (x) => x * 2)
-    .resolve()
+    .map((x) => x * 2)
+    .take(2)
 
-  const res = await new Promise((resolve) => {
-    _([1, 2, 3]).pipe(p.generateStream()).toArray(resolve)
-  })
+  const first = _([1, 2, 3]).through(p).toArray()
+  const second = _([4, 5, 6]).through(p).toArray()
 
-  expect(res).toEqual([2, 4, 6])
+  await expect(Promise.all([first, second])).resolves.toEqual([
+    [2, 4],
+    [8, 10],
+  ])
 })
 
 test('error propagation in async chain', async () => {
@@ -115,19 +114,19 @@ test('error propagation in async chain', async () => {
     .flatten()
     .map((x) => ({ a: x.a === 1 ? x.b.c : x.a }))
     .map(async (x) => x)
-    .resolve()
+    .mapAsync((value) => value)
     .errors((e) => errs.push(e))
-    .toPromise()
+    .toArray()
   expect(res).toEqual([{ a: 0 }, { a: 2 }])
   expect(errs.length).toBe(1)
 })
 
-test('nested pipeline as last operation', () => {
+test('nested pipeline as last operation', async () => {
   const innerPipeline = _.pipeline().map((x) => x + 1)
   const mainPipeline = _.pipeline()
     .map((x) => x + 1)
     .through(innerPipeline)
   // .map(x => x) // with this it will work
-  const results = _([1, 2, 3]).through(mainPipeline).values()
+  const results = await _([1, 2, 3]).through(mainPipeline).toArray()
   expect(results).toEqual([3, 4, 5])
 })

@@ -22,7 +22,7 @@ const run = async () => {
       correlationId: context.correlationId,
       value: value * 10,
     }))
-    .toPromise()
+    .toArray()
   assert.deepEqual(contextual, [
     { correlationId: 'row-1', value: 10 },
     { correlationId: 'row-2', value: 20 },
@@ -35,29 +35,42 @@ const run = async () => {
       yield 2
     },
   }
-  assert.deepEqual(await web(iterable).toPromise(), [1, 2])
+  assert.deepEqual(await web(iterable).toArray(), [1, 2])
 
-  const decoded = await web(['AQ', 'IDBA==']).decode('base64').toPromise()
+  let deferredInvocations = 0
+  const deferred = web.defer(() => {
+    deferredInvocations += 1
+    return [3]
+  })
+  assert.equal(deferredInvocations, 0)
+  assert.deepEqual(await deferred.toArray(), [3])
+  assert.equal(deferredInvocations, 1)
+
+  const decoded = await web(['AQ', 'IDBA==']).decode('base64').toArray()
   assert.deepEqual(decoded, [new Uint8Array([1, 2, 3, 4])])
   assert.equal(Buffer.isBuffer(decoded[0]), false)
 
   const encoder = new TextEncoder()
   const bytes = encoder.encode('a💥b\n1💥2\n')
   const chunks = [bytes.slice(0, 2), bytes.slice(2, 5), bytes.slice(5)]
-  assert.deepEqual(await web(chunks).csv({ header: true, separator: '💥' }).toPromise(), [
+  assert.deepEqual(await web(chunks).csv({ header: true, separator: '💥' }).toArray(), [
     { a: '1', b: '2' },
   ])
 
   const json = encoder.encode('{"rows":[{"id":1},{"id":2}]}')
-  assert.deepEqual(await web([json]).json({ path: '$.rows[*]' }).toPromise(), [
-    { id: 1 },
-    { id: 2 },
-  ])
-  assert.deepEqual(await web(['1\n2\n']).through(web.jsonl()).toPromise(), [1, 2])
+  assert.deepEqual(await web([json]).json({ path: '$.rows[*]' }).toArray(), [{ id: 1 }, { id: 2 }])
+  assert.deepEqual(await web(['1\n2\n']).jsonl().toArray(), [1, 2])
 
-  assert.throws(() => web([1]).toNodeStream(), /toNodeStream\(\) is not available in this runtime/)
+  assert.throws(
+    () => web([1]).toNodeReadable(),
+    /toNodeReadable\(\) is not available in this runtime/,
+  )
+  assert.throws(
+    () => web.pipeline().toNodeTransform(),
+    /toNodeTransform\(\) is not available in this runtime/,
+  )
 
-  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=9')
+  process.stdout.write('EXSTREAM_BROWSER_ENTRY_PASS checks=11')
 }
 
 run().catch((error) => {

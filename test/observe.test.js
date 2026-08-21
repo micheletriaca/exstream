@@ -5,21 +5,16 @@ test('observe basics', async () => {
   const observedValues = []
   const s = _([1, 2, 3])
   const toArrayDone = vi.fn()
-  const observerDone = new Promise((resolve) => {
-    s.observe()
-      .map((x) => x * 2)
-      .pipe(h.getSlowWritable(observedValues, 50, 0))
-      .on('finish', resolve)
-  })
+  const observerDone = s
+    .observe()
+    .map((x) => x * 2)
+    .pipeTo(h.getSlowWritable(observedValues, 50, 0))
 
   expect(observedValues).toEqual([])
 
-  const sourceResult = await new Promise((resolve) => {
-    s.toArray((res) => {
-      toArrayDone()
-      resolve({ observedValues: [...observedValues], res })
-    })
-  })
+  const res = await s.toArray()
+  toArrayDone()
+  const sourceResult = { observedValues: [...observedValues], res }
 
   // no back pressure on observers. so s ends while s.observe() buffers data
   expect(sourceResult.observedValues).toEqual([])
@@ -30,13 +25,13 @@ test('observe basics', async () => {
   expect(observedValues).toEqual([2, 4, 6])
 })
 
-test('observe basics - synchronous. even if it seems not so useful', () => {
+test('observe basics - synchronous. even if it seems not so useful', async () => {
   const s = _([1, 2, 3])
   const observer = s.observe().map((x) => x * 2)
 
-  const res = s.values()
+  const res = await s.toArray()
   expect(res).toEqual([1, 2, 3])
 
-  const observedValues = observer.values()
+  const observedValues = await observer.toArray()
   expect(observedValues).toEqual([2, 4, 6])
 })

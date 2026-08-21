@@ -1,12 +1,15 @@
 const _ = require('./utils')
 const { EventHub } = require('./event-hub.js')
 const { runtime } = require('./runtime.js')
-const { scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
+const { createCooperativeScheduler, scheduleMicrotask, scheduleNextTurn } = require('./scheduler')
 const { DATA, END, ERROR, dataFrame, endFrame, errorFrame, isDataValue } = require('./protocol')
-const { createContext, forkContext } = require('./context')
+const { forkContext } = require('./context')
 const { annotateError } = require('./error-info.js')
+const { instantiatePipeline, isIdentityPipeline } = require('./pipeline-control.js')
+const { kAbort, kDestroy, kFail, kPause, kResume } = require('./stream-control.js')
 
 const signalActive = Symbol('exstream signal active')
+const noCancel = () => undefined
 
 function getErrorMessage(value) {
   if (value && value.message !== void 0) return String(value.message)
@@ -56,6 +59,7 @@ class Exstream extends EventHub {
   readable = true
 
   #state = 'idle'
+  #activationStarted = false
   #startPromise = null
   #abortReason = null
   #failing = false
@@ -63,10 +67,10 @@ class Exstream extends EventHub {
   #abortController = null
   #signalAbortReason = signalActive
 
-  #resumedAtLeastOnce = false
-  paused = true
-  pausedFromOutside = true
-  pausedFromInside = false
+  #paused = true
+  #pausedFromOutside = true
+  #pausedFromInside = false
+  #source = null
 
   #nilPushed = false
 
@@ -76,20 +80,26 @@ class Exstream extends EventHub {
   #dropped = 0
   #bufferLimit = Infinity
   #overflowPolicy = 'error'
-  #sourceData = null
-  #generator = null
+  #sourceIterator = null
+  #sourceIteratorAsync = false
+  #sourceIteratorDone = false
+  #sourceFrames = false
+  #sourcePulling = false
+  #sourceStage = 'iterate'
+  #sourceInitializer = null
+  #scheduleSourceContinuation = createCooperativeScheduler()
+  #cancelSourceContinuation = noCancel
 
   #consumeFn = null
   #consumeSyncFn = null
   #activeContext = void 0
   #nextCalled = true
-  #nextGenCalled = true
   #consumers = []
   #observers = []
   #observedSource = null
   #contextBoundary = false
   #autostart = true
-  #synchronous = true
+  #startMode = 'auto'
 
   #destroyers = []
 
@@ -103,6 +113,10 @@ class Exstream extends EventHub {
 
   get abortReason() {
     return this.#abortReason
+  }
+
+  get paused() {
+    return this.#paused
   }
 
   get signal() {
@@ -138,6 +152,7 @@ class Exstream extends EventHub {
   constructor(xs, options = null) {
     super()
     this.#configureBuffer(options)
+    this.#configureStart(options)
     this.#configureAbortSignal(options)
     if (this.ended) return
     if (!xs) {
@@ -145,26 +160,82 @@ class Exstream extends EventHub {
     } else if (_.isExstream(xs)) {
       return xs
     } else if (_.isNodeStream(xs)) {
-      this.#pipeReadable(xs)
+      this.#sourceInitializer = () =>
+        _.isAsyncIterable(xs) ? this.#pipeAsyncIterable(xs, 'read') : this.#pipeReadable(xs)
     } else if (runtime.isWebReadableStream(xs)) {
-      this.#pipeWebReadable(xs)
+      this.#sourceInitializer = () => this.#pipeWebReadable(xs)
     } else if (_.isIterable(xs)) {
-      this.#sourceData = xs[Symbol.iterator]()
+      this.#sourceInitializer = () => {
+        this.#setSourceIterator(xs[Symbol.iterator]())
+      }
     } else if (_.isAsyncIterable(xs)) {
-      if (runtime.readableFromAsyncIterable)
-        this.#pipeReadable(runtime.readableFromAsyncIterable(xs))
-      else this.#pipeAsyncIterable(xs)
+      this.#sourceInitializer = () => this.#pipeAsyncIterable(xs)
     } else if (_.isPromise(xs)) {
-      return new Exstream([xs]).resolve()
-    } else if (_.isFunction(xs)) {
-      this.#synchronous = false
-      this.#generator = xs
+      return new Exstream([xs], options).mapAsync((value) => value)
     } else {
       throw Error(
         'error creating exstream: invalid source. source can be one of: iterable, ' +
-          'async iterable, exstream function, a promise, a node readable stream',
+          'async iterable, a promise, a Web ReadableStream, or a Node readable stream',
       )
     }
+  }
+
+  static fromFrames(iterable, options = null) {
+    const stream = new Exstream(null, options)
+    stream.#sourceInitializer = () => stream.#pipeAsyncIterable(iterable, 'iterate', true)
+    return stream
+  }
+
+  static fromDeferred(factory, options = null) {
+    const frames = {
+      async *[Symbol.asyncIterator]() {
+        let source
+        try {
+          source = await factory()
+          if (
+            !(
+              _.isExstream(source) ||
+              _.isNodeStream(source) ||
+              runtime.isWebReadableStream(source) ||
+              _.isIterable(source) ||
+              _.isAsyncIterable(source)
+            )
+          ) {
+            throw Error('defer() factory must return a valid stream source')
+          }
+        } catch (error) {
+          yield errorFrame(new ExstreamError(error, void 0, { origin: 'source', stage: 'defer' }))
+          return
+        }
+
+        let stream
+        try {
+          stream = new Exstream(source)
+        } catch {
+          yield errorFrame(
+            new ExstreamError(Error('defer() factory must return a valid stream source'), void 0, {
+              origin: 'source',
+              stage: 'defer',
+            }),
+          )
+          return
+        }
+
+        const iterator = stream.#createAsyncIterator({ frames: true })
+        try {
+          /* oxlint-disable no-await-in-loop -- Frame order and backpressure are sequential. */
+          while (true) {
+            const item = await iterator.next()
+            if (item.done) return
+            yield item.value
+          }
+          /* oxlint-enable no-await-in-loop */
+        } finally {
+          await iterator.return()
+        }
+      },
+    }
+    return Exstream.fromFrames(frames, options)
   }
 
   #configureBuffer = (options) => {
@@ -189,6 +260,16 @@ class Exstream extends EventHub {
     this.#overflowPolicy = overflow
   }
 
+  #configureStart = (options) => {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) return
+    const mode = options.start === void 0 ? 'auto' : options.start
+    if (mode !== 'auto' && mode !== 'manual') {
+      throw Error('start must be one of: auto, manual')
+    }
+    this.#startMode = mode
+    this.#autostart = mode === 'auto'
+  }
+
   #configureAbortSignal = (options) => {
     const signal = options && typeof options === 'object' ? options.signal : void 0
     if (signal === void 0) return
@@ -200,7 +281,7 @@ class Exstream extends EventHub {
     ) {
       throw Error('signal must be an AbortSignal')
     }
-    const abortFromSignal = () => this.abort(signal.reason)
+    const abortFromSignal = () => this[kAbort](signal.reason)
     if (signal.aborted) abortFromSignal()
     else {
       signal.addEventListener('abort', abortFromSignal, { once: true })
@@ -208,73 +289,54 @@ class Exstream extends EventHub {
     }
   }
 
-  #pipeReadable = (xs) => {
-    this.#synchronous = false
-    xs.pipe(this)
-    this.#addOnceListener('error', xs, (e) => {
-      // sometimes e is not an instance of Error, nobody knows why
-      this.write(new ExstreamError(e, void 0, { origin: 'source', stage: 'read' }))
-      scheduleNextTurn(() => this.end())
-    })
-    this.once('end', () => xs.destroy())
+  #setSourceIterator = (iterator, async = false, stage = 'iterate', frames = false) => {
+    this.#sourceIterator = iterator
+    this.#sourceIteratorAsync = async
+    this.#sourceIteratorDone = false
+    this.#sourceFrames = frames
+    this.#sourceStage = stage
   }
 
-  #pipeAsyncIterable = (iterable) => {
-    this.#synchronous = false
-    const iterator = iterable[Symbol.asyncIterator]()
-    let cancelled = false
-    this.#generator = (write, next) => {
-      /* v8 ignore next -- Destruction removes the generator before it can be invoked again. */
-      if (cancelled) return
-      void (async () => {
-        try {
-          const item = await iterator.next()
-          if (cancelled) return
-          if (item.done) write(_.nil)
-          else {
-            write(item.value)
-            next()
-          }
-        } catch (error) {
-          write(new ExstreamError(error, void 0, { origin: 'source', stage: 'iterate' }))
-          write(_.nil)
-        }
-      })()
-    }
-    this.#destroyers.push(() => {
-      cancelled = true
-      if (typeof iterator.return === 'function') Promise.resolve(iterator.return()).catch(() => {})
+  #pipeAsyncIterable = (iterable, stage = 'iterate', frames = false) => {
+    this.#setSourceIterator(iterable[Symbol.asyncIterator](), true, stage, frames)
+  }
+
+  #pipeReadable = (readable) => {
+    this.#addOnceListener('error', readable, (reason) => {
+      this.write(new ExstreamError(reason, void 0, { origin: 'source', stage: 'read' }))
+      scheduleNextTurn(() => this.end())
     })
+    this.once('end', () => readable.destroy())
+    readable.pipe(this)
   }
 
   #pipeWebReadable = (readable) => {
-    this.#synchronous = false
     const reader = readable.getReader()
-    let cancelled = false
-    this.#generator = (write, next) => {
-      /* v8 ignore next -- Destruction removes the generator before it can be invoked again. */
-      if (cancelled) return
-      void (async () => {
-        try {
-          const { done, value } = await reader.read()
-          if (cancelled) return
-          if (done) write(_.nil)
-          else {
-            write(value)
-            next()
-          }
-        } catch (error) {
-          write(new ExstreamError(error, void 0, { origin: 'source', stage: 'read' }))
-          write(_.nil)
-        }
-      })()
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      reader.releaseLock()
     }
-    this.#destroyers.push(() => {
-      cancelled = true
-      Promise.resolve(reader.cancel(this.signal.reason))
-        .catch(() => {})
-        .finally(() => reader.releaseLock())
-    })
+    this.#setSourceIterator(
+      {
+        async next() {
+          const item = await reader.read()
+          if (item.done) release()
+          return item
+        },
+        async return(reason) {
+          try {
+            await reader.cancel(reason)
+          } finally {
+            release()
+          }
+          return { done: true, value: void 0 }
+        },
+      },
+      true,
+      'read',
+    )
   }
 
   #addOnceListener = (event, target, handler) => {
@@ -287,12 +349,7 @@ class Exstream extends EventHub {
     return this._write(x)
   }
 
-  writeData(value) {
-    if (this.#nilPushed) throw Error('Cannot write to stream after nil')
-    return this._writeData(value)
-  }
-
-  #enqueue = (type, value, input, fatal, context) => {
+  #enqueue = (type, value, input, fatal, context, afterWrite) => {
     if (type === END) {
       const frame = endFrame
       this.#buffer.push(frame)
@@ -307,6 +364,7 @@ class Exstream extends EventHub {
     }
     const frame =
       type === DATA ? dataFrame(value, context) : errorFrame(value, input, fatal, context)
+    if (afterWrite) frame.afterWrite = afterWrite
     this.#buffer.push(frame)
     this.#buffered++
     this.#peakBuffered = Math.max(this.#peakBuffered, this.#buffered)
@@ -327,9 +385,10 @@ class Exstream extends EventHub {
     return this._writeData(x, skipBackPressure)
   }
 
-  _writeData(value, skipBackPressure = false, context) {
-    if (this.paused && !skipBackPressure) {
-      this.#enqueue(DATA, value, void 0, false, context)
+  _writeData(value, skipBackPressure = false, context, afterWrite) {
+    const queued = this.paused && !skipBackPressure
+    if (queued) {
+      this.#enqueue(DATA, value, void 0, false, context, afterWrite)
     } else if (this.#consumeSyncFn) {
       if (context === void 0) this.#consumeSyncFn(void 0, value, this.#push)
       else this.#consumeSyncContext(void 0, value, context)
@@ -338,6 +397,8 @@ class Exstream extends EventHub {
     } else {
       this.#sendData(value, context)
     }
+
+    if (!queued && afterWrite) afterWrite()
 
     return !this.paused || skipBackPressure
   }
@@ -353,13 +414,22 @@ class Exstream extends EventHub {
     )
   }
 
-  #writeControlRecord = (type, value, input, fatal, context, skipBackPressure = false) => {
+  #writeControlRecord = (
+    type,
+    value,
+    input,
+    fatal,
+    context,
+    skipBackPressure = false,
+    afterWrite,
+  ) => {
     if (type === END) this.#nilPushed = true
     const err = type === ERROR ? value : void 0
     const x = type === END ? _.nil : null
 
-    if (this.paused && !skipBackPressure) {
-      this.#enqueue(type, value, input, fatal, context)
+    const queued = this.paused && !skipBackPressure
+    if (queued) {
+      this.#enqueue(type, value, input, fatal, context, afterWrite)
     } else if (this.#consumeSyncFn) {
       if (context === void 0) this.#consumeSyncFn(err, x, this.#push)
       else this.#consumeSyncContext(err, x, context)
@@ -368,6 +438,8 @@ class Exstream extends EventHub {
     } else {
       this.#sendControl(type, value, input, fatal, context)
     }
+
+    if (!queued && afterWrite) afterWrite()
 
     return !this.paused || skipBackPressure
   }
@@ -384,7 +456,7 @@ class Exstream extends EventHub {
     let syncNext = true
     const next = () => {
       this.#nextCalled = true
-      if (this.paused && !syncNext) scheduleMicrotask(() => this.resume(true))
+      if (this.paused && !syncNext) scheduleMicrotask(() => this[kResume](true))
     }
     const push = context === void 0 ? this.#push : this.#contextualPush(context)
     if (context === void 0) {
@@ -399,7 +471,7 @@ class Exstream extends EventHub {
       }
     }
     syncNext = false
-    if (!this.#nextCalled) this.pause(true)
+    if (!this.#nextCalled) this[kPause](true)
   }
 
   #contextualPush =
@@ -482,7 +554,7 @@ class Exstream extends EventHub {
       if (context === void 0) this._writeData(value)
       else this._writeData(value, false, context)
     } catch (error) {
-      this.abort(error)
+      this[kAbort](error)
     }
   }
 
@@ -491,14 +563,17 @@ class Exstream extends EventHub {
     try {
       this.#writeControlRecord(type, value, input, fatal, context)
     } catch (error) {
-      this.abort(error)
+      this[kAbort](error)
     }
   }
 
   start() {
+    const root = this.#rootSource()
+    if (root !== this) return root.start()
     if (this.ended || this.#state === 'ending') return Promise.resolve()
     if (this.#startPromise) return this.#startPromise
-    // A next turn guarantees that .pipe() has resumed the source stream.
+    this.#activationStarted = true
+    // A next turn lets downstream adapters finish attaching before activation.
     this.#startPromise = new Promise((resolve) =>
       scheduleNextTurn(() => {
         if (this.ended || this.#state === 'ending') {
@@ -527,17 +602,19 @@ class Exstream extends EventHub {
     if (terminalState === 'aborted') this.emit('abort', this.#abortReason)
     if (this.readable) this.emit('end')
     while (this.#consumers.length) this.#removeConsumer(this.#consumers[0])
-    const source = this.source
+    const source = this.#source
     if (source) {
       source.#removeConsumer(this)
       if (propagateUpstream && source.#consumers.length === 0) {
-        if (terminalState === 'aborted') source.abort(this.#abortReason)
-        else source.destroy()
+        if (terminalState === 'aborted') source[kAbort](this.#abortReason)
+        else source[kDestroy]()
       }
     }
     if (this.#observedSource) this.#observedSource.#removeObserver(this)
-    this.#generator = null
-    this.#sourceData = null
+    this.#sourceInitializer = null
+    this.#cancelSourceContinuation()
+    this.#cancelSourceContinuation = noCancel
+    this.#closeSourceIterator()
     this.removeAllListeners()
     this.#destroyers.forEach((x) => x())
     this.#destroyers = []
@@ -549,7 +626,7 @@ class Exstream extends EventHub {
     this.#terminate('ended')
   }
 
-  destroy() {
+  [kDestroy]() {
     return this.ended ? void 0 : this.#destroyActive()
   }
 
@@ -559,9 +636,9 @@ class Exstream extends EventHub {
     annotateError(reason, { origin: 'lifecycle', stage: 'destroy' })
     this.#cancelSignal(reason)
     this.#terminate('destroyed', true)
-  }
+  };
 
-  abort(reason) {
+  [kAbort](reason) {
     if (this.ended || this.#state === 'ending') return
     if (reason === void 0) {
       reason = Error('The operation was aborted')
@@ -595,13 +672,13 @@ class Exstream extends EventHub {
     if (this.#signalAbortReason !== signalActive) return false
     this.#signalAbortReason = reason
     return this.#abortController ? this.#abortController.abort(reason) : true
-  }
+  };
 
-  fail(reason, input) {
+  [kFail](reason, input) {
     const error = new ExstreamError(reason, input, { origin: 'operator', stage: 'fail' })
     error.exstreamFatal = true
     let root = this
-    while (root.source) root = root.source
+    while (root.#source) root = root.#source
     return root.#failDownstream(error, input)
   }
 
@@ -615,7 +692,7 @@ class Exstream extends EventHub {
 
   #propagateFailure = (error, input) => {
     this.#failing = true
-    this.pause(true)
+    this[kPause](true)
     this.#emitErrorIfHandled(error)
     this.emit('fatal', error, input)
     const consumers = this.#consumers
@@ -639,7 +716,7 @@ class Exstream extends EventHub {
       const frame = this.#buffer[i]
       const wrote =
         frame.type === DATA
-          ? this._writeData(frame.value, force, frame.context)
+          ? this._writeData(frame.value, force, frame.context, frame.afterWrite)
           : this.#writeControlRecord(
               frame.type,
               frame.error,
@@ -647,6 +724,7 @@ class Exstream extends EventHub {
               frame.fatal,
               frame.context,
               force,
+              frame.afterWrite,
             )
       if (!wrote) break
     }
@@ -655,107 +733,173 @@ class Exstream extends EventHub {
     this.#buffered -= removed.filter((frame) => frame.type !== END).length
   }
 
-  #consumeSourceData = () => {
+  #closeSourceIterator = () => {
+    const iterator = this.#sourceIterator
+    const done = this.#sourceIteratorDone
+    this.#sourceIterator = null
+    this.#sourceIteratorDone = true
+    this.#sourcePulling = false
+    if (!done && iterator && typeof iterator.return === 'function') {
+      const reason =
+        this.#signalAbortReason === signalActive ? this.#abortReason : this.#signalAbortReason
+      Promise.resolve(iterator.return(reason)).catch(() => {})
+    }
+  }
+
+  #writeSourceFrame = (frame) => {
+    let wrote
+    if (frame.type === DATA)
+      wrote = this._writeData(frame.value, false, frame.context, frame.afterWrite)
+    if (frame.type === ERROR) {
+      wrote = frame.fatal
+        ? this[kFail](frame.error, frame.input)
+        : this.#writeControlRecord(
+            ERROR,
+            frame.error,
+            frame.input,
+            false,
+            frame.context,
+            false,
+            frame.afterWrite,
+          )
+    }
+    if (frame.type === END) {
+      this.end()
+      wrote = false
+    }
+    return wrote
+  }
+
+  #writeSourceValue = (value) =>
+    this.#sourceFrames ? this.#writeSourceFrame(value) : this.write(value)
+
+  #failSource = (error) => {
+    if (error && error.exstreamFatal) {
+      this[kFail](error, error.exstreamInput)
+      return
+    }
+    this.write(new ExstreamError(error, void 0, { origin: 'source', stage: this.#sourceStage }))
+    this.end()
+  }
+
+  #consumeSyncSource = () => {
     let nextVal
     do {
       try {
-        nextVal = this.#sourceData.next()
+        nextVal = this.#sourceIterator.next()
       } catch (e) {
-        // es6 generator fatal error. Must end the stream
-        this.write(new ExstreamError(e, void 0, { origin: 'source', stage: 'iterate' }))
-        this.end()
+        this.#failSource(e)
         return
       }
-      if (!nextVal.done) this.write(nextVal.value)
-      else this.end()
+      if (!nextVal.done) this.#writeSourceValue(nextVal.value)
+      else {
+        this.#sourceIteratorDone = true
+        this.end()
+      }
     } while (!this.#nilPushed && !this.paused)
   }
 
-  #consumeGenerator = () => {
-    let syncNext = true
-    const next = (otherStream) => {
-      this.#nextGenCalled = true
-      let me = this
-      if (otherStream) {
-        otherStream = new Exstream(otherStream)
-        otherStream.#consumers = this.#consumers
-        otherStream.#consumers.forEach((x) => {
-          x.source = otherStream
+  #consumeAsyncSource = () => {
+    if (this.#sourcePulling) return
+    this.#sourcePulling = true
+    this[kPause](true)
+
+    let request
+    try {
+      request = this.#sourceIterator.next()
+    } catch (error) {
+      this.#sourcePulling = false
+      this.#failSource(error)
+      return
+    }
+
+    Promise.resolve(request).then(
+      (item) => {
+        this.#sourcePulling = false
+        if (this.ended || this.#state === 'ending') return
+        if (item.done) {
+          this.#sourceIteratorDone = true
+          this.end()
+          return
+        }
+        try {
+          this.#writeSourceValue(item.value)
+        } catch (error) {
+          this[kAbort](error)
+          return
+        }
+        if (this.ended || this.#state === 'ending') return
+        this.#cancelSourceContinuation = this.#scheduleSourceContinuation(() => {
+          this.#cancelSourceContinuation = noCancel
+          this[kResume](true)
         })
-        otherStream.#resumedAtLeastOnce = true
-        otherStream.pausedFromInside = true
-        otherStream.pausedFromOutside = false
-        otherStream.#buffer = this.#buffer
-        otherStream.#buffered = this.#buffered
-        otherStream.#peakBuffered = Math.max(this.#peakBuffered, otherStream.#peakBuffered)
-        otherStream.#dropped += this.#dropped
-        otherStream.#bufferLimit = this.#bufferLimit
-        otherStream.#overflowPolicy = this.#overflowPolicy
-        this.#buffer = []
-        this.#buffered = 0
-        otherStream.#synchronous = false
-        this.#consumers = []
-        this.destroy()
-        me = otherStream
-      }
-      if (me.paused && (!syncNext || otherStream)) scheduleNextTurn(() => me.resume(true))
-    }
-
-    const w = (x) => {
-      this.write(x)
-      if (x === _.nil) next()
-    }
-
-    do {
-      this.#nextGenCalled = false
-      syncNext = true
-      this.#generator(w, next)
-      syncNext = false
-      if (!this.#nextGenCalled) this.pause(true)
-    } while (!this.paused && !this.#nilPushed)
+        return void 0
+      },
+      (error) => {
+        this.#sourcePulling = false
+        if (!this.ended && this.#state !== 'ending') this.#failSource(error)
+        return void 0
+      },
+    )
   }
 
-  pause(fromInside = false) {
-    this.paused = true
-    if (fromInside) this.pausedFromInside = true
-    else this.pausedFromOutside = true
-    if (this.source) this.source.pause()
+  #rootSource = () => {
+    let root = this
+    while (root.#source) root = root.#source
+    return root
+  };
+
+  [kPause](fromInside = false) {
+    this.#paused = true
+    if (fromInside) this.#pausedFromInside = true
+    else this.#pausedFromOutside = true
+    if (this.#source) this.#source[kPause]()
   }
 
-  resume(fromInside = false) {
-    if (fromInside) this.pausedFromInside = false
-    else this.pausedFromOutside = false
-    if (this.pausedFromInside || this.pausedFromOutside) return
-    if (!this.#autostart || !this.#nextCalled || !this.#nextGenCalled || !this.paused) return
+  [kResume](fromInside = false) {
+    if (fromInside) this.#pausedFromInside = false
+    else this.#pausedFromOutside = false
+    if (this.#pausedFromInside || this.#pausedFromOutside) return
+    if (!this.#autostart || !this.#nextCalled || !this.paused) return
     if (this.ended || this.#state === 'ending') return
 
-    this.#resumedAtLeastOnce = true
+    this.#activationStarted = true
     this.#state = 'running'
-    this.paused = false
+    this.#paused = false
+    if (this.#sourceInitializer) {
+      const initialize = this.#sourceInitializer
+      this.#sourceInitializer = null
+      try {
+        initialize()
+      } catch (error) {
+        this.write(new ExstreamError(error, void 0, { origin: 'source', stage: 'acquire' }))
+        this.end()
+        return
+      }
+      if (this.ended || this.#state === 'ending') return
+    }
     this.#flushBuffer() // This can pause the stream again if the consumers are slow
     if (this.paused) return
 
-    if (this.#sourceData) {
-      this.#consumeSourceData() // This can pause the stream again if the consumers are slow
-    } else if (this.#generator) {
-      this.#consumeGenerator() // This can pause the stream again if the consumers are slow
+    if (this.#sourceIterator) {
+      if (this.#sourceIteratorAsync) this.#consumeAsyncSource()
+      else this.#consumeSyncSource()
     }
 
     if (this.paused) return
-    if (!this.source) this.emit('drain')
-    else this.source.#checkBackPressure()
+    if (!this.#source) this.emit('drain')
+    else this.#source.#checkBackPressure()
   }
 
   #checkBackPressure = () => {
-    if (!this.#consumers.length) return this.pause()
+    if (!this.#consumers.length) return this[kPause]()
     for (let i = 0, len = this.#consumers.length; i < len; i++) {
-      if (this.#consumers[i].paused) return this.pause()
+      if (this.#consumers[i].paused) return this[kPause]()
     }
-    this.resume()
+    this[kResume]()
   }
 
   consume(fn) {
-    this.#synchronous = false
     const res = new Exstream()
     res.#consumeFn = fn
     this.#addConsumer(res)
@@ -773,119 +917,28 @@ class Exstream extends EventHub {
     return this.#activeContext
   }
 
-  pull(fn) {
-    const _pull = (fn) => {
-      const usesContext = fn.length >= 3
-      let s2
-      s2 = this.consumeSync((err, x) => {
-        this.#removeConsumer(s2)
-        if (usesContext) {
-          let context = s2._recordContext
-          if (context === void 0 && !err && x !== _.nil) context = createContext(x, s2.signal)
-          fn(err, x, context)
-        } else {
-          fn(err, x)
-        }
-      })
-      s2.resume()
-    }
-
-    if (fn) _pull(fn)
-    else
-      return new Promise((resolve, reject) => {
-        _pull((err, x) => {
-          if (err) reject(err)
-          else if (x === _.nil) resolve(_.nil)
-          else resolve(x)
-        })
-      })
-  }
-
-  each(fn) {
-    let s2
-    const onValue =
-      fn.length >= 2
-        ? (value) => {
-            const context = s2._recordContext
-            fn(value, context === void 0 ? createContext(value, s2.signal) : context)
-          }
-        : fn
-    s2 = this.consumeSync((err, x, push) => {
-      if (err) {
-        ;(this.endOfChain || this).emit('error', err)
-      } else if (x === _.nil) {
-        push(null, _.nil)
-      } else {
-        onValue(x)
-      }
-    })
-    s2.resume()
-  }
-
   #addConsumer = (s, skipCheck = false) => {
-    const realSource = this.endOfChain || this
-    if (!skipCheck && realSource.#consumers.length) {
+    if (!skipCheck && this.#consumers.length) {
       throw Error(
         'This stream has already been transformed or consumed. Please ' +
           'fork() or observe() the stream if you want to perform ' +
           'parallel transformations.',
       )
     }
-    s.source = realSource
-    realSource.#consumers.push(s)
-    realSource.#checkBackPressure()
+    s.#source = this
+    this.#consumers.push(s)
+    this.#checkBackPressure()
   }
 
   #removeConsumer = (s) => {
     this.#consumers = this.#consumers.filter((c) => c !== s)
-    s.source = null
+    s.#source = null
     this.#checkBackPressure()
   }
 
   #removeObserver = (observer) => {
     this.#observers = this.#observers.filter((candidate) => candidate !== observer)
     observer.#observedSource = null
-  }
-
-  pipe(dest, options = {}) {
-    if (runtime.isWebWritableStream(dest)) return this.#pipeWebWritable(dest, options)
-    let nextCallback
-    const drainCallback = () => {
-      if (nextCallback) {
-        nextCallback()
-        nextCallback = null
-      }
-    }
-    this.#synchronous = false
-    if (_.isExstream(dest) || _.isExstreamPipeline(dest)) return this.through(dest)
-    const canClose = !runtime.isStandardOutput(dest) && options.end !== false
-    const end = canClose ? dest.end : () => ({})
-    const s = this.consume((err, x, push, next) => {
-      if (x === _.nil) {
-        dest.off('drain', drainCallback)
-        scheduleMicrotask(() => {
-          end.call(dest)
-          if (!canClose) s.end()
-        })
-      } else if (err) {
-        // A next turn is needed to exit from a promise context.
-        scheduleNextTurn(() => {
-          dest.emit('error', err)
-          next()
-        })
-      } else if (!dest.write(x)) {
-        nextCallback = next
-      } else {
-        next()
-      }
-    })
-    dest.on('drain', drainCallback)
-    s.#destroyers.push(() => dest.off('drain', drainCallback))
-    const stopWatching = runtime.finished(dest, { cleanup: true, error: false }, () => s.end())
-    s.#destroyers.push(stopWatching)
-    dest.emit('pipe', this)
-    scheduleNextTurn(() => s.resume())
-    return dest
   }
 
   pipeTo(destination, options = {}) {
@@ -903,15 +956,92 @@ class Exstream extends EventHub {
     ) {
       return Promise.reject(Error('error in .pipeTo(). signal must be an AbortSignal'))
     }
+    if (_.isExstreamDestination(destination)) {
+      return this.#pipeExstreamDestination(destination, options)
+    }
     if (runtime.isWebWritableStream(destination)) {
       return this.#pipeWebWritable(destination, options).then(() => undefined)
     }
     if (!destination || typeof destination.write !== 'function' || !runtime.finished) {
       return Promise.reject(
-        Error('error in .pipeTo(). destination must be a Node writable or WritableStream'),
+        Error(
+          'error in .pipeTo(). destination must be an Exstream Destination, ' +
+            'Node writable, or WritableStream',
+        ),
       )
     }
     return this.#pipeNodeWritable(destination, options)
+  }
+
+  #pipeExstreamDestination = (destination, options) => {
+    const externalSignal = options.signal
+    const transferController = new AbortController()
+    const sourceSignal = this.signal
+    let externallyAborted = false
+    let externalAbortReason
+
+    const abortTransfer = (signal) => {
+      if (!transferController.signal.aborted) transferController.abort(signal.reason)
+    }
+    const abortFromSource = () => abortTransfer(sourceSignal)
+    const abortFromExternal = () => {
+      annotateError(externalSignal.reason, { origin: 'lifecycle', stage: 'abort' })
+      externallyAborted = true
+      externalAbortReason = externalSignal.reason
+      abortTransfer(externalSignal)
+      this[kAbort](externalSignal.reason)
+    }
+    const cleanup = () => {
+      sourceSignal.removeEventListener('abort', abortFromSource)
+      if (externalSignal !== void 0) {
+        externalSignal.removeEventListener('abort', abortFromExternal)
+      }
+    }
+    const fail = (error) => {
+      annotateError(error, { origin: 'sink', stage: 'destination' })
+      if (!transferController.signal.aborted) transferController.abort(error)
+      this[kAbort](error)
+      throw error
+    }
+
+    sourceSignal.addEventListener('abort', abortFromSource, { once: true })
+
+    if (externalSignal !== void 0) {
+      if (externalSignal.aborted) abortFromExternal()
+      else externalSignal.addEventListener('abort', abortFromExternal, { once: true })
+    }
+
+    let result
+    if (externalSignal && externalSignal.aborted) {
+      result = Promise.reject(externalSignal.reason)
+    } else {
+      try {
+        result = destination._run(this, { signal: transferController.signal })
+        if (!result || typeof result.then !== 'function') {
+          const error = Error('error running destination: run must return a promise')
+          error.code = 'EXSTREAM_DESTINATION_NO_PROMISE'
+          result = Promise.reject(error)
+        }
+      } catch (error) {
+        result = Promise.reject(error)
+      }
+    }
+
+    const completion = Promise.resolve(result).then(
+      () => {
+        if (externallyAborted) throw externalAbortReason
+        if (this.state === 'aborted') throw this.abortReason
+        if (this.ended) return undefined
+        const error = Error('Destination completed before consuming its source')
+        error.code = 'EXSTREAM_DESTINATION_INCOMPLETE'
+        throw error
+      },
+      (error) => {
+        throw externallyAborted ? externalAbortReason : error
+      },
+    )
+
+    return completion.catch(fail).finally(cleanup)
   }
 
   #pipeNodeWritable = (destination, options) =>
@@ -951,7 +1081,7 @@ class Exstream extends EventHub {
         if (settled) return
         settled = true
         cleanup()
-        if (sink && !sink.ended) sink.end()
+        sink.end()
         resolve()
       }
       const fail = (error, info) => {
@@ -960,7 +1090,7 @@ class Exstream extends EventHub {
         annotateError(error, info)
         cleanup()
         abortDestination()
-        if (sink && !sink.ended) sink.abort(error)
+        sink[kAbort](error)
         reject(error)
       }
       const writeCompleted = (error) => {
@@ -1032,7 +1162,7 @@ class Exstream extends EventHub {
       destination.emit('pipe', this)
       scheduleNextTurn(() => {
         try {
-          sink.resume()
+          sink[kResume]()
         } catch (error) {
           fail(error)
         }
@@ -1041,7 +1171,7 @@ class Exstream extends EventHub {
 
   #pipeWebWritable = async (destination, options) => {
     const writer = destination.getWriter()
-    const iterator = this.toAsyncIterator({ signal: options.signal })
+    const iterator = this.#createAsyncIterator({ signal: options.signal })
     let rejectAbort
     const abortPromise =
       options.signal === void 0
@@ -1087,12 +1217,311 @@ class Exstream extends EventHub {
     }
   }
 
-  fork(disableAutostart = false) {
-    if (this.#resumedAtLeastOnce)
+  #createAsyncIterator = (options = {}) => {
+    if (options === null) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error creating async iterator: options must be an object')
+    }
+    const signal = options.signal
+    const frames = options.frames === true
+    if (
+      signal !== void 0 &&
+      (!signal ||
+        typeof signal.aborted !== 'boolean' ||
+        typeof signal.addEventListener !== 'function' ||
+        typeof signal.removeEventListener !== 'function')
+    ) {
+      throw Error('error creating async iterator: signal must be an AbortSignal')
+    }
+
+    if (this.ended) {
+      let terminalError = this.#state === 'aborted' ? this.#abortReason : null
+      return {
+        next() {
+          if (terminalError) {
+            const error = terminalError
+            terminalError = null
+            return Promise.reject(error)
+          }
+          return Promise.resolve({ done: true, value: void 0 })
+        },
+        return(value) {
+          terminalError = null
+          return Promise.resolve({ done: true, value })
+        },
+        throw(error) {
+          terminalError = null
+          return Promise.reject(error)
+        },
+        [Symbol.asyncIterator]() {
+          return this
+        },
+      }
+    }
+
+    let closed = false
+    let pending
+    let sequence = Promise.resolve()
+    let sink
+    let terminalError
+
+    const cleanup = () => {
+      if (signal !== void 0) signal.removeEventListener('abort', abortFromSignal)
+    }
+    const finish = (error) => {
+      if (closed) return
+      closed = true
+      cleanup()
+      if (pending) {
+        const request = pending
+        pending = null
+        if (error) request.reject(error)
+        else request.resolve({ done: true, value: void 0 })
+      } else if (error) terminalError = error
+    }
+    const abortFromSignal = () => sink[kAbort](signal.reason)
+
+    sink = this.consumeSync((error, value) => {
+      if (closed) return
+      if (value === _.nil) {
+        finish()
+        return
+      }
+
+      sink[kPause]()
+      const request = pending
+      pending = null
+      if (error && !frames) {
+        closed = true
+        cleanup()
+        request.reject(error)
+        sink[kDestroy]()
+      } else {
+        request.resolve({
+          done: false,
+          value: error
+            ? errorFrame(
+                error,
+                error.exstreamInput,
+                error.exstreamFatal === true,
+                sink._recordContext,
+              )
+            : frames
+              ? dataFrame(value, sink._recordContext)
+              : value,
+        })
+      }
+    })
+    sink.once('error', finish)
+
+    if (signal !== void 0) {
+      if (signal.aborted) scheduleMicrotask(abortFromSignal)
+      else signal.addEventListener('abort', abortFromSignal, { once: true })
+    }
+
+    const readOne = () => {
+      if (closed) {
+        if (terminalError) {
+          const error = terminalError
+          terminalError = null
+          return Promise.reject(error)
+        }
+        return Promise.resolve({ done: true, value: void 0 })
+      }
+      return new Promise((resolve, reject) => {
+        pending = { reject, resolve }
+        sink[kResume]()
+      })
+    }
+
+    return {
+      next() {
+        const request = sequence.then(readOne)
+        sequence = request.then(noCancel, noCancel)
+        return request
+      },
+      return(value) {
+        terminalError = null
+        finish()
+        sink[kDestroy]()
+        return Promise.resolve({ done: true, value })
+      },
+      throw(error) {
+        sink[kAbort](error)
+        terminalError = null
+        return Promise.reject(error)
+      },
+      [Symbol.asyncIterator]() {
+        return this
+      },
+    }
+  };
+
+  [Symbol.asyncIterator]() {
+    return this.#createAsyncIterator()
+  }
+
+  toNodeReadable(options = {}) {
+    if (!runtime.readableFromAsyncIterable) {
+      throw Error('toNodeReadable() is not available in this runtime')
+    }
+    if (options === null) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error in .toNodeReadable(). options must be an object')
+    }
+    return runtime.readableFromAsyncIterable(
+      this.#createAsyncIterator({ signal: options.signal }),
+      options,
+    )
+  }
+
+  toWebReadable(options = {}) {
+    if (typeof globalThis.ReadableStream !== 'function') {
+      throw Error('toWebReadable() requires ReadableStream support')
+    }
+    if (options === null) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error in .toWebReadable(). options must be an object')
+    }
+    const iterator = this.#createAsyncIterator({ signal: options.signal })
+    return new globalThis.ReadableStream(
+      {
+        async pull(controller) {
+          try {
+            const item = await iterator.next()
+            if (item.done) controller.close()
+            else controller.enqueue(item.value)
+          } catch (error) {
+            controller.error(error)
+          }
+        },
+        async cancel(reason) {
+          if (reason === void 0) await iterator.return()
+          else await iterator.throw(reason).catch(() => {})
+        },
+      },
+      options.strategy,
+    )
+  }
+
+  toArray() {
+    return this.#runTerminal({ collect: true })
+  }
+
+  drain() {
+    return this.#runTerminal({ collect: false })
+  }
+
+  single() {
+    return new Promise((resolve, reject) => {
+      let settled = false
+      let hasValue = false
+      let result
+      let sink
+
+      const cleanup = () => {
+        sink.off('error', fail)
+        sink.off('abort', fail)
+        sink.off('end', succeed)
+      }
+      const fail = (error) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      }
+      const rejectRecord = (error) => {
+        if (settled) return
+        sink[kPause]()
+        scheduleMicrotask(() => {
+          sink[kAbort](error)
+        })
+        fail(error)
+      }
+      const succeed = () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(result)
+      }
+
+      sink = this.consumeSync((error, value, push) => {
+        if (error) {
+          rejectRecord(error)
+        } else if (value === _.nil) {
+          push(null, _.nil)
+        } else if (hasValue) {
+          const error = Error('single() expected at most one value')
+          error.code = 'EXSTREAM_MORE_THAN_ONE_VALUE'
+          rejectRecord(error)
+        } else {
+          hasValue = true
+          result = value
+        }
+      })
+      sink.once('error', fail).once('abort', fail).once('end', succeed)
+      try {
+        sink[kResume]()
+      } catch (error) {
+        fail(error)
+      }
+    })
+  }
+
+  #runTerminal = ({ collect }) =>
+    new Promise((resolve, reject) => {
+      let settled = false
+      const values = collect ? [] : null
+      let sink
+
+      const cleanup = () => {
+        sink.off('error', fail)
+        sink.off('abort', fail)
+        sink.off('end', succeed)
+      }
+      const fail = (error) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      }
+      const rejectRecord = (error) => {
+        if (settled) return
+        sink[kPause]()
+        scheduleMicrotask(() => {
+          if (!sink.ended) sink[kAbort](error)
+        })
+        fail(error)
+      }
+      const succeed = () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(collect ? values : void 0)
+      }
+
+      sink = this.consumeSync((error, value, push) => {
+        if (error) rejectRecord(error)
+        else if (value === _.nil) push(null, _.nil)
+        else if (collect) values.push(value)
+      })
+      sink.once('error', fail).once('abort', fail).once('end', succeed)
+      try {
+        sink[kResume]()
+      } catch (error) {
+        fail(error)
+      }
+    })
+
+  fork() {
+    if (arguments.length) {
+      throw Error("fork() does not accept arguments; use { start: 'manual' } on the source")
+    }
+    const root = this.#rootSource()
+    if (root.#activationStarted || root.ended)
       throw Error("this stream is already started. you can't fork it anymore")
-    this.#synchronous = false
-    this.#autostart = false
-    if (!disableAutostart) scheduleMicrotask(() => this.start())
+    root.#autostart = false
+    if (root.#startMode === 'auto') scheduleMicrotask(() => root.start())
     const res = new Exstream()
     res.#contextBoundary = true
     this.#addConsumer(res, true)
@@ -1107,183 +1536,250 @@ class Exstream extends EventHub {
     return res
   }
 
-  through(target, { writable = false } = {}) {
-    if (!target) return this
-    else if (_.isExstream(target)) {
-      const findParent = (x) => (x.source ? findParent(x.source) : x)
-      this.#addConsumer(findParent(target))
-      return target
-    } else if (_.isExstreamPipeline(target)) {
-      const pipelineInstance = target.generateStream()
-      this.#addConsumer(pipelineInstance)
-      return pipelineInstance
-    } else if (_.isNodeStream(target) && !writable) {
-      this.#synchronous = false
-      this.pipe(target)
+  through(target) {
+    if (arguments.length > 1) {
+      throw Error('error in .through(). options are no longer supported; use pipeTo() for writers')
+    }
+    if (_.isExstreamPipeline(target)) {
+      if (isIdentityPipeline(target)) return this
+      const pipelineInstance = instantiatePipeline(target)
+      this.#addConsumer(pipelineInstance.input)
+      return pipelineInstance.output
+    } else if (_.isNodeStream(target)) {
+      this.toNodeReadable().pipe(target)
       return new Exstream(target)
-    } else if (_.isNodeStream(target) && writable) {
-      this.#synchronous = false
-      this.pipe(target)
-      const s = new Exstream()
-      s.readable = false
-      s.source = this
-      s.resume()
-      s.#addOnceListener('error', target, (e) => {
-        s.write(e)
-        scheduleNextTurn(() => s.end())
-      })
-      s.#addOnceListener('finish', target, () => {
-        s.emit('finish')
-        scheduleNextTurn(() => s.destroy())
-      })
-      s.#addOnceListener('close', target, () => {
-        s.emit('close')
-        scheduleNextTurn(() => s.destroy())
-      })
-      return s
     } else if (_.isFunction(target)) {
       return target(this)
     }
-    throw Error(
-      'error in .through(). you must pass a non consumed' +
-        'exstream instance, a pipeline or a node stream',
-    )
+    throw Error('error in .through(). expected a pipeline, transform function, or Node transform')
   }
 
-  merge(parallelism = Infinity, preserveOrder = false) {
-    parallelism = _.asPositiveInteger(parallelism, true)
-    if (parallelism === null) {
-      throw Error('error in .merge(). parallelism must be a positive integer or Infinity')
+  merge(options = null) {
+    if (options === null || options === void 0) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error in .merge(). options must be an object')
     }
-    this.#synchronous = false
+    let { concurrency = Infinity, ordered = false } = options
+    concurrency = _.asPositiveInteger(concurrency, true)
+    if (concurrency === null) {
+      throw Error('error in .merge(). concurrency must be a positive integer or Infinity')
+    }
+    if (typeof ordered !== 'boolean') {
+      throw Error('error in .merge(). ordered must be a boolean')
+    }
 
-    const merged = new Exstream()
-    merged.setMaxListeners(parallelism * 2 + 1)
-    merged.#synchronous = false
+    const slots = []
+    const ready = []
+    let outerEnded = false
+    let outerNext = null
+    let started = false
+    let cleaningUp = false
+    let pumping = false
+    let outerSink
+    let merged
 
-    const pipeline = preserveOrder
-      ? new Exstream().resolve(parallelism, preserveOrder).flatten()
-      : new Exstream().errors((err) => merged.write(err)).resolve(parallelism, preserveOrder)
+    const currentSlot = () => slots[0]
+    const hasReadyFrame = () => (ordered ? currentSlot()?.frames.length > 0 : ready.length > 0)
 
-    const ss = this.map((subS) => {
-      if (!_.isExstream(subS)) throw Error('.merge() can merge ONLY exstream instances')
-      if (preserveOrder) return subS.#toRecordArray()
-      return new Promise((resolve) => {
-        let nextCallback
-        let fatalInProgress = false
-        const drainCallback = () => {
-          if (nextCallback) {
-            nextCallback()
-            nextCallback = null
-          }
+    const resumeOuter = () => {
+      if (outerEnded || slots.length >= concurrency || !outerNext) return
+      const next = outerNext
+      outerNext = null
+      next()
+    }
+
+    const releaseCompletedSlots = () => {
+      if (ordered) {
+        while (currentSlot()?.ended && currentSlot().frames.length === 0) {
+          slots.shift()
         }
-        let subS2
-        subS2 = subS.consume((err, x, push, next) => {
-          if (x === _.nil) {
-            merged.off('end', endListener)
-            merged.off('drain', drainCallback)
-            resolve()
-          } else {
-            const context = subS2._recordContext
-            if (
-              !(err
-                ? merged.#writeControlRecord(ERROR, err, err.exstreamInput, false, context)
-                : context === void 0
-                  ? merged._writeData(x)
-                  : merged._writeData(x, false, context))
-            ) {
-              nextCallback = next
-            } else {
-              next()
-            }
-          }
-        })
-        subS2.once('fatal', (error, input) => {
-          fatalInProgress = true
-          merged.fail(error, input)
-        })
-        const endListener = () => {
-          if (!fatalInProgress) subS2.destroy()
+      } else {
+        for (let index = slots.length - 1; index >= 0; index--) {
+          const slot = slots[index]
+          if (slot.ended && slot.frames.length === 0) slots.splice(index, 1)
         }
-        merged.on('drain', drainCallback)
-        merged.once('end', endListener)
-        subS2.resume()
-      })
-    }).through(pipeline)
+      }
+      resumeOuter()
+    }
 
-    if (preserveOrder)
-      return ss.consumeSync((err, frame, push) => {
-        if (err) push(err)
-        else if (frame === _.nil) push(null, _.nil)
-        else push(null, frame.value, frame.context)
-      })
-    const stopCoordinator = () => ss.destroy()
-    merged.once('end', stopCoordinator)
-    ss.once('end', () => {
-      merged.off('end', stopCoordinator)
-      merged.end()
-    }).resume()
-    return merged
-  }
+    const completed = () => outerEnded && slots.length === 0
 
-  #toRecordArray = () => {
-    const records = []
-    return new Promise((resolve, reject) => {
-      let sink
-      sink = this.consumeSync((err, x) => {
-        if (err) reject(err)
-        else if (x === _.nil) {
-          if (sink.source) sink.source.#removeConsumer(sink)
-          resolve(records)
-        } else records.push(dataFrame(x, sink._recordContext))
-      })
-      sink.once('error', reject)
-      sink.resume()
+    const queueFrame = (slot, frame, next) => {
+      const queued = { frame, next, slot }
+      slot.frames.push(queued)
+      if (!ordered) ready.push(queued)
+    }
+
+    const takeReadyFrame = () => {
+      const queued = ordered ? currentSlot().frames.shift() : ready.shift()
+      if (!ordered) queued.slot.frames.shift()
+      return queued
+    }
+
+    const writeRecord = (error, value, context) => {
+      if (error) merged._writeError(error, context)
+      else if (context === void 0) merged._writeData(value)
+      else merged._writeData(value, false, context)
+    }
+
+    const writeFrame = (frame) => {
+      if (frame.type === ERROR) writeRecord(frame.error, null, frame.context)
+      else writeRecord(null, frame.value, frame.context)
+    }
+
+    const pump = () => {
+      if (pumping || cleaningUp || merged.ended) return
+      pumping = true
+      try {
+        releaseCompletedSlots()
+        while (!merged.paused && hasReadyFrame()) {
+          const queued = takeReadyFrame()
+          writeFrame(queued.frame)
+          if (merged.ended) return
+          if (queued.next) queued.next()
+          releaseCompletedSlots()
+        }
+        if (completed() && !merged.paused) merged.end()
+      } finally {
+        pumping = false
+      }
+    }
+
+    const acceptInnerRecord = (slot, error, value, context, next) => {
+      if (ordered && slot !== currentSlot()) {
+        const frame = error
+          ? errorFrame(error, error.exstreamInput, false, context)
+          : dataFrame(value, context)
+        queueFrame(slot, frame, null)
+        next()
+      } else if (!pumping && !merged.paused) {
+        if (error) merged._writeError(error, context)
+        else if (context === void 0) merged._writeData(value)
+        else merged._writeData(value, false, context)
+        if (!merged.ended) next()
+      } else {
+        const frame = error
+          ? errorFrame(error, error.exstreamInput, false, context)
+          : dataFrame(value, context)
+        queueFrame(slot, frame, next)
+        pump()
+      }
+    }
+
+    const fail = (error, input) => {
+      if (!merged.ended) merged[kFail](error, input)
+    }
+
+    const abort = (reason) => {
+      if (!cleaningUp && !merged.ended) merged[kAbort](reason)
+    }
+
+    const activateInner = (slot, inner) => {
+      try {
+        let sink
+        sink = inner.consume((error, value, push, next) => {
+          if (merged.ended) return
+          if (value === _.nil) {
+            push(null, _.nil)
+            return
+          }
+
+          const context = sink._recordContext
+          acceptInnerRecord(slot, error, value, context, next)
+        })
+        slot.sink = sink
+        sink.once('fatal', fail)
+        sink.once('abort', abort)
+        sink.once('end', () => {
+          if (merged.ended) return
+          slot.ended = true
+          pump()
+        })
+        sink[kResume]()
+      } catch (reason) {
+        const error = new ExstreamError(reason, inner, { origin: 'operator', stage: 'merge' })
+        slot.ended = true
+        queueFrame(slot, errorFrame(error, inner, false, slot.context), null)
+        if (slot.sink && !slot.sink.ended) slot.sink[kDestroy]()
+        pump()
+      }
+    }
+
+    const addOuterFrame = (frame, context, next) => {
+      const slot = { context, ended: true, frames: [], sink: null }
+      slots.push(slot)
+      outerNext = next
+      queueFrame(slot, frame, null)
+      pump()
+    }
+
+    const addOuterError = (reason, input, context, next) => {
+      const error = new ExstreamError(reason, input, { origin: 'operator', stage: 'merge' })
+      addOuterFrame(errorFrame(error, input, false, context), context, next)
+    }
+
+    const activateOuterValue = (value, context, next) => {
+      const inner = value
+      if (!_.isExstream(inner)) {
+        addOuterError(Error('.merge() can merge ONLY exstream instances'), value, context, next)
+        return
+      }
+
+      const slot = { context, ended: false, frames: [], sink: null }
+      slots.push(slot)
+      outerNext = next
+      activateInner(slot, inner)
+      resumeOuter()
+    }
+
+    merged = new Exstream()
+    const startOrDrain = () => {
+      if (!started) {
+        started = true
+        outerSink[kResume]()
+      }
+      pump()
+    }
+    merged.on('drain', startOrDrain)
+
+    outerSink = this.consume((error, value, push, next) => {
+      if (merged.ended) return
+      const context = outerSink._recordContext
+      if (value === _.nil) {
+        outerNext = null
+        push(null, _.nil)
+      } else if (error) {
+        addOuterFrame(errorFrame(error, error.exstreamInput, false, context), context, next)
+      } else {
+        activateOuterValue(value, context, next)
+      }
     })
-  }
 
-  value() {
-    const res = this.values()
-    if (_.isPromise(res)) {
-      return res.then((result) => {
-        if (result.length > 1)
-          throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
-        return result[0]
-      })
-    } else if (res.length > 1) {
-      throw Error('this stream has emitted more than 1 value. use .values() instad of .value()')
-    } else {
-      return res[0]
-    }
-  }
-
-  valuesSync() {
-    let current = this
-    while (current.#synchronous && current.source) current = current.source
-    if (!current.#synchronous) {
-      throw Error('this stream is asynchronous. use .toPromise() instead of .valuesSync()')
-    }
-    return this.values()
-  }
-
-  values() {
-    let curr = this
-    let isSync = this.#synchronous
-    while (isSync && curr.source) {
-      curr = curr.source
-      isSync = isSync && curr.#synchronous
-    }
-    if (!isSync) {
-      return this.toPromise()
-    }
-    const res = []
-    /* v8 ignore next 5 -- V8 does not attribute this synchronous private callback. */
-    this.consumeSync((err, x, push) => {
-      if (err) throw err
-      else if (x === _.nil) push(null, _.nil)
-      else res.push(x)
-    }).resume()
-    return res
+    outerSink.once('fatal', fail)
+    outerSink.once('abort', abort)
+    outerSink.once('end', () => {
+      if (merged.ended) return
+      outerEnded = true
+      pump()
+    })
+    merged.once('abort', (reason) => {
+      cleaningUp = true
+      if (!outerSink.ended) outerSink[kAbort](reason)
+      for (const slot of slots) {
+        if (slot.sink && !slot.sink.ended) slot.sink[kAbort](reason)
+      }
+    })
+    merged.once('end', () => {
+      cleaningUp = true
+      outerNext = null
+      if (!outerSink.ended) outerSink[kDestroy]()
+      for (const slot of slots) {
+        if (slot.sink && !slot.sink.ended) slot.sink[kDestroy]()
+      }
+      slots.length = 0
+      ready.length = 0
+    })
+    return merged
   }
 }
 

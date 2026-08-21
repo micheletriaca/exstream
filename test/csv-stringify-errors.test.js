@@ -1,51 +1,55 @@
 const { parse } = require('csv-parse/sync')
 const _ = require('../src/index.js')
 
-test('csvStringify quotes CR and LF independently from the configured line ending', () => {
+test('csvStringify quotes CR and LF independently from the configured line ending', async () => {
   const rows = [
     ['line\nfeed', 'carriage\rreturn', 'both\r\ncharacters'],
     ['plain', 'value', 'row'],
   ]
-  const serialized = _(rows).csvStringify({ lineEnding: '\r\n' }).values().join('')
+  const serialized = (await _(rows).csvStringify({ lineEnding: '\r\n' }).toArray()).join('')
 
   expect(parse(serialized, { record_delimiter: '\r\n' })).toEqual(rows)
 })
 
-test('csvStringify maxColumns reports output record and column', () => {
-  expect(() =>
+test('csvStringify maxColumns reports output record and column', async () => {
+  await expect(
     _([[1, 2, 3]])
       .csvStringify({ maxColumns: 2 })
-      .values(),
-  ).toThrowError(
-    expect.objectContaining({
-      code: 'EXSTREAM_CSV_MAX_COLUMNS',
-      column: 3,
-      name: 'CsvStringifyError',
-      record: 1,
-    }),
-  )
+      .toArray(),
+  ).rejects.toMatchObject({
+    code: 'EXSTREAM_CSV_MAX_COLUMNS',
+    column: 3,
+    name: 'CsvStringifyError',
+    record: 1,
+  })
 })
 
-test('csvStringify maxRecordBytes includes delimiters and the line ending', () => {
-  expect(() =>
+test('csvStringify maxRecordBytes includes delimiters and the line ending', async () => {
+  await expect(
     _([['123', '45']])
       .csvStringify({ maxRecordBytes: 6 })
-      .values(),
-  ).toThrowError(
-    expect.objectContaining({
-      code: 'EXSTREAM_CSV_MAX_RECORD_BYTES',
-      name: 'CsvStringifyError',
-      record: 1,
-    }),
-  )
+      .toArray(),
+  ).rejects.toMatchObject({
+    code: 'EXSTREAM_CSV_MAX_RECORD_BYTES',
+    name: 'CsvStringifyError',
+    record: 1,
+  })
 })
 
-test('csvStringify counts an emitted header as a record for diagnostics', () => {
-  expect(() =>
+test('csvStringify accepts a record exactly at maxRecordBytes', async () => {
+  await expect(
+    _([['123', '45']])
+      .csvStringify({ maxRecordBytes: 7 })
+      .toArray(),
+  ).resolves.toEqual(['123,45\n'])
+})
+
+test('csvStringify counts an emitted header as a record for diagnostics', async () => {
+  await expect(
     _([{ first: 'value', second: 'another' }])
       .csvStringify({ header: true, maxRecordBytes: 10 })
-      .values(),
-  ).toThrowError(expect.objectContaining({ record: 1 }))
+      .toArray(),
+  ).rejects.toMatchObject({ record: 1 })
 })
 
 test.each([
@@ -65,19 +69,20 @@ test.each([
   expect(() => _([[1]]).csvStringify(options)).toThrow(message)
 })
 
-test('csvStringify round-trips a distinct escape character without duplicating it', () => {
+test('csvStringify round-trips a distinct escape character without duplicating it', async () => {
   const rows = [['a"b\\c', 'a\\"b', 42]]
-  const serialized = _(rows).csvStringify({ escape: '\\', quoted: true }).values().join('')
+  const serialized = (await _(rows).csvStringify({ escape: '\\', quoted: true }).toArray()).join('')
 
-  expect(_([serialized]).csv({ escape: '\\' }).values()).toEqual([['a"b\\c', 'a\\"b', '42']])
+  expect(await _([serialized]).csv({ escape: '\\' }).toArray()).toEqual([['a"b\\c', 'a\\"b', '42']])
 })
 
 test('CSV recognizes distinct escaped quotes and escapes split across chunks', async () => {
-  const serialized = _([['a"b\\c']])
-    .csvStringify({ escape: '\\', quoted: true })
-    .values()
-    .join('')
+  const serialized = (
+    await _([['a"b\\c']])
+      .csvStringify({ escape: '\\', quoted: true })
+      .toArray()
+  ).join('')
   const chunks = [...Buffer.from(serialized)].map((byte) => Buffer.from([byte]))
 
-  await expect(_(chunks).csv({ escape: '\\' }).toPromise()).resolves.toEqual([['a"b\\c']])
+  await expect(_(chunks).csv({ escape: '\\' }).toArray()).resolves.toEqual([['a"b\\c']])
 })

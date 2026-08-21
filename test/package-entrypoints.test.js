@@ -7,6 +7,109 @@ test('the explicit Node package entry preserves EventEmitter compatibility', () 
   expect(node([1])).toBeInstanceOf(EventEmitter)
 })
 
+test('the package surface excludes internal utilities and lifecycle controls', () => {
+  const node = require('exstream.js/node')
+  const stream = node()
+  const internalUtilities = [
+    'asNonNegativeFiniteNumber',
+    'asPositiveInteger',
+    'curry',
+    'escapeRegExp',
+    'get',
+    'has',
+    'isAsyncIterable',
+    'isDefined',
+    'isError',
+    'isExstream',
+    'isExstreamDestination',
+    'isExstreamPipeline',
+    'isFunction',
+    'isIterable',
+    'isNodeStream',
+    'isPromise',
+    'isString',
+    'makeGetter',
+    'ncurry',
+    'partial',
+    'splitFieldPath',
+    'traverse',
+  ]
+  const lifecycleControls = ['abort', 'destroy', 'fail', 'pause', 'resume', 'writeData']
+  const removedOperators = [
+    'asyncFilter',
+    'asyncReduce',
+    'ratelimit',
+    'reduce1',
+    'sortBy',
+    'splitBy',
+    'uniqBy',
+  ]
+  const instanceOnlyOperators = [
+    'batch',
+    'collect',
+    'compact',
+    'csv',
+    'csvStringify',
+    'decode',
+    'drop',
+    'encode',
+    'errors',
+    'extendContext',
+    'failOnError',
+    'filter',
+    'find',
+    'findWhere',
+    'flatMap',
+    'flatten',
+    'groupBy',
+    'head',
+    'json',
+    'jsonStringify',
+    'jsonl',
+    'jsonlStringify',
+    'keyBy',
+    'last',
+    'makeAsync',
+    'map',
+    'mapAsync',
+    'omit',
+    'pick',
+    'pluck',
+    'rateLimit',
+    'reduce',
+    'reject',
+    'routeErrors',
+    'skipErrors',
+    'slice',
+    'sort',
+    'sortedGroupBy',
+    'sortedJoin',
+    'split',
+    'stopOnError',
+    'stopWhen',
+    'take',
+    'tap',
+    'throttle',
+    'uniq',
+    'where',
+    'withContext',
+  ]
+
+  expect(internalUtilities.filter((name) => name in node)).toEqual([])
+  expect(lifecycleControls.filter((name) => name in stream)).toEqual([])
+  expect(removedOperators.filter((name) => name in node)).toEqual([])
+  expect(removedOperators.filter((name) => name in stream)).toEqual([])
+  expect(removedOperators.filter((name) => name in node.pipeline())).toEqual([])
+  expect(instanceOnlyOperators.filter((name) => name in node)).toEqual([])
+  expect(typeof stream.consume).toBe('function')
+  expect(typeof stream.consumeSync).toBe('function')
+  expect(typeof stream.sortedJoin).toBe('function')
+  expect(typeof node.defer).toBe('function')
+  expect(typeof stream.start).toBe('function')
+  expect(typeof stream.write).toBe('function')
+  expect(typeof stream.end).toBe('function')
+})
+
 test('CommonJS and ESM load the same Node export', async () => {
   const result = execFileSync(
     process.execPath,
@@ -20,10 +123,9 @@ test('CommonJS and ESM load the same Node export', async () => {
        process.stdout.write(String(
          esm.default === commonJs &&
          esm.nil === commonJs.nil &&
-         esm.map === commonJs.map &&
-         esm.json === commonJs.json &&
-         esm.jsonl === commonJs.jsonl &&
-         esm.jsonStringify === commonJs.jsonStringify &&
+         esm.pipeline === commonJs.pipeline &&
+         esm.destination === commonJs.destination &&
+         esm.fromEvent === commonJs.fromEvent &&
          esm.JsonParseError === commonJs.JsonParseError
        ))`,
     ],
@@ -31,21 +133,4 @@ test('CommonJS and ESM load the same Node export', async () => {
   )
 
   expect(result).toBe('true')
-})
-
-test('published JSON named operators compose through CommonJS and ESM', () => {
-  const result = execFileSync(
-    process.execPath,
-    [
-      '--input-type=module',
-      '--eval',
-      `import exstream, { json, jsonl } from 'exstream.js/node'
-       const selected = exstream(['{"rows":[1,2]}']).through(json({ path: '$.rows[*]' })).values()
-       const output = await exstream(['1\\n2\\n']).through(jsonl()).jsonStringify().toPromise()
-       process.stdout.write(JSON.stringify({ output, selected }))`,
-    ],
-    { cwd: process.cwd(), encoding: 'utf8' },
-  )
-
-  expect(JSON.parse(result)).toEqual({ output: ['[1', ',2', ']'], selected: [1, 2] })
 })

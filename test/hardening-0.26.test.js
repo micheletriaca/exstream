@@ -1,6 +1,6 @@
 const _ = require('../src/index.js')
 
-test('uniqBy keeps distinct composite keys without string coercion collisions', () => {
+test('uniq keeps distinct composite keys without string coercion collisions', async () => {
   const values = [
     { id: 1, first: 'a_', second: 'b' },
     { id: 2, first: 'a', second: '_b' },
@@ -9,7 +9,7 @@ test('uniqBy keeps distinct composite keys without string coercion collisions', 
     { id: 5, first: 'a_', second: 'b' },
   ]
 
-  expect(_(values).uniqBy(['first', 'second']).values()).toEqual(values.slice(0, 4))
+  expect(await _(values).uniq(['first', 'second']).toArray()).toEqual(values.slice(0, 4))
 })
 
 test.each([
@@ -19,14 +19,14 @@ test.each([
   ['null', null],
   ['undefined', undefined],
   ['function', function rejectedFunction() {}],
-])('resolve normalizes a Promise rejected with a %s', async (label, reason) => {
+])('mapAsync normalizes a Promise rejected with a %s', async (label, reason) => {
   const errors = []
   const rejected = Promise.reject(reason)
 
   const values = await _([rejected])
-    .resolve()
+    .mapAsync((value) => value)
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(values).toEqual([])
   expect(errors).toHaveLength(1)
@@ -40,9 +40,9 @@ test('map preserves the source input when an async callback rejects with a primi
 
   await _([42])
     .map(async () => Promise.reject('primitive failure'))
-    .resolve()
+    .mapAsync((value) => value)
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(errors).toHaveLength(1)
   expect(errors[0]).toBeInstanceOf(Error)
@@ -51,15 +51,15 @@ test('map preserves the source input when an async callback rejects with a primi
   expect(errors[0].exstreamInput).toBe(42)
 })
 
-test('resolve normalizes a cyclic rejection object without throwing while formatting it', async () => {
+test('mapAsync normalizes a cyclic rejection object without throwing while formatting it', async () => {
   const reason = {}
   reason.self = reason
   const errors = []
 
   await _([Promise.reject(reason)])
-    .resolve()
+    .mapAsync((value) => value)
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(errors).toHaveLength(1)
   expect(errors[0]).toBeInstanceOf(Error)
@@ -69,25 +69,32 @@ test('resolve normalizes a cyclic rejection object without throwing while format
 
 test.each([
   [
-    'resolve parallelism',
-    () => _([]).resolve(0),
-    'error in .resolve(). parallelism must be a positive integer or Infinity',
+    'map options',
+    () => _([]).map(String, { wrap: true }),
+    'error in .map(). options are no longer supported',
   ],
   [
-    'merge parallelism',
-    () => _([]).merge(-1),
-    'error in .merge(). parallelism must be a positive integer or Infinity',
+    'merge concurrency',
+    () => _([]).merge({ concurrency: -1 }),
+    'error in .merge(). concurrency must be a positive integer or Infinity',
+  ],
+  ['merge options', () => _([]).merge(1), 'error in .merge(). options must be an object'],
+  [
+    'merge order',
+    () => _([]).merge({ ordered: 1 }),
+    'error in .merge(). ordered must be a boolean',
   ],
   ['batch size', () => _([]).batch(1.5), 'error in .batch(). size must be a valid number'],
+  ['rate options', () => _([]).rateLimit(1), 'error in .rateLimit(). options must be an object'],
   [
     'rate count',
-    () => _([]).ratelimit(0, 10),
-    'error in .ratelimit(). num must be a positive integer',
+    () => _([]).rateLimit({ limit: 0, interval: 10 }),
+    'error in .rateLimit(). limit must be a positive integer',
   ],
   [
     'rate window',
-    () => _([]).ratelimit(1, -1),
-    'error in .ratelimit(). ms must be a non-negative finite number',
+    () => _([]).rateLimit({ limit: 1, interval: -1 }),
+    'error in .rateLimit(). interval must be a non-negative finite number',
   ],
   [
     'throttle window',
@@ -100,9 +107,9 @@ test.each([
     'error in .makeAsync(). maxSyncExecutionTime must be a non-negative finite number',
   ],
   [
-    'sorted join buffer',
-    () => _([_([]), _([])]).sortedJoin('id', 'id', 'inner', 'asc', 0),
-    'error in .sortedJoin(). buffer must be a positive integer',
+    'sorted join order',
+    () => _([]).sortedJoin(_([]), { leftKey: 'id', order: 'sideways', rightKey: 'id' }),
+    "error in .sortedJoin(). order must be 'asc', 'desc', or a comparator",
   ],
   [
     'non-coercible batch size',
@@ -119,10 +126,10 @@ test.each([
 })
 
 test('numeric strings remain accepted for historically coerced limits', async () => {
-  expect(_([1, 2, 3]).batch('2').values()).toEqual([[1, 2], [3]])
+  expect(await _([1, 2, 3]).batch('2').toArray()).toEqual([[1, 2], [3]])
   expect(
     await _([Promise.resolve(1), Promise.resolve(2)])
-      .resolve('2')
-      .toPromise(),
+      .mapAsync((value) => value, { concurrency: '2' })
+      .toArray(),
   ).toEqual([1, 2])
 })

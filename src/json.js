@@ -4,6 +4,7 @@ const { parseJsonPath, stringifyPath } = require('./json-path.js')
 const { runtime } = require('./runtime.js')
 const { createEncodedByteCounter } = require('./byte-counter.js')
 const { annotateError } = require('./error-info.js')
+const { kAbort } = require('./stream-control.js')
 
 class JsonStringifyError extends Error {
   constructor(message, { code = 'EXSTREAM_JSON_STRINGIFY', record } = {}) {
@@ -61,7 +62,7 @@ const failBranch = (result, push, error) => {
   try {
     push(error)
   } finally {
-    result.abort(error)
+    result[kAbort](error)
   }
 }
 

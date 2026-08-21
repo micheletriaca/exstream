@@ -70,7 +70,7 @@ test('CSV parsing is invariant across every single chunk boundary', async () => 
     const chunks = [bytes.subarray(0, boundary), bytes.subarray(boundary)]
     // Sequential checks make the failing byte boundary deterministic.
     await expect(
-      _(chunks).csv({ skipEmptyLines: false }).toPromise(),
+      _(chunks).csv({ skipEmptyLines: false }).toArray(),
       `boundary ${boundary}`,
     ).resolves.toEqual(expected)
   }
@@ -85,16 +85,16 @@ test('CSV parser matches the reference parser for deterministic generated record
 
     // Sequential seeds keep failures reproducible and avoid hiding shared-state bugs.
     await expect(
-      _(chunks).csv({ skipEmptyLines: false }).toPromise(),
+      _(chunks).csv({ skipEmptyLines: false }).toArray(),
       `seed ${seed}`,
     ).resolves.toEqual(expected)
   }
 })
 
-test('CSV serializer matches the reference parser for deterministic generated records', () => {
+test('CSV serializer matches the reference parser for deterministic generated records', async () => {
   for (let seed = 101; seed <= 200; seed++) {
     const rows = generateRows(seed)
-    const serialized = _(rows).csvStringify().values().join('')
+    const serialized = (await _(rows).csvStringify().toArray()).join('')
 
     expect(parse(serialized, { relax_column_count: true }), `seed ${seed}`).toEqual(rows)
   }
@@ -107,11 +107,11 @@ test('object-mode CSV round-trips generated headers and values', async () => {
     const objects = rows.map((row) =>
       Object.fromEntries(headers.map((header, index) => [header, row[index]])),
     )
-    const serialized = _(objects).csvStringify({ header: true }).values().join('')
+    const serialized = (await _(objects).csvStringify({ header: true }).toArray()).join('')
     const chunks = chunkBySizes(serialized, [3, 1, 5, 2])
 
     await expect(
-      _(chunks).csv({ header: true, skipEmptyLines: false }).toPromise(),
+      _(chunks).csv({ header: true, skipEmptyLines: false }).toArray(),
       `seed ${seed}`,
     ).resolves.toEqual(objects)
   }
@@ -126,7 +126,7 @@ test('a large record survives input fragmented into three-byte chunks', async ()
     }
   }
 
-  await expect(_(Readable.from(chunks())).csv({ header: true }).toPromise()).resolves.toEqual([
+  await expect(_(Readable.from(chunks())).csv({ header: true }).toArray()).resolves.toEqual([
     { id: '1', value },
   ])
 })
@@ -144,7 +144,7 @@ test('deterministic malformed-input fuzzing always returns rows or a located CSV
     )
     const chunks = chunkBySizes(input, [1 + Math.floor(next() * 7), 1, 3])
     try {
-      const rows = await _(chunks).csv({ skipEmptyLines: false }).toPromise()
+      const rows = await _(chunks).csv({ skipEmptyLines: false }).toArray()
       expect(
         rows.every((row) => Array.isArray(row) && row.every((cell) => typeof cell === 'string')),
       ).toBe(true)

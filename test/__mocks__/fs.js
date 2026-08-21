@@ -18,9 +18,9 @@ function createReadStream(file) {
       await h.sleep(10)
       return x
     })
-    .resolve()
+    .mapAsync((value) => value)
     .flatten()
-    .toNodeStream()
+    .toNodeReadable()
 }
 
 function createWriteStream(file) {

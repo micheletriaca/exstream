@@ -1,10 +1,11 @@
 const _ = require('../src/index.js')
 const { waitFor } = require('./invariant-helpers.js')
+const { kFail } = require('../src/stream-control.js')
 
 test('skipErrors drops every record error and preserves ordinary data', async () => {
   const errors = [Error('first'), Error('second')]
 
-  const result = await _([1, errors[0], 2, errors[1], 3]).skipErrors().toPromise()
+  const result = await _([1, errors[0], 2, errors[1], 3]).skipErrors().toArray()
 
   expect(result).toEqual([1, 2, 3])
 })
@@ -30,7 +31,7 @@ test('skipErrors selectively skips errors with input and lazy context', async ()
     .errors((error, push, context) => {
       remaining.push({ input: context.input, message: error.message })
     })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([1])
   expect(
@@ -47,7 +48,7 @@ test('skipErrors preserves the historical argument list of unary predicates', as
   const predicate = vi.fn(() => true)
   const reason = Error('skip me')
 
-  await _([reason]).skipErrors(predicate).toPromise()
+  await _([reason]).skipErrors(predicate).toArray()
 
   expect(predicate).toHaveBeenCalledWith(reason)
 })
@@ -65,7 +66,7 @@ test('skipErrors supports predicates that only request the failing input', async
       return input === 1
     })
     .errors((error) => remaining.push(error.message))
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([])
   expect(seen).toEqual([
@@ -90,7 +91,7 @@ test('skipErrors preserves an existing record context', async () => {
       received = { error, input, recordContext }
       return true
     })
-    .toPromise()
+    .toArray()
 
   expect(received.input).toBe(1)
   expect(received.error.message).toBe('invalid 1')
@@ -116,7 +117,7 @@ test('an exception in a skipErrors predicate remains a contextual record error',
         stage: context.stage,
       })
     })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([])
   expect(handled).toEqual([
@@ -126,14 +127,14 @@ test('an exception in a skipErrors predicate remains a contextual record error',
 
 test('failOnError promotes a record error to a fatal graph failure', async () => {
   const reason = Error('invalid record')
-  const source = _([1, 2]).map((value) => {
+  const source = _([1, 2], { start: 'manual' }).map((value) => {
     if (value === 2) throw reason
     return value
   })
-  const promoted = source.fork(true).failOnError()
-  const sibling = source.fork(true)
-  const promotedResult = promoted.toPromise()
-  const siblingResult = sibling.toPromise()
+  const promoted = source.fork().failOnError()
+  const sibling = source.fork()
+  const promotedResult = promoted.toArray()
+  const siblingResult = sibling.toArray()
 
   source.start()
 
@@ -158,7 +159,7 @@ test('routeErrors reliably separates data and contextual dead letters', async ()
 
   const output = routed.output
     .map((value, context) => ({ correlationId: context.correlationId, value }))
-    .toPromise()
+    .toArray()
   const deadLetters = routed.deadLetters
     .map(({ error, input }, context) => ({
       correlationId: context.correlationId,
@@ -166,7 +167,7 @@ test('routeErrors reliably separates data and contextual dead letters', async ()
       message: error.message,
       stage: context.stage,
     }))
-    .toPromise()
+    .toArray()
 
   await expect(Promise.all([output, deadLetters])).resolves.toEqual([
     [
@@ -181,7 +182,7 @@ test('routeErrors keeps Error data separate from error records', async () => {
   const reason = Error('ambiguous')
   const { deadLetters, output } = _([_.data(reason), reason]).routeErrors()
 
-  await expect(Promise.all([output.toPromise(), deadLetters.toPromise()])).resolves.toEqual([
+  await expect(Promise.all([output.toArray(), deadLetters.toArray()])).resolves.toEqual([
     [reason],
     [{ error: reason, input: undefined }],
   ])
@@ -190,13 +191,13 @@ test('routeErrors keeps Error data separate from error records', async () => {
 test('routeErrors applies reliable backpressure until both outputs are consumed', async () => {
   const source = _()
   const { deadLetters, output } = source.routeErrors()
-  const outputResult = output.toPromise()
+  const outputResult = output.toArray()
 
   expect(source.write(1)).toBe(false)
   expect(source.write(2)).toBe(false)
   expect(source.buffered).toBe(2)
 
-  const deadLetterResult = deadLetters.toPromise()
+  const deadLetterResult = deadLetters.toArray()
   await waitFor(() => source.buffered === 0, 'dead-letter consumption did not release the source')
   source.end()
 
@@ -207,10 +208,10 @@ test('fatal failures bypass routeErrors and abort both outputs', async () => {
   const reason = Error('fatal source')
   const source = _()
   const { deadLetters, output } = source.routeErrors()
-  const outputResult = output.toPromise()
-  const deadLetterResult = deadLetters.toPromise()
+  const outputResult = output.toArray()
+  const deadLetterResult = deadLetters.toArray()
 
-  source.fail(reason, 'input')
+  source[kFail](reason, 'input')
 
   await expect(outputResult).rejects.toBe(reason)
   await expect(deadLetterResult).rejects.toBe(reason)
@@ -231,7 +232,7 @@ test('stopOnError lazily creates and propagates record context', async () => {
       push(null, 10)
     })
     .map((value, context) => ({ context, value }))
-    .toPromise()
+    .toArray()
 
   expect(handled.error.message).toBe('invalid 1')
   expect(handled.context.input).toBe(1)
@@ -254,7 +255,7 @@ test('stopOnError preserves an existing record context', async () => {
     .stopOnError((error, push, recordContext) => {
       received = recordContext
     })
-    .toPromise()
+    .toArray()
 
   expect(received).toBe(upstreamContext)
   expect(received.correlationId).toBe('row-1')
@@ -275,7 +276,7 @@ test('contextual error handlers lazily create and propagate record context', asy
       handled = { input: context.input, recovered: context.recovered, value }
       return value
     })
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([2])
   expect(handled).toEqual({ input: 1, recovered: true, value: 2 })

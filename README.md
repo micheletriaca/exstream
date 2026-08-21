@@ -6,6 +6,8 @@
 
 **Composable streaming ETL for JavaScript.**
 
+**[Read the documentation →](https://exstream-js.github.io/docs/)**
+
 Exstream connects data sources, synchronous and asynchronous transformations,
 and one or more destinations into a single backpressured pipeline. It is built
 for jobs where records may number in the millions, I/O must run concurrently
@@ -38,7 +40,7 @@ const orders = exstream(response.body)
   )
   .filter((order) => order.customer.active)
 
-for await (const order of orders.toAsyncIterator()) {
+for await (const order of orders) {
   await writeOrder(order)
 }
 ```
@@ -46,6 +48,20 @@ for await (const order of orders.toAsyncIterator()) {
 Input is pulled only as fast as the slowest reliable consumer can accept it.
 `mapAsync()` bounds active work and preserves order by default. The context
 signal is cancelled when work for that record and branch is no longer useful.
+
+Source adapters acquire iterators and readers only when downstream demand
+starts the graph. Use `defer()` when creating the source itself has side effects:
+
+```javascript
+const orders = exstream.defer(async () => {
+  const response = await fetch('/orders.jsonl')
+  return response.body
+})
+```
+
+The factory runs once per Exstream, after activation. For reliable forks that
+must be registered in different turns, create the source with
+`{ start: 'manual' }`, attach every branch, then call `start()`.
 
 ## Why Exstream
 
@@ -61,8 +77,8 @@ signal is cancelled when work for that record and branch is no longer useful.
   have separate policies, cleanup and cancellation semantics.
 - **Types that follow the data.** Value and record-context types evolve through
   chained operators, including asynchronous transformations.
-- **A fast synchronous path.** Ordinary `map()` and `filter()` pipelines do not
-  pay the cost of an asynchronous abstraction they are not using.
+- **Cheap synchronous operators.** Ordinary `map()` and `filter()` still process
+  records synchronously; terminal operations consistently return promises.
 
 ## Formats
 
@@ -110,9 +126,25 @@ slices and expressions require buffering or a different tool.
 non-blocking and accepts an explicit buffer limit and overflow policy for work
 such as metrics or sampling.
 
+```javascript
+const source = exstream.defer(() => openOrders(), { start: 'manual' })
+const database = source.fork().pipeTo(databaseWriter)
+
+await discoverAuditDestination()
+const audit = source.fork().jsonlStringify().pipeTo(auditWriter)
+
+await source.start()
+await Promise.all([database, audit])
+```
+
 Errors produced while handling one record remain recoverable with `errors()`,
 `skipErrors()` or `routeErrors()`. `failOnError()` promotes the first record
 error to a fatal failure and cancels the connected graph.
+
+For asynchronous per-record recovery, `mapAsync({ onFail })` can await more
+work, retry the complete callback with the same or an enriched input, emit a
+fallback, or forward the error to downstream policy. Without `onFail`, existing
+`mapAsync()` retry and propagation behavior is unchanged.
 
 Use `pipeTo()` when writing must be an explicit terminal operation:
 
@@ -125,11 +157,36 @@ try {
 }
 ```
 
+Application writers can stay inside the Exstream API. Closing a reusable
+pipeline with `drain()` creates a destination that `pipeTo()` can run:
+
+```javascript
+const ordersApi = exstream
+  .pipeline()
+  .batch(200)
+  .mapAsync(postOrders, { concurrency: 4, ordered: false })
+  .drain()
+
+await exstream(orders).pipeTo(ordersApi)
+```
+
 The promise resolves only after the destination finishes. It rejects on an
 unhandled record error, source or destination failure, structural format error,
 or cancellation. A failed destination cancels its own fork; reliable sibling
-branches can continue. The older `pipe()` remains available for Node-compatible
-event-driven piping.
+branches can continue. Node and Web writable streams remain supported directly.
+
+A reusable operator chain can also become a native Node `Transform` when it
+must sit inside `node:stream` infrastructure:
+
+```javascript
+import { pipeline as nodePipeline } from 'node:stream/promises'
+
+const normalize = exstream.pipeline().map(normalizeOrder).jsonlStringify()
+await nodePipeline(input, normalize.toNodeTransform(), output)
+```
+
+Use `toNodeReadable()` on an Exstream that already has a source;
+`toNodeTransform()` belongs to source-free reusable pipeline definitions.
 
 Record context is opt-in. `withContext()` and `extendContext()` attach metadata
 such as correlation IDs or loaded dependencies to one record. Context is copied
@@ -154,17 +211,47 @@ global polyfills.
 
 ## When not to use it
 
-For a small array that already fits in memory, native array methods or a simple
-`for await` loop are usually clearer. Exstream earns its place when the problem
-is the pipeline as a whole: bounded memory, concurrent I/O, fan-out,
-backpressure, cancellation, format parsing and cleanup.
+Do not add Exstream solely to replace a trivial finite transformation that
+native array methods or a simple `for await` loop already express clearly. But
+small input size is not, by itself, a reason to avoid it. If Exstream is already
+a project-standard abstraction and the job is conceptually a
+source-to-terminal flow, using the same pipeline model can improve separation,
+composition and future evolution even for a hundred records.
+
+Exstream earns its place when the pipeline is the useful abstraction: bounded
+memory, concurrent I/O, fan-out, backpressure, cancellation, format parsing,
+cleanup, or one consistent API across related data flows. Keep native
+JavaScript for local collection manipulation when it is materially clearer.
+
+## AI & Agentic Development
+
+This repository includes an [`exstream-pipelines`](.agents/skills/exstream-pipelines/)
+skill that helps coding agents design and review Exstream applications with the
+library's actual source, transformation, destination, backpressure, error, and
+lifecycle semantics.
+
+Install it for your coding agent with the Vercel Labs
+[`skills`](https://www.npmjs.com/package/skills) package:
+
+```shell
+npx skills add https://github.com/micheletriaca/exstream/tree/master/.agents/skills/exstream-pipelines
+```
+
+Installing `exstream.js` from npm installs the runtime library only. See the
+[agent skill page](https://exstream-js.github.io/docs/project/agent-skill/).
 
 ## Documentation
 
-The full documentation portal is the next roadmap step and will live at
-[exstream-js.github.io](https://exstream-js.github.io/). Until then, the
-repository contains the [migration guide](MIGRATION.md),
-[support policy](SUPPORT.md), [changelog](CHANGELOG.md) and reproducible
+The full documentation is available at
+[exstream-js.github.io/docs](https://exstream-js.github.io/docs/). Start with
+the [learning guide](https://exstream-js.github.io/docs/learn/pipeline-model/),
+read about
+[extensibility and composition](https://exstream-js.github.io/docs/learn/extensibility/),
+or browse the complete
+[API reference](https://exstream-js.github.io/docs/reference/).
+
+The repository also contains the [migration guide](MIGRATION.md),
+[support policy](SUPPORT.md), [changelog](CHANGELOG.md), and reproducible
 [benchmark methodology](test/benchmarks/README.md).
 
 Exstream is released under the [MIT License](LICENSE).

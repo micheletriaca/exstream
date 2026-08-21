@@ -8,210 +8,186 @@ const events = require('./events.js')
 const utils = require('./utils')
 const { dataValue } = require('./protocol')
 const { errorInfo } = require('./error-info.js')
+const { createDeferredSource } = require('./deferred.js')
 
-const _ = (module.exports = Object.assign(
-  (xs, options) => new Exstream(xs, options),
-  { BufferOverflowError, data: dataValue, errorInfo },
-  utils,
-  csv,
-  json,
-  joins,
-  events,
-  methods,
-))
+const operators = Object.assign({}, csv, json, joins, methods)
+module.exports = Object.assign((xs, options) => new Exstream(xs, options), {
+  BufferOverflowError,
+  CsvParseError: csv.CsvParseError,
+  CsvStringifyError: csv.CsvStringifyError,
+  JsonParseError: json.JsonParseError,
+  JsonStringifyError: json.JsonStringifyError,
+  MapAsyncTimeoutError: methods.MapAsyncTimeoutError,
+  data: dataValue,
+  defer: createDeferredSource,
+  destination: methods.destination,
+  errorInfo,
+  fromEvent: events.fromEvent,
+  nil: utils.nil,
+  pipeline: methods.pipeline,
+})
 
-_.extend = (name, fn) => {
+const installMethod = (name, fn, options = null) => {
   Exstream.prototype[name] = fn
+  methods.registerPipelineOperator(name, !options || options.pipeline !== false)
 }
-_.extend('errors', function (fn) {
-  return _.errors(fn, this)
+installMethod('errors', function (fn) {
+  return operators.errors(fn, this)
 })
-_.extend('skipErrors', function (predicate = null) {
-  return _.skipErrors(predicate, this)
+installMethod('skipErrors', function (predicate = null) {
+  return operators.skipErrors(predicate, this)
 })
-_.extend('failOnError', function () {
-  return _.failOnError(this)
+installMethod('failOnError', function () {
+  return operators.failOnError(this)
 })
-_.extend('routeErrors', function () {
-  return _.routeErrors(this)
-})
-_.extend('stopOnError', function (fn) {
-  return _.stopOnError(fn, this)
-})
-_.extend('map', function (fn, options = null) {
-  return _.map(fn, options, this)
-})
-_.extend('withContext', function (fn = null) {
-  return _.withContext(fn, this)
-})
-_.extend('extendContext', function (fn) {
-  return _.extendContext(fn, this)
-})
-_.extend('flatMap', function (fn) {
-  return _.flatMap(fn, this)
-})
-_.extend('tap', function (fn) {
-  return _.tap(fn, this)
-})
-_.extend('compact', function () {
-  return _.compact(this)
-})
-_.extend('find', function (fn) {
-  return _.find(fn, this)
-})
-_.extend('pluck', function (field, defaultValue) {
-  return _.pluck(field, defaultValue, this)
-})
-_.extend('pick', function (fields) {
-  return _.pick(fields, this)
-})
-_.extend('omit', function (fields) {
-  return _.omit(fields, this)
-})
-_.extend('filter', function (fn) {
-  return _.filter(fn, this)
-})
-_.extend('reject', function (fn) {
-  return _.reject(fn, this)
-})
-_.extend('asyncFilter', function (fn) {
-  return _.asyncFilter(fn, this)
-})
-_.extend('stopWhen', function (fn) {
-  return _.stopWhen(fn, this)
-})
-_.extend('flatten', function () {
-  return _.flatten(this)
-})
-_.extend('uniq', function () {
-  return _.uniq(this)
-})
-_.extend('uniqBy', function (cfg) {
-  return _.uniqBy(cfg, this)
-})
-_.extend('collect', function () {
-  return _.collect(this)
-})
-_.extend('batch', function (size) {
-  return _.batch(size, this)
-})
-_.extend('massThen', function (fn) {
-  return _.massThen(fn, this)
-})
-_.extend('massCatch', function (fn) {
-  return _.massCatch(fn, this)
-})
-_.extend('resolve', function (parallelism = 1, preserveOrder = true) {
-  return _.resolve(parallelism, preserveOrder, this)
-})
-_.extend('mapAsync', function (fn, options = null) {
-  return _.mapAsync(fn, options, this)
-})
-_.extend('csv', function (opts) {
-  return _.csv(opts, this)
-})
-_.extend('csvStringify', function (opts) {
-  return _.csvStringify(opts, this)
-})
-_.extend('json', function (opts) {
-  return _.json(opts, this)
-})
-_.extend('jsonStringify', function (opts) {
-  return _.jsonStringify(opts, this)
-})
-_.extend('jsonl', function (opts) {
-  return _.jsonl(opts, this)
-})
-_.extend('jsonlStringify', function (opts) {
-  return _.jsonlStringify(opts, this)
-})
-_.extend('slice', function (start, end = Infinity) {
-  return _.slice(start, end, this)
-})
-_.extend('take', function (n) {
-  return _.take(n, this)
-})
-_.extend('head', function () {
-  return _.head(this)
-})
-_.extend('last', function () {
-  return _.last(this)
-})
-_.extend('drop', function (n) {
-  return _.drop(n, this)
-})
-_.extend('throttle', function (ms) {
-  return _.throttle(ms, this)
-})
-_.extend('reduce', function (memo, fn) {
-  return _.reduce(memo, fn, this)
-})
-_.extend('groupBy', function (fnOrString) {
-  return _.groupBy(fnOrString, this)
-})
-_.extend('keyBy', function (fnOrString) {
-  return _.keyBy(fnOrString, this)
-})
-_.extend('sort', function () {
-  return _.sort(this)
-})
-_.extend('sortBy', function (fn) {
-  return _.sortBy(fn, this)
-})
-_.extend('split', function (encoding = 'utf8') {
-  return _.split(encoding, this)
-})
-_.extend('encode', function (encoding) {
-  return _.encode(encoding, this)
-})
-_.extend('decode', function (encoding) {
-  return _.decode(encoding, this)
-})
-_.extend('splitBy', function (regexp, encoding = 'utf8') {
-  return _.splitBy(regexp, encoding, this)
-})
-_.extend('reduce1', function (fn) {
-  return _.reduce1(fn, this)
-})
-_.extend('asyncReduce', function (memo, fn) {
-  return _.asyncReduce(memo, fn, this)
-})
-_.extend('makeAsync', function (ms) {
-  return _.makeAsync(ms, this)
-})
-_.extend('toArray', function (fn) {
-  return _.toArray(fn, this)
-})
-_.extend('toPromise', function () {
-  return _.toPromise(this)
-})
-_.extend('drain', function () {
-  return _.drain(this)
-})
-_.extend('toNodeStream', function (options) {
-  return _.toNodeStream(options, this)
-})
-_.extend('toWebReadable', function (options) {
-  return _.toWebReadable(options, this)
-})
-_.extend('toAsyncIterator', function (options) {
-  return _.toAsyncIterator(options, this)
-})
-_.extend('where', function (props) {
-  return _.where(props, this)
-})
-_.extend('findWhere', function (props) {
-  return _.findWhere(props, this)
-})
-_.extend('ratelimit', function (num, ms) {
-  return _.ratelimit(num, ms, this)
-})
-_.extend('sortedGroupBy', function (fnOrString) {
-  return _.sortedGroupBy(fnOrString, this)
-})
-_.extend(
-  'sortedJoin',
-  function (joinKeyOrFnA, joinKeyOrFnB, type = 'inner', sortDirection = 'asc', buffer = 1) {
-    return _.sortedJoin(joinKeyOrFnA, joinKeyOrFnB, type, sortDirection, buffer, this)
+installMethod(
+  'routeErrors',
+  function () {
+    return operators.routeErrors(this)
   },
+  { pipeline: false },
+)
+installMethod('stopOnError', function (fn) {
+  return operators.stopOnError(fn, this)
+})
+installMethod('map', function (fn) {
+  if (arguments.length > 1) throw Error('error in .map(). options are no longer supported')
+  return operators.map(fn, this)
+})
+installMethod('withContext', function (fn = null) {
+  return operators.withContext(fn, this)
+})
+installMethod('extendContext', function (fn) {
+  return operators.extendContext(fn, this)
+})
+installMethod('flatMap', function (fn) {
+  return operators.flatMap(fn, this)
+})
+installMethod('tap', function (fn) {
+  return operators.tap(fn, this)
+})
+installMethod('compact', function () {
+  return operators.compact(this)
+})
+installMethod('find', function (fn) {
+  return operators.find(fn, this)
+})
+installMethod('pluck', function (field, defaultValue) {
+  return operators.pluck(field, defaultValue, this)
+})
+installMethod('pick', function (fields) {
+  return operators.pick(fields, this)
+})
+installMethod('omit', function (fields) {
+  return operators.omit(fields, this)
+})
+installMethod('filter', function (fn) {
+  return operators.filter(fn, this)
+})
+installMethod('reject', function (fn) {
+  return operators.reject(fn, this)
+})
+installMethod('stopWhen', function (fn) {
+  return operators.stopWhen(fn, this)
+})
+installMethod('flatten', function () {
+  return operators.flatten(this)
+})
+installMethod('uniq', function (selector) {
+  return operators.uniq(selector, arguments.length > 0, this)
+})
+installMethod('collect', function () {
+  return operators.collect(this)
+})
+installMethod('batch', function (size) {
+  return operators.batch(size, this)
+})
+installMethod('mapAsync', function (fn, options = null) {
+  return operators.mapAsync(fn, options, this)
+})
+installMethod('csv', function (opts) {
+  return operators.csv(opts, this)
+})
+installMethod('csvStringify', function (opts) {
+  return operators.csvStringify(opts, this)
+})
+installMethod('json', function (opts) {
+  return operators.json(opts, this)
+})
+installMethod('jsonStringify', function (opts) {
+  return operators.jsonStringify(opts, this)
+})
+installMethod('jsonl', function (opts) {
+  return operators.jsonl(opts, this)
+})
+installMethod('jsonlStringify', function (opts) {
+  return operators.jsonlStringify(opts, this)
+})
+installMethod('slice', function (start, end = Infinity) {
+  return operators.slice(start, end, this)
+})
+installMethod('take', function (n) {
+  return operators.take(n, this)
+})
+installMethod('head', function () {
+  return operators.head(this)
+})
+installMethod('last', function () {
+  return operators.last(this)
+})
+installMethod('drop', function (n) {
+  return operators.drop(n, this)
+})
+installMethod('throttle', function (ms) {
+  return operators.throttle(ms, this)
+})
+installMethod('reduce', function (fn, initialValue) {
+  return operators.reduce(fn, initialValue, arguments.length >= 2, this)
+})
+installMethod('groupBy', function (fnOrString) {
+  return operators.groupBy(fnOrString, this)
+})
+installMethod('keyBy', function (fnOrString) {
+  return operators.keyBy(fnOrString, this)
+})
+installMethod('sort', function (compare) {
+  return operators.sort(compare, this)
+})
+installMethod('split', function (separatorOrEncoding, encoding = 'utf8') {
+  const hasSeparator = separatorOrEncoding instanceof RegExp
+  const separator = hasSeparator ? separatorOrEncoding : /\r?\n/
+  const selectedEncoding = hasSeparator
+    ? encoding
+    : separatorOrEncoding === void 0
+      ? 'utf8'
+      : separatorOrEncoding
+  return operators.split(separator, selectedEncoding, this)
+})
+installMethod('encode', function (encoding) {
+  return operators.encode(encoding, this)
+})
+installMethod('decode', function (encoding) {
+  return operators.decode(encoding, this)
+})
+installMethod('makeAsync', function (ms) {
+  return operators.makeAsync(ms, this)
+})
+installMethod('where', function (props) {
+  return operators.where(props, this)
+})
+installMethod('findWhere', function (props) {
+  return operators.findWhere(props, this)
+})
+installMethod('rateLimit', function (options) {
+  return operators.rateLimit(options, this)
+})
+installMethod('sortedGroupBy', function (fnOrString) {
+  return operators.sortedGroupBy(fnOrString, this)
+})
+installMethod(
+  'sortedJoin',
+  function (right, options) {
+    return joins.sortedJoin(this, right, options)
+  },
+  { pipeline: false },
 )

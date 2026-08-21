@@ -1,5 +1,6 @@
 const _ = require('../src/index.js')
 const { deferred, nextTurn, waitFor } = require('./invariant-helpers.js')
+const { kDestroy, kResume } = require('../src/stream-control.js')
 
 test('a ReadableStream is consumed with transformations and source backpressure', async () => {
   let next = 0
@@ -15,7 +16,7 @@ test('a ReadableStream is consumed with transformations and source backpressure'
     { highWaterMark: 0 },
   )
   const source = _(readable)
-  const iterator = source.map((value) => value * 10).toAsyncIterator()
+  const iterator = source.map((value) => value * 10)[Symbol.asyncIterator]()
 
   expect(pulls).toBe(0)
   await expect(iterator.next()).resolves.toEqual({ done: false, value: 10 })
@@ -36,9 +37,9 @@ test('destroying a ReadableStream source cancels and unlocks its reader', async 
     },
   })
   const source = _(readable)
-  source.resume()
+  source[kResume]()
 
-  source.destroy()
+  source[kDestroy]()
   await nextTurn()
 
   expect(cancelReason.name).toBe('AbortError')
@@ -56,7 +57,7 @@ test('a ReadableStream error becomes an Exstream record error', async () => {
 
   const result = await _(readable)
     .errors((error) => errors.push(error))
-    .toPromise()
+    .toArray()
 
   expect(result).toEqual([])
   expect(errors).toEqual([reason])
@@ -106,7 +107,7 @@ test('toWebReadable forwards record errors to the reader', async () => {
   await expect(reader.read()).rejects.toBe(reason)
 })
 
-test('pipe accepts WritableStream and waits for each write', async () => {
+test('pipeTo accepts WritableStream and waits for each write', async () => {
   const releases = []
   const written = []
   let started = 0
@@ -118,7 +119,7 @@ test('pipe accepts WritableStream and waits for each write', async () => {
     },
   })
   const source = _([1, 2, 3]).map((value) => value * 10)
-  const result = source.pipe(writable)
+  const result = source.pipeTo(writable)
 
   await waitFor(() => started === 1, 'first web write did not start')
   expect(written).toEqual([10])
@@ -129,28 +130,28 @@ test('pipe accepts WritableStream and waits for each write', async () => {
   await waitFor(() => started === 3, 'third web write did not start')
   releases.shift()()
 
-  await expect(result).resolves.toBe(writable)
+  await expect(result).resolves.toBeUndefined()
   expect(written).toEqual([10, 20, 30])
 })
 
-test('pipe closes a WritableStream unless end is false', async () => {
+test('pipeTo closes a WritableStream unless end is false', async () => {
   const closed = vi.fn()
   const writable = new WritableStream({ close: closed })
 
-  await _([1]).pipe(writable)
+  await _([1]).pipeTo(writable)
   expect(closed).toHaveBeenCalledOnce()
 
   const leftOpen = new WritableStream({ close: closed })
-  await _([1]).pipe(leftOpen, { end: false })
+  await _([1]).pipeTo(leftOpen, { end: false })
   expect(closed).toHaveBeenCalledOnce()
   expect(leftOpen.locked).toBe(false)
 })
 
-test('pipe can preserve a WritableStream with preventClose', async () => {
+test('pipeTo can preserve a WritableStream with preventClose', async () => {
   const closed = vi.fn()
   const writable = new WritableStream({ close: closed })
 
-  await _([1]).pipe(writable, { preventClose: true })
+  await _([1]).pipeTo(writable, { preventClose: true })
 
   expect(closed).not.toHaveBeenCalled()
   expect(writable.locked).toBe(false)
@@ -167,7 +168,7 @@ test('a WritableStream failure aborts the Exstream graph and destination', async
   })
   const source = _([1, 2, 3])
 
-  await expect(source.pipe(writable)).rejects.toBe(reason)
+  await expect(source.pipeTo(writable)).rejects.toBe(reason)
   expect(source.state).toBe('aborted')
   expect(source.abortReason).toBe(reason)
   // A write failure errors the native WritableStream before Exstream can request abort.
@@ -175,7 +176,7 @@ test('a WritableStream failure aborts the Exstream graph and destination', async
   expect(writable.locked).toBe(false)
 })
 
-test('pipe external signal aborts Web Stream transfer', async () => {
+test('pipeTo external signal aborts Web Stream transfer', async () => {
   const controller = new AbortController()
   const reason = Error('cancel web pipe')
   const writing = deferred()
@@ -189,7 +190,7 @@ test('pipe external signal aborts Web Stream transfer', async () => {
     },
   })
   const source = _([1, 2, 3])
-  const result = source.pipe(writable, { signal: controller.signal })
+  const result = source.pipeTo(writable, { signal: controller.signal })
 
   await writing.promise
   controller.abort(reason)
@@ -201,7 +202,7 @@ test('pipe external signal aborts Web Stream transfer', async () => {
   expect(aborted).toHaveBeenCalledWith(reason)
 })
 
-test('pipe preventAbort leaves cancellation of the WritableStream to its owner', async () => {
+test('pipeTo preventAbort leaves cancellation of the WritableStream to its owner', async () => {
   const controller = new AbortController()
   const writing = deferred()
   const release = deferred()
@@ -213,7 +214,7 @@ test('pipe preventAbort leaves cancellation of the WritableStream to its owner',
       return release.promise
     },
   })
-  const result = _([1]).pipe(writable, {
+  const result = _([1]).pipeTo(writable, {
     preventAbort: true,
     signal: controller.signal,
   })
@@ -232,13 +233,10 @@ test('reliable fan-out applies the slowest WritableStream backpressure to the so
   const releases = []
   const fastValues = []
   const slowValues = []
-  const source = _((write, next) => {
-    if (produced === 3) write(_.nil)
-    else {
-      write(++produced)
-      next()
-    }
-  })
+  function* values() {
+    while (produced < 3) yield ++produced
+  }
+  const source = _(values(), { start: 'manual' })
   const slow = new WritableStream({
     write(value) {
       slowValues.push(value)
@@ -246,8 +244,8 @@ test('reliable fan-out applies the slowest WritableStream backpressure to the so
     },
   })
   const fast = new WritableStream({ write: (value) => fastValues.push(value) })
-  const slowDone = source.fork(true).pipe(slow)
-  const fastDone = source.fork(true).pipe(fast)
+  const slowDone = source.fork().pipeTo(slow)
+  const fastDone = source.fork().pipeTo(fast)
 
   await source.start()
   for (let value = 1; value <= 3; value++) {
@@ -270,7 +268,7 @@ test('a fetch response body can flow through CSV and transformations to a Writab
   await _(response.body)
     .csv({ header: true })
     .map((row) => Object.assign(row, { id: Number(row.id) }))
-    .pipe(writable)
+    .pipeTo(writable)
 
   expect(destination).toEqual([
     { id: 1, name: 'Ada' },

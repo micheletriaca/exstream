@@ -14,6 +14,8 @@ const options = {
 const coreValues = Array.from({ length: 20_000 }, (_, index) => index)
 const asyncValues = Array.from({ length: 2_000 }, (_, index) => index)
 const forkValues = Array.from({ length: 5_000 }, (_, index) => index)
+const joinLeftValues = Array.from({ length: 20_000 }, (_, key) => ({ key, side: 'left' }))
+const joinRightValues = Array.from({ length: 20_000 }, (_, key) => ({ key, side: 'right' }))
 const csvRows = Array.from(
   { length: 5_000 },
   (_, index) => `${index},name-${index},${index % 2 === 0}`,
@@ -29,11 +31,11 @@ const jsonlInput = Buffer.from(`${jsonRows.map((row) => JSON.stringify(row)).joi
 
 bench(
   'core synchronous map/filter pipeline (20k records)',
-  () => {
-    const result = _(coreValues)
+  async () => {
+    const result = await _(coreValues)
       .map((value) => value * 2)
       .filter((value) => value % 3 === 0)
-      .values()
+      .toArray()
     if (result.length !== 6667) throw Error(`unexpected result length: ${result.length}`)
   },
   options,
@@ -41,27 +43,27 @@ bench(
 
 bench(
   'contextual synchronous map/filter pipeline (20k records)',
-  () => {
-    const result = _(coreValues)
+  async () => {
+    const result = await _(coreValues)
       .withContext((value) => ({ correlationId: value }))
       .map((value, context) => {
         context.output = value * 2
         return context.output
       })
       .filter((value, context) => context.correlationId % 3 === 0 && value >= 0)
-      .values()
+      .toArray()
     if (result.length !== 6667) throw Error(`unexpected result length: ${result.length}`)
   },
   options,
 )
 
 bench(
-  'resolve(32) with fulfilled promises (2k records)',
+  'mapAsync(32) with fulfilled promises (2k records)',
   async () => {
     const result = await _(asyncValues)
       .map((value) => Promise.resolve(value * 2))
-      .resolve(32, false)
-      .toPromise()
+      .mapAsync((value) => value, { concurrency: 32, ordered: false })
+      .toArray()
     if (result.length !== asyncValues.length)
       throw Error(`unexpected result length: ${result.length}`)
   },
@@ -76,8 +78,8 @@ bench(
       source.fork().map((value) => value * 2),
       source.fork().map((value) => value * 3),
     ])
-      .merge(2, false)
-      .toPromise()
+      .merge({ concurrency: 2, ordered: false })
+      .toArray()
     if (result.length !== forkValues.length * 2)
       throw Error(`unexpected result length: ${result.length}`)
   },
@@ -85,9 +87,25 @@ bench(
 )
 
 bench(
+  'sortedJoin inner (20k records per input)',
+  async () => {
+    let count = 0
+    await _(joinLeftValues)
+      .sortedJoin(_(joinRightValues), { leftKey: 'key', rightKey: 'key' })
+      .tap(() => count++)
+      .drain()
+    if (count !== joinLeftValues.length) throw Error(`unexpected result length: ${count}`)
+  },
+  options,
+)
+
+bench(
   'CSV parse and stringify (5k records)',
-  () => {
-    const result = _([csvInput]).csv({ header: true }).csvStringify({ header: true }).values()
+  async () => {
+    const result = await _([csvInput])
+      .csv({ header: true })
+      .csvStringify({ header: true })
+      .toArray()
     if (result.length !== csvRows.length + 1)
       throw Error(`unexpected result length: ${result.length}`)
   },
@@ -100,7 +118,7 @@ bench(
     const result = await _([jsonInput])
       .json({ path: '$.data.rows[*]' })
       .jsonStringify({ path: '$.rows[*]' })
-      .toPromise()
+      .toArray()
     if (result.length !== jsonRows.length + 1)
       throw Error(`unexpected result length: ${result.length}`)
   },
@@ -109,8 +127,8 @@ bench(
 
 bench(
   'JSONL parse and stringify (5k records)',
-  () => {
-    const result = _([jsonlInput]).jsonl().jsonlStringify().values()
+  async () => {
+    const result = await _([jsonlInput]).jsonl().jsonlStringify().toArray()
     if (result.length !== jsonRows.length) throw Error(`unexpected result length: ${result.length}`)
   },
   options,

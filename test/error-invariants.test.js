@@ -1,12 +1,13 @@
 const _ = require('../src/index.js')
 const { ExstreamError } = require('../src/exstream.js')
+const { kResume } = require('../src/stream-control.js')
 
 test('errors without consumers are emitted by the source stream', () => {
   const source = _()
   const reason = Error('unhandled stream error')
   const error = vi.fn()
   source.once('error', error)
-  source.resume()
+  source[kResume]()
 
   source.write(reason)
 
@@ -25,8 +26,8 @@ test('normalized error-like objects preserve their supplied stack', () => {
   expect(wrapped.exstreamInput).toBe('input')
 })
 
-test('synchronous values rethrows an error record unchanged', () => {
+test('toArray rejects a synchronous error record unchanged', async () => {
   const reason = Error('synchronous failure')
 
-  expect(() => _([reason]).values()).toThrow(reason)
+  await expect(_([reason]).toArray()).rejects.toBe(reason)
 })

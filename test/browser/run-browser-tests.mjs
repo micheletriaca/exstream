@@ -4,10 +4,9 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { build } from 'vite'
+import { buildBrowserBundles } from '../../scripts/build-browser.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
-const root = path.resolve(directory, '../..')
 const output = await mkdtemp(path.join(tmpdir(), 'exstream-browser-'))
 let server
 
@@ -132,40 +131,7 @@ const runInChrome = async (chrome, html) => {
 }
 
 try {
-  await build({
-    configFile: false,
-    root,
-    plugins: [
-      {
-        name: 'forbid-node-builtins',
-        resolveId(source) {
-          if (
-            source.startsWith('node:') ||
-            ['buffer', 'events', 'process', 'stream', 'string_decoder'].includes(source)
-          ) {
-            throw Error(`browser bundle imports Node dependency: ${source}`)
-          }
-          return null
-        },
-      },
-    ],
-    resolve: {
-      alias: {
-        './node-runtime.js': './web-runtime.js',
-        './platform-runtime.js': './web-runtime.js',
-      },
-    },
-    build: {
-      emptyOutDir: true,
-      lib: {
-        entry: path.join(root, 'src/browser.js'),
-        fileName: 'exstream',
-        formats: ['iife'],
-        name: 'Exstream',
-      },
-      outDir: output,
-    },
-  })
+  await buildBrowserBundles({ outDir: output, logLevel: 'silent' })
 
   await Promise.all(
     ['index.html', 'browser-harness.js', 'worker-harness.js'].map((file) =>
@@ -173,17 +139,23 @@ try {
     ),
   )
 
-  const bundlePath = path.join(output, 'exstream.iife.js')
-  const bundle = await readFile(bundlePath, 'utf8')
-  for (const forbidden of [
-    '__vite-browser-external',
-    'process.stdout',
-    "require('stream')",
-    'require("stream")',
-    'node:stream',
-  ]) {
-    if (bundle.includes(forbidden))
-      throw Error(`browser bundle contains Node dependency: ${forbidden}`)
+  for (const bundleName of ['exstream.iife.min.js', 'exstream.mjs']) {
+    const bundle = await readFile(path.join(output, bundleName), 'utf8')
+    for (const forbidden of [
+      '__vite-browser-external',
+      'process.stdout',
+      "require('stream')",
+      'require("stream")',
+      'node:stream',
+    ]) {
+      if (bundle.includes(forbidden))
+        throw Error(`${bundleName} contains Node dependency: ${forbidden}`)
+    }
+
+    const sourceMap = JSON.parse(await readFile(path.join(output, `${bundleName}.map`), 'utf8'))
+    if (!sourceMap.mappings) throw Error(`${bundleName}.map contains no source mappings`)
+    if ('sourcesContent' in sourceMap)
+      throw Error(`${bundleName}.map unexpectedly embeds source content`)
   }
 
   server = createServer(async (request, response) => {
@@ -195,7 +167,7 @@ try {
         response.writeHead(403).end()
         return
       }
-      const type = file.endsWith('.js') ? 'text/javascript' : 'text/html'
+      const type = /\.m?js$/.test(file) ? 'text/javascript' : 'text/html'
       const contents = await readFile(file)
       response.writeHead(200, { 'content-type': type }).end(contents)
     } catch {

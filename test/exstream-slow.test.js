@@ -2,6 +2,7 @@ vi.setConfig({ testTimeout: 2000 })
 
 const _ = require('../src/index.js')
 const h = require('./helpers.js')
+const { kResume } = require('../src/stream-control.js')
 
 test('backpressure', () => {
   const x = _([1, 2, 3])
@@ -23,32 +24,16 @@ test('backpressure', () => {
         expect(y).toEqual([1, 2, 3])
         resolve()
       })
-    z.resume()
+    z[kResume]()
   })
 })
 
-test('async filter', async () => {
-  const res = await _([1, 2, 3])
-    .asyncFilter(async (x) => {
-      await h.sleep(10)
-      return x % 2 === 0
-    })
-    .toPromise()
-
-  expect(res).toEqual([2])
-})
-
-test('slow writes on node stream', () => {
+test('slow writes on node stream', async () => {
   const res = []
-  return new Promise((resolve) => {
-    _([2, 3, 4])
-      .map((x) => x * 2)
-      .pipe(h.getSlowWritable(res))
-      .on('finish', () => {
-        resolve()
-        expect(res).toEqual([4, 6, 8])
-      })
-  })
+  await _([2, 3, 4])
+    .map((x) => x * 2)
+    .pipeTo(h.getSlowWritable(res))
+  expect(res).toEqual([4, 6, 8])
 })
 
 test('throttle', async () => {
@@ -59,7 +44,7 @@ test('throttle', async () => {
     }
   }
 
-  const res = await _(gen()).throttle(50).toPromise()
+  const res = await _(gen()).throttle(50).toArray()
 
   expect(res.length).toBeLessThan(4)
   expect(res.length).toBeGreaterThan(1)

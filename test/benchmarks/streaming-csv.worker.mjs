@@ -83,12 +83,12 @@ const prepareExstreamPipeline = () => {
     const byteSink = new ByteSink()
     const objectSink = new ObjectSink()
     if (config.scenario.operation === 'parse') {
-      exstream(inputSource()).csv({ header: objectMode }).pipe(objectSink)
+      exstream(inputSource()).csv({ header: objectMode }).pipeTo(objectSink)
       await finished(objectSink)
       return { firstOutputMs: objectSink.firstOutputMs, outputBytes: 0 }
     }
     if (config.scenario.operation === 'stringify') {
-      exstream(rowSource()).csvStringify({ header: objectMode }).pipe(byteSink)
+      exstream(rowSource()).csvStringify({ header: objectMode }).pipeTo(byteSink)
       await finished(byteSink)
       return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
     }
@@ -96,7 +96,7 @@ const prepareExstreamPipeline = () => {
       .csv({ header: objectMode })
       .tap(markRecord)
       .csvStringify({ header: objectMode })
-      .pipe(byteSink)
+      .pipeTo(byteSink)
     await finished(byteSink)
     return { firstOutputMs: byteSink.firstOutputMs, outputBytes: byteSink.bytes }
   }
