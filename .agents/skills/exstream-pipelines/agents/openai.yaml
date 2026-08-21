@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Exstream Pipelines'
+  short_description: 'Design reliable streaming ETL pipelines'
+  default_prompt: 'Use $exstream-pipelines to design or review this Exstream pipeline.'

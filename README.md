@@ -209,10 +209,34 @@ global polyfills.
 
 ## When not to use it
 
-For a small array that already fits in memory, native array methods or a simple
-`for await` loop are usually clearer. Exstream earns its place when the problem
-is the pipeline as a whole: bounded memory, concurrent I/O, fan-out,
-backpressure, cancellation, format parsing and cleanup.
+Do not add Exstream solely to replace a trivial finite transformation that
+native array methods or a simple `for await` loop already express clearly. But
+small input size is not, by itself, a reason to avoid it. If Exstream is already
+a project-standard abstraction and the job is conceptually a
+source-to-terminal flow, using the same pipeline model can improve separation,
+composition and future evolution even for a hundred records.
+
+Exstream earns its place when the pipeline is the useful abstraction: bounded
+memory, concurrent I/O, fan-out, backpressure, cancellation, format parsing,
+cleanup, or one consistent API across related data flows. Keep native
+JavaScript for local collection manipulation when it is materially clearer.
+
+## AI & Agentic Development
+
+This repository includes an [`exstream-pipelines`](.agents/skills/exstream-pipelines/)
+skill that helps coding agents design and review Exstream applications with the
+library's actual source, transformation, destination, backpressure, error, and
+lifecycle semantics.
+
+Install it for your coding agent with the Vercel Labs
+[`skills`](https://www.npmjs.com/package/skills) package:
+
+```shell
+npx skills add https://github.com/micheletriaca/exstream/tree/master/.agents/skills/exstream-pipelines
+```
+
+Installing `exstream.js` from npm installs the runtime library only. See the
+[agent skill page](https://exstream-js.github.io/docs/project/agent-skill/).
 
 ## Documentation
 
