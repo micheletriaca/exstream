@@ -262,7 +262,7 @@ test('synchronous tasks', async () => {
 
 test('synchronous reduce', async () => {
   const res = await _([1, 2, 3, 4, 5, 6])
-    .reduce1((memo, x) => memo + x)
+    .reduce((memo, x) => memo + x)
     .single()
   expect(res).toEqual(21)
 })
@@ -283,7 +283,7 @@ test('async value', async () => {
   const res = await _([1, 2, 3, 4, 5, 6])
     .map(async (x) => x * 2)
     .mapAsync((value) => value)
-    .reduce1((a, b) => a + b)
+    .reduce((a, b) => a + b)
     .single()
   expect(res).toBe(42)
 })

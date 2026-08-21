@@ -487,10 +487,10 @@ test('a contextual stopOnError handler receives the failing record context', asy
   expect(handled).toEqual({ correlationId: 'row-2', message: 'stop' })
 })
 
-test('reduce1 aggregates all contexts and isolates reducer failures', async () => {
+test('reduce without initial value aggregates all contexts and isolates reducer failures', async () => {
   const success = await _([1, 2, 3])
     .withContext((value) => ({ correlationId: `row-${value}` }))
-    .reduce1((total, value, context) => total + value + Number(context.input === value))
+    .reduce((total, value, context) => total + value + Number(context.input === value))
     .map((total, context) => ({
       inputs: context.contexts.map((parent) => parent.input),
       total,

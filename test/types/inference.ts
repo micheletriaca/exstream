@@ -96,6 +96,11 @@ declare const reducedContext: Context<typeof reducedWithContext>
 const contributingContext: exstream.RecordContext<unknown> | undefined =
   reducedContext.contexts?.[0]
 
+const reducedWithoutInitial = exstream([{ total: 1 }, { total: 2 }]).reduce((sum, value) => ({
+  total: sum.total + value.total,
+}))
+type ReducedWithoutInitial = Expect<Equal<Value<typeof reducedWithoutInitial>, { total: number }>>
+
 const wrapped = exstream([1]).map(async (value) => String(value), { wrap: true })
 type WrappedValue = Expect<Equal<Value<typeof wrapped>, Promise<{ input: number; output: string }>>>
 
@@ -301,6 +306,7 @@ type Used =
   | BatchValue
   | InnerJoinValue
   | LeftJoinValue
+  | ReducedWithoutInitial
   | WrappedValue
   | CsvObject
   | CsvArray

@@ -75,6 +75,8 @@ authoritative record for earlier versions.
 
 ### Removed
 
+- `reduce1()`; call `reduce(fn)` to use the first successful value as the
+  accumulator, or `reduce(fn, initialValue)` to provide one explicitly.
 - Standalone and curried operator exports such as `map()`, `filter()`, `json()`,
   and `reduce()`. Operators remain available as Exstream instance methods and
   on reusable definitions created with `pipeline()`.

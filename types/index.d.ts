@@ -636,19 +636,18 @@ declare namespace exstream {
     ratelimit(num: number, milliseconds: number): Exstream<T, C>
 
     /** Combines all values into one result. */
+    reduce<F extends (accumulator: T, value: T, context: CallbackContext<T, C>) => T>(
+      fn: F,
+    ): Exstream<
+      T,
+      AggregateOutputContext<C, T, Parameters<F> extends [any, any, any, ...any[]] ? true : false>
+    >
     reduce<A, F extends (accumulator: A, value: T, context: CallbackContext<T, C>) => A>(
       fn: F,
       initialValue: A,
     ): Exstream<
       A,
       AggregateOutputContext<C, A, Parameters<F> extends [any, any, any, ...any[]] ? true : false>
-    >
-    /** Combines all values, using the first value as the initial result. */
-    reduce1<F extends (accumulator: T, value: T, context: CallbackContext<T, C>) => T>(
-      fn: F,
-    ): Exstream<
-      T,
-      AggregateOutputContext<C, T, Parameters<F> extends [any, any, any, ...any[]] ? true : false>
     >
     /** Collects values into arrays indexed by a selected key. */
     groupBy<K extends PropertyKey>(
@@ -839,14 +838,13 @@ declare namespace exstream {
     /** Adds an initial skip count. */
     drop(count: number): Pipeline<Input, Output, C>
     /** Adds a synchronous reducer. */
+    reduce(
+      fn: (accumulator: Output, value: Output, context: C) => Output,
+    ): Pipeline<Input, Output, AggregateContext<Output, C>>
     reduce<A>(
       fn: (accumulator: A, value: Output, context: C) => A,
       initialValue: A,
     ): Pipeline<Input, A, AggregateContext<A, C>>
-    /** Adds a reducer that starts with the first value. */
-    reduce1(
-      fn: (accumulator: Output, value: Output, context: C) => Output,
-    ): Pipeline<Input, Output, AggregateContext<Output, C>>
     /** Adds grouping by key. */
     groupBy<K extends PropertyKey>(
       fn: (value: Output, context: C) => K,

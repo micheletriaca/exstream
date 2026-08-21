@@ -22,6 +22,20 @@ Top-level factories and utilities remain available: `pipeline()`, `defer()`,
 `destination()`, `fromEvent()`, `data()`, `errorInfo()`, `nil`, and the public
 error classes.
 
+`reduce1()` was folded into `reduce()`:
+
+```js
+// Before
+stream.reduce1((total, value) => total + value)
+
+// 1.0
+stream.reduce((total, value) => total + value)
+```
+
+Without an explicit initial value, the first successful record becomes the
+accumulator and an empty input emits no result. Passing an initial value keeps
+the existing behavior, including emitting that value for empty input.
+
 ## Terminal operations
 
 Terminal methods now have one predictable contract: methods that represent

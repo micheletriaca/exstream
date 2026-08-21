@@ -1160,54 +1160,20 @@ _m.take = _.curry((n, s) => s.slice(0, n))
 
 _m.drop = _.curry((n, s) => s.slice(n, Infinity))
 
-_m.reduce = _.curry((fn, accumulator, s) => {
+_m.reduce = (fn, accumulator, initialized, s) => {
   const usesContext = fn.length >= 3
   let contexts
   let inputCount = 0
   let s1
   s1 = s.consumeSync((err, x, push) => {
     if (x === _.nil) {
-      push(
-        null,
-        accumulator,
-        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
-      )
-      push(null, _.nil)
-    } else if (err) {
-      push(err)
-    } else {
-      const context = s1._recordContext
-      const nextContext = context === void 0 && usesContext ? createContext(x, s1.signal) : context
-      contexts = appendContext(contexts, nextContext, inputCount++)
-      try {
-        accumulator = usesContext ? fn(accumulator, x, nextContext) : fn(accumulator, x)
-      } catch (e) {
-        try {
-          push(new ExstreamError(e, x), null, nextContext)
-        } finally {
-          accumulator = void 0
-          s1[kDestroy]()
-        }
+      if (initialized) {
+        push(
+          null,
+          accumulator,
+          contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
+        )
       }
-    }
-  })
-  return s1
-})
-
-_m.reduce1 = _.curry((fn, s) => {
-  const usesContext = fn.length >= 3
-  let init = false
-  let accumulator
-  let contexts
-  let inputCount = 0
-  let s1
-  s1 = s.consumeSync((err, x, push) => {
-    if (x === _.nil) {
-      push(
-        null,
-        accumulator,
-        contexts === void 0 ? void 0 : aggregateContexts(accumulator, contexts, s1.signal),
-      )
       push(null, _.nil)
     } else if (err) {
       push(err)
@@ -1215,8 +1181,8 @@ _m.reduce1 = _.curry((fn, s) => {
       const context = s1._recordContext
       const nextContext = context === void 0 && usesContext ? createContext(x, s1.signal) : context
       contexts = appendContext(contexts, nextContext, inputCount++)
-      if (!init) {
-        init = true
+      if (!initialized) {
+        initialized = true
         accumulator = x
         return
       }
@@ -1233,7 +1199,7 @@ _m.reduce1 = _.curry((fn, s) => {
     }
   })
   return s1
-})
+}
 
 _m.groupBy = _.curry((fnOrString, s) => {
   const getter = _.isString(fnOrString) ? _.makeGetter(fnOrString, _.nil) : fnOrString

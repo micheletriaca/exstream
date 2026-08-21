@@ -40,7 +40,7 @@ const runCase = async (exstream, benchmark, records) => {
     .tap(() => {
       consumed += 1
     })
-    .reduce1((sum, value) => sum + value)
+    .reduce((sum, value) => sum + value)
     .single()
 
   if (consumed !== records) {

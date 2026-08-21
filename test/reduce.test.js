@@ -8,16 +8,16 @@ test('reduce', async () => {
   expect(res).toEqual(6)
 })
 
-test('reduce1 - sum', async () => {
+test('reduce without initial value - sum', async () => {
   const res = await _([1, 2, 3])
-    .reduce1((memo, x) => memo + x)
+    .reduce((memo, x) => memo + x)
     .single()
   expect(res).toEqual(6)
 })
 
-test('reduce1 - to object', async () => {
+test('reduce without initial value - to object', async () => {
   const res = await _([{ a: 1 }, { a: 2 }, { b: 1 }])
-    .reduce1((memo, x) => ({ ...memo, ...x }))
+    .reduce((memo, x) => ({ ...memo, ...x }))
     .single()
   expect(res).toEqual({ a: 2, b: 1 })
 })
@@ -29,18 +29,18 @@ test('reduce from empty list', async () => {
   expect(res).toEqual(0)
 })
 
-test('reduce1 from empty list', async () => {
+test('reduce without initial value from empty list', async () => {
   const res = await _([])
-    .reduce1((memo, x) => memo + x)
-    .single()
-  expect(res).toBeUndefined()
+    .reduce((memo, x) => memo + x)
+    .toArray()
+  expect(res).toEqual([])
 })
 
-test('reduce1 after pluck', async () => {
+test('reduce without initial value after pluck', async () => {
   const res = await _([{ a: 1 }, { a: 2 }, { b: 1 }])
     .pluck('a')
     .compact()
-    .reduce1((memo, x) => memo + x)
+    .reduce((memo, x) => memo + x)
     .single()
   expect(res).toEqual(3)
 })
@@ -53,14 +53,14 @@ test('reduce after pluck', async () => {
   expect(res).toEqual(NaN)
 })
 
-test('reduce1 in async chain', async () => {
+test('reduce without initial value in async chain', async () => {
   const res = await _([1, 2, 3])
     .map(async (x) => {
       await h.sleep(10)
       return x
     })
     .mapAsync((value) => value)
-    .reduce1((memo, x) => memo + x)
+    .reduce((memo, x) => memo + x)
     .toArray()
 
   expect(res).toEqual([6])
@@ -96,10 +96,10 @@ test('reduce errors - 2', async () => {
   expect(res).toBeUndefined()
 })
 
-test('reduce1 errors', async () => {
+test('reduce without initial value errors', async () => {
   let e = null
   const res = await _([1, 2, 3])
-    .reduce1((memo, x) => {
+    .reduce((memo, x) => {
       if (x === 3) throw Error('NOOO')
       return memo + x
     })
@@ -110,11 +110,11 @@ test('reduce1 errors', async () => {
   expect(res).toBeUndefined()
 })
 
-test('reduce1 errors - 2', async () => {
+test('reduce without initial value errors - 2', async () => {
   let e = null
   try {
     await _([1, 2, 3])
-      .reduce1((memo, x) => {
+      .reduce((memo, x) => {
         if (x === 3) throw Error('NOOO')
         return memo + x
       })
@@ -126,13 +126,13 @@ test('reduce1 errors - 2', async () => {
   expect(e.message).toBe('NOOO')
 })
 
-test('reduce1 errors pass through', async () => {
+test('reduce without initial value errors pass through', async () => {
   const errs = []
   const res = await _([1, 2, 3])
     .map((x) => {
       throw Error(x + '')
     })
-    .reduce1((memo, x) => memo + x)
+    .reduce((memo, x) => memo + x)
     .errors((err) => errs.push(err))
     .single()
   expect(res).toBeUndefined()

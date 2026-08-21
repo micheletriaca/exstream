@@ -35,7 +35,7 @@ test('the package surface excludes internal utilities and lifecycle controls', (
     'traverse',
   ]
   const lifecycleControls = ['abort', 'destroy', 'fail', 'pause', 'resume', 'writeData']
-  const removedOperators = ['asyncFilter', 'asyncReduce']
+  const removedOperators = ['asyncFilter', 'asyncReduce', 'reduce1']
   const instanceOnlyOperators = [
     'batch',
     'collect',
@@ -69,7 +69,6 @@ test('the package surface excludes internal utilities and lifecycle controls', (
     'pluck',
     'ratelimit',
     'reduce',
-    'reduce1',
     'reject',
     'routeErrors',
     'skipErrors',

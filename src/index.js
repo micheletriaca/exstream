@@ -143,8 +143,8 @@ installMethod('drop', function (n) {
 installMethod('throttle', function (ms) {
   return operators.throttle(ms, this)
 })
-installMethod('reduce', function (memo, fn) {
-  return operators.reduce(memo, fn, this)
+installMethod('reduce', function (fn, initialValue) {
+  return operators.reduce(fn, initialValue, arguments.length >= 2, this)
 })
 installMethod('groupBy', function (fnOrString) {
   return operators.groupBy(fnOrString, this)
@@ -169,9 +169,6 @@ installMethod('decode', function (encoding) {
 })
 installMethod('splitBy', function (regexp, encoding = 'utf8') {
   return operators.splitBy(regexp, encoding, this)
-})
-installMethod('reduce1', function (fn) {
-  return operators.reduce1(fn, this)
 })
 installMethod('makeAsync', function (ms) {
   return operators.makeAsync(ms, this)
