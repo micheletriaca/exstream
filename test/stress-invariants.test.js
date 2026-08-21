@@ -96,7 +96,7 @@ test('destroy terminates a backpressured fork/merge graph without later activity
   const source = _(values(), { start: 'manual' })
   const first = source.fork().map((value) => `a${value}`)
   const second = source.fork().map((value) => `b${value}`)
-  const merged = _([first, second]).merge(2, false)
+  const merged = _([first, second]).merge({ concurrency: 2, ordered: false })
   merged.pipeTo(destination)
 
   await source.start()
@@ -121,7 +121,7 @@ test('repeated fork/merge lifecycles do not accumulate listeners', async () => {
     const source = _([1, 2, 3])
     const first = source.fork().map((value) => value * 2)
     const second = source.fork().map((value) => value * 3)
-    const merged = _([first, second]).merge(2, false)
+    const merged = _([first, second]).merge({ concurrency: 2, ordered: false })
 
     expect(await merged.toArray()).toHaveLength(6)
     for (const stream of [source, first, second, merged]) {

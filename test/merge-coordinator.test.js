@@ -14,7 +14,7 @@ test.each([false, true])(
         return [][Symbol.iterator]()
       },
     })
-    const merged = _([inner]).merge(1, ordered)
+    const merged = _([inner]).merge({ concurrency: 1, ordered: ordered })
 
     await nextTurn()
     const startedBeforeTerminal = started
@@ -39,7 +39,7 @@ test.each([false, true])(
         })()
       }),
     )
-    const merged = _(inners).merge(2, ordered)
+    const merged = _(inners).merge({ concurrency: 2, ordered: ordered })
 
     await nextTurn()
     expect(invoked).toEqual([])
@@ -62,7 +62,7 @@ test.each([false, true])(
 test('merge accepts direct and deferred streams in the same outer stream', async () => {
   await expect(
     _([_([1]), _.defer(() => [2])])
-      .merge(2, true)
+      .merge({ concurrency: 2, ordered: true })
       .toArray(),
   ).resolves.toEqual([1, 2])
 })
@@ -90,7 +90,7 @@ test('a failing deferred source becomes a source error and releases its merge sl
     }),
     _.defer(() => [2]),
   ])
-    .merge(1, true)
+    .merge({ concurrency: 1, ordered: true })
     .errors((error) => errors.push(error))
     .toArray()
 
@@ -115,7 +115,7 @@ test('destroying merge does not acquire deferred sources still outside the windo
       return [1]
     }),
   ]
-  const merged = _(inners).merge(1)
+  const merged = _(inners).merge({ concurrency: 1 })
   const completion = merged.drain()
 
   await waitFor(() => invoked.length === 1, 'merge did not acquire the first deferred source')
@@ -143,7 +143,7 @@ test('ordered merge streams the current inner before it ends', async () => {
     })(),
   )
   const completion = _([inner])
-    .merge(1, true)
+    .merge({ concurrency: 1, ordered: true })
     .tap((value) => emitted.push(value))
     .toArray()
 
@@ -178,7 +178,7 @@ test('an ordered buffered inner becomes streaming as soon as it reaches the head
     })(),
   )
   const completion = _([first, second])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .tap((value) => emitted.push(value))
     .toArray()
 
@@ -225,7 +225,7 @@ test('ordered merge consumes future inners eagerly without exceeding its stream 
     })(),
   )
   const completion = _([first, second, third])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .tap((value) => emitted.push(value))
     .toArray()
 
@@ -252,7 +252,7 @@ test('ordered merge preserves data, record errors, contexts, and their relative 
     })
 
   await _([inner])
-    .merge(1, true)
+    .merge({ concurrency: 1, ordered: true })
     .errors((error, _push, context) => {
       events.push({ context, error, type: 'error' })
     })
@@ -297,7 +297,7 @@ test('ordered merge replays buffered record errors in their original position', 
       return value
     })
   const completion = _([first, second])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .errors((error, _push, context) => events.push({ context, error, type: 'error' }))
     .tap((value, context) => events.push({ context, type: 'data', value }))
     .drain()
@@ -342,7 +342,7 @@ test('ordered merge never reclassifies an Error data value', async () => {
   const errors = []
 
   const result = await _([_([_.data(value)])])
-    .merge(1, true)
+    .merge({ concurrency: 1, ordered: true })
     .errors((error) => errors.push(error))
     .toArray()
 
@@ -356,7 +356,7 @@ test('an inner that cannot accept a consumer becomes a record error without bloc
   const errors = []
 
   const result = await _([unavailable, _([2])])
-    .merge(1, false)
+    .merge({ concurrency: 1, ordered: false })
     .errors((error) => errors.push(error))
     .toArray()
   reservedConsumer[kDestroy]()
@@ -395,7 +395,7 @@ test('an ordered record error neither completes its inner nor releases its concu
     })(),
   )
   const completion = _([first, second])
-    .merge(1, true)
+    .merge({ concurrency: 1, ordered: true })
     .errors((error) => errors.push(error))
     .toArray()
 
@@ -423,7 +423,7 @@ test('destroying an ordered merge destroys every active inner', async () => {
       })(),
     ),
   )
-  const merged = _(inners).merge(2, true)
+  const merged = _(inners).merge({ concurrency: 2, ordered: true })
   const completion = merged.drain()
 
   await waitFor(() => started === 2, 'the ordered merge did not activate both inners')
@@ -443,7 +443,7 @@ test.each([false, true])(
     const reason = Error('inner aborted')
     const first = _()
     const second = _()
-    const merged = _([first, second]).merge(2, ordered)
+    const merged = _([first, second]).merge({ concurrency: 2, ordered: ordered })
     const completion = merged.toArray()
 
     await waitFor(
@@ -468,7 +468,7 @@ test('unordered merge preserves the context of outer record errors', async () =>
     })
 
   await outer
-    .merge(1, false)
+    .merge({ concurrency: 1, ordered: false })
     .errors((_error, _push, context) => contexts.push(context))
     .drain()
 
@@ -491,7 +491,7 @@ test('ordered merge emits outer record errors in outer order with their context'
     })
 
   await outer
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .errors((error, _push, context) => events.push({ context, error, type: 'error' }))
     .tap((value) => events.push({ type: 'data', value }))
     .drain()
@@ -514,7 +514,7 @@ test('outer record errors obey unordered downstream backpressure', async () => {
     transformed++
     throw Error(`outer failure ${value}`)
   })
-  const merged = outer.merge(1, false)
+  const merged = outer.merge({ concurrency: 1, ordered: false })
   const sink = merged.consume((error, value, push) => {
     if (value === _.nil) push(null, _.nil)
     else if (error) received++

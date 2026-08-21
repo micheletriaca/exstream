@@ -3,7 +3,7 @@ const h = require('./helpers.js')
 
 test('merging basics', async () => {
   const results = await _([_([1, 2]), _([3, 4])])
-    .merge(1)
+    .merge({ concurrency: 1 })
     .toArray()
 
   expect(results).toEqual([1, 2, 3, 4])
@@ -24,7 +24,7 @@ test('fork and merging - preserve order', async () => {
     [source.fork().map((i) => i * 2), source.fork().map((i) => i * 3)],
     'merge',
   )
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .toArray()
 
   expect(results).toEqual([2, 4, 3, 6])
@@ -39,7 +39,7 @@ test('fork and merging with promises in first fork', async () => {
       .mapAsync((value) => value),
     source.fork().map((i) => i * 3),
   ])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .toArray()
 
   expect(results).toEqual([2, 4, 3, 6])
@@ -54,7 +54,7 @@ test('fork and merging with promises in second fork', async () => {
       .map(async (i) => i * 3)
       .mapAsync((value) => value),
   ])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .toArray()
 
   expect(results).toEqual([2, 4, 3, 6])
@@ -64,7 +64,7 @@ test('fork and merging - with toArray', async () => {
   const source = _([1, 2, 3, 4])
   const first = source.fork().map((i) => i * 2)
   const second = source.fork().map((i) => i * 3)
-  const results = await _([first, second]).merge(2, true).toArray()
+  const results = await _([first, second]).merge({ concurrency: 2, ordered: true }).toArray()
   expect(results).toEqual([2, 4, 6, 8, 3, 6, 9, 12])
 })
 
@@ -80,7 +80,7 @@ test('fork and merging - promise in the source stream as well', async () => {
     .fork()
     .map(async (i) => i * 3)
     .mapAsync((value) => value)
-  const results = await _([first, second]).merge(2, true).toArray()
+  const results = await _([first, second]).merge({ concurrency: 2, ordered: true }).toArray()
   expect(results).toEqual([4, 6, 8, 10, 6, 9, 12, 15])
 })
 
@@ -151,7 +151,7 @@ test('take() in a fork', async () => {
       .map(async (i) => i * 3)
       .mapAsync((value) => value),
   ])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .toArray()
   expect(results).toEqual([4, 6, 8, 10, 6])
 })
@@ -164,7 +164,7 @@ test('merging1', async () => {
     s.fork().map((x) => x * 2 + 2),
     s.fork().map((x) => x * 2 + 3),
   ])
-    .merge(3, false)
+    .merge({ concurrency: 3, ordered: false })
     .pipeTo(h.getSlowWritable(res, 5))
   expect(res).toEqual([3, 4, 5, 5, 6, 7, 7, 8, 9])
 })
@@ -199,7 +199,7 @@ test('merge a stream of streams', async () => {
     [4, 5, 6],
   ])
     .map((x) => _(x).through(h.getSlowWritable(res, 0, 0), { writable: true }))
-    .merge(1)
+    .merge({ concurrency: 1 })
     .toArray()
   expect(res).toEqual([1, 2, 3, 4, 5, 6])
 })

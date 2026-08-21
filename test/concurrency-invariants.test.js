@@ -61,7 +61,7 @@ test('merge(n) never activates more than n source streams concurrently', async (
       })(),
     ),
   )
-  const resultPromise = _(streams).merge(parallelism, false).toArray()
+  const resultPromise = _(streams).merge({ concurrency: parallelism, ordered: false }).toArray()
 
   await waitFor(
     () => releases.length >= parallelism,
@@ -145,7 +145,7 @@ test('ordered merge activates n streams but emits each complete stream in input 
     controlledStream('first', firstGate),
     controlledStream('second', secondGate),
   ])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .tap((value) => emitted.push(value))
     .toArray()
 

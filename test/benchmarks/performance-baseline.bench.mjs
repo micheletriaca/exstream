@@ -78,7 +78,7 @@ bench(
       source.fork().map((value) => value * 2),
       source.fork().map((value) => value * 3),
     ])
-      .merge(2, false)
+      .merge({ concurrency: 2, ordered: false })
       .toArray()
     if (result.length !== forkValues.length * 2)
       throw Error(`unexpected result length: ${result.length}`)

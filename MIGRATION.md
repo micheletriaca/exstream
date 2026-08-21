@@ -178,13 +178,23 @@ exstream(paths)
 // 1.0
 exstream(paths)
   .map((path) => exstream.defer(() => createReadStream(path)).jsonl())
-  .merge(4)
+  .merge({ concurrency: 4 })
 ```
 
 The `defer()` factory runs only when `merge()` activates that inner stream, so
-the merge parallelism still limits the number of open resources. Unlike the
+the merge concurrency still limits the number of open resources. Unlike the
 removed merge-specific factory, `defer()` also accepts asynchronous acquisition
 and every supported source type.
+
+Ordering and concurrency now use named options:
+
+```js
+// Before
+exstream(streams).merge(4, true)
+
+// 1.0
+exstream(streams).merge({ concurrency: 4, ordered: true })
+```
 
 ## Joining sorted streams
 

@@ -299,7 +299,7 @@ test('unordered merge preserves each substream record context', async () => {
   const second = _([3]).withContext((value) => ({ source: 'second', sourceValue: value }))
 
   const result = await _([first, second])
-    .merge(2, false)
+    .merge({ concurrency: 2, ordered: false })
     .map((value, context) => ({
       input: context.input,
       source: context.source,
@@ -320,7 +320,7 @@ test('ordered merge preserves record contexts while buffering substreams', async
   const second = _([3]).withContext((value) => ({ source: 'second', sourceValue: value }))
 
   const result = await _([first, second])
-    .merge(2, true)
+    .merge({ concurrency: 2, ordered: true })
     .map((value, context) => ({
       input: context.input,
       source: context.source,

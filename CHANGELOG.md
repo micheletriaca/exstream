@@ -49,6 +49,8 @@ authoritative record for earlier versions.
   current inner while eagerly buffering later active inners as protocol frames,
   preserving record errors, contexts, cancellation, and outer order. Wrap
   resource acquisition in `defer()` when it must wait for an activation slot.
+- `merge()` now takes `{ concurrency, ordered }` instead of positional
+  `parallelism` and `preserveOrder` arguments.
 - `sortedJoin()` is now a binary graph operation called on the left input with
   the right input and a named options object. Its merge-join coordinator
   propagates fatal failures and cancellation across both inputs, uses numeric

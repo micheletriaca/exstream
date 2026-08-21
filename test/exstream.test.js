@@ -633,12 +633,14 @@ test('sort by', async () => {
 test('multipipe', async () => {
   /*
     This demonstrates how to pipe multiple input streams into an exstream writer.
-    You can even control parallelism and order.
+    You can even control concurrency and order.
     The whole chain has back-pressure.
   */
   const s = _()
   const res = []
-  const completion = s.merge(2, false).pipeTo(h.getSlowWritable(res, 0, 1))
+  const completion = s
+    .merge({ concurrency: 2, ordered: false })
+    .pipeTo(h.getSlowWritable(res, 0, 1))
   const s1 = _(Array(10).fill('0'))
   const s2 = _(Array(10).fill('1'))
   s.write(s1)

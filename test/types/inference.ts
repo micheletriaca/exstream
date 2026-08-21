@@ -168,17 +168,22 @@ const contextualFork = contextual.fork()
 type ForkValue = Expect<Equal<Value<typeof contextualFork>, Value<typeof contextual>>>
 type ForkContext = Expect<Equal<Context<typeof contextualFork>, Context<typeof contextual>>>
 
-const merged = exstream([exstream([1]), exstream([2])]).merge(2, true)
+const merged = exstream([exstream([1]), exstream([2])]).merge({
+  concurrency: 2,
+  ordered: true,
+})
 type MergedValue = Expect<Equal<Value<typeof merged>, number>>
 
-const deferredMerged = exstream([exstream.defer(() => [1]), exstream.defer(() => ['two'])]).merge(
-  2,
-  true,
-)
+const deferredMerged = exstream([exstream.defer(() => [1]), exstream.defer(() => ['two'])]).merge({
+  concurrency: 2,
+  ordered: true,
+})
 export type DeferredMergedValue = Expect<Equal<Value<typeof deferredMerged>, number | string>>
 
 // @ts-expect-error merge() consumes a stream of Exstreams.
 exstream([1, 2]).merge()
+// @ts-expect-error Positional merge arguments were replaced by named options.
+exstream([exstream([1])]).merge(1, true)
 // @ts-expect-error Lazy acquisition belongs in defer(), not in merge() inputs.
 exstream([() => exstream([1])]).merge()
 

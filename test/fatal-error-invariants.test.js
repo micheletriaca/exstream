@@ -106,7 +106,7 @@ test.each([false, true])(
   async (preserveOrder) => {
     const reason = Error('fatal substream')
     const substream = _()
-    const merged = _([substream]).merge(1, preserveOrder)
+    const merged = _([substream]).merge({ concurrency: 1, ordered: preserveOrder })
     const result = merged.toArray()
     await waitFor(() => substream.state === 'running', 'merge did not start its substream')
 

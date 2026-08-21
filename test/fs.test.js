@@ -12,7 +12,7 @@ beforeEach(() => {
 
 test('merging with fs', async () => {
   await _([_(fs.createReadStream('out')), _(fs.createReadStream('out'))])
-    .merge(1)
+    .merge({ concurrency: 1 })
     .pipeTo(fs.createWriteStream('out3'))
   const o = out.map((x) => x.toString()).join('')
   expect(fs.__getMockFiles().out3.join('')).toEqual(o + o)

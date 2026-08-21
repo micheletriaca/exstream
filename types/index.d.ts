@@ -336,6 +336,12 @@ declare namespace exstream {
   }
 
   interface ObserveOptions extends StreamOptions {}
+  interface MergeOptions {
+    /** Maximum active inner streams. Defaults to Infinity. */
+    concurrency?: number
+    /** Preserve outer-stream order. Defaults to false. */
+    ordered?: boolean
+  }
   interface PipeOptions {
     /** End the destination when the source ends. Defaults to true. */
     end?: boolean
@@ -702,8 +708,7 @@ declare namespace exstream {
     /** Merges the Exstreams carried by this stream. */
     merge(
       this: [T] extends [Exstream<any, any>] ? Exstream<T, C> : never,
-      parallelism?: number,
-      preserveOrder?: boolean,
+      options?: MergeOptions | null,
     ): Exstream<MergeValue<T>, MergeContext<T>>
     /** Adapts this pipeline to a lazy Node readable stream. */
     toNodeReadable(options?: object | null): NodeReadableLike<T>

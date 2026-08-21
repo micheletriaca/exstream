@@ -102,7 +102,7 @@ test('fork and merge release stream listeners after completion', async () => {
   const source = _([1, 2, 3, 4])
   const first = source.fork().map((value) => value * 2)
   const second = source.fork().map((value) => value * 3)
-  const merged = _([first, second]).merge(2, false)
+  const merged = _([first, second]).merge({ concurrency: 2, ordered: false })
 
   expect(await merged.toArray()).toHaveLength(8)
   await nextTurn()

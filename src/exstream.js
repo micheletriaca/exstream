@@ -1577,10 +1577,18 @@ class Exstream extends EventHub {
     )
   }
 
-  merge(parallelism = Infinity, preserveOrder = false) {
-    parallelism = _.asPositiveInteger(parallelism, true)
-    if (parallelism === null) {
-      throw Error('error in .merge(). parallelism must be a positive integer or Infinity')
+  merge(options = null) {
+    if (options === null || options === void 0) options = {}
+    if (typeof options !== 'object' || Array.isArray(options)) {
+      throw Error('error in .merge(). options must be an object')
+    }
+    let { concurrency = Infinity, ordered = false } = options
+    concurrency = _.asPositiveInteger(concurrency, true)
+    if (concurrency === null) {
+      throw Error('error in .merge(). concurrency must be a positive integer or Infinity')
+    }
+    if (typeof ordered !== 'boolean') {
+      throw Error('error in .merge(). ordered must be a boolean')
     }
 
     const slots = []
@@ -1594,18 +1602,17 @@ class Exstream extends EventHub {
     let merged
 
     const currentSlot = () => slots[0]
-    const hasReadyFrame = () =>
-      preserveOrder ? currentSlot()?.frames.length > 0 : ready.length > 0
+    const hasReadyFrame = () => (ordered ? currentSlot()?.frames.length > 0 : ready.length > 0)
 
     const resumeOuter = () => {
-      if (outerEnded || slots.length >= parallelism || !outerNext) return
+      if (outerEnded || slots.length >= concurrency || !outerNext) return
       const next = outerNext
       outerNext = null
       next()
     }
 
     const releaseCompletedSlots = () => {
-      if (preserveOrder) {
+      if (ordered) {
         while (currentSlot()?.ended && currentSlot().frames.length === 0) {
           slots.shift()
         }
@@ -1623,12 +1630,12 @@ class Exstream extends EventHub {
     const queueFrame = (slot, frame, next) => {
       const queued = { frame, next, slot }
       slot.frames.push(queued)
-      if (!preserveOrder) ready.push(queued)
+      if (!ordered) ready.push(queued)
     }
 
     const takeReadyFrame = () => {
-      const queued = preserveOrder ? currentSlot().frames.shift() : ready.shift()
-      if (!preserveOrder) queued.slot.frames.shift()
+      const queued = ordered ? currentSlot().frames.shift() : ready.shift()
+      if (!ordered) queued.slot.frames.shift()
       return queued
     }
 
@@ -1662,7 +1669,7 @@ class Exstream extends EventHub {
     }
 
     const acceptInnerRecord = (slot, error, value, context, next) => {
-      if (preserveOrder && slot !== currentSlot()) {
+      if (ordered && slot !== currentSlot()) {
         const frame = error
           ? errorFrame(error, error.exstreamInput, false, context)
           : dataFrame(value, context)

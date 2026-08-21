@@ -69,9 +69,15 @@ test('mapAsync normalizes a cyclic rejection object without throwing while forma
 
 test.each([
   [
-    'merge parallelism',
-    () => _([]).merge(-1),
-    'error in .merge(). parallelism must be a positive integer or Infinity',
+    'merge concurrency',
+    () => _([]).merge({ concurrency: -1 }),
+    'error in .merge(). concurrency must be a positive integer or Infinity',
+  ],
+  ['merge options', () => _([]).merge(1), 'error in .merge(). options must be an object'],
+  [
+    'merge order',
+    () => _([]).merge({ ordered: 1 }),
+    'error in .merge(). ordered must be a boolean',
   ],
   ['batch size', () => _([]).batch(1.5), 'error in .batch(). size must be a valid number'],
   [

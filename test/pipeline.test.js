@@ -23,7 +23,7 @@ const mainFlow = (param) => {
 
   const fork2 = source.fork()
 
-  return _([fork1, fork2]).merge(2, true).tap(exit)
+  return _([fork1, fork2]).merge({ concurrency: 2, ordered: true }).tap(exit)
 }
 
 beforeEach(() => {
