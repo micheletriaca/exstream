@@ -73,6 +73,9 @@ authoritative record for earlier versions.
 
 ### Removed
 
+- Standalone and curried operator exports such as `map()`, `filter()`, `json()`,
+  and `reduce()`. Operators remain available as Exstream instance methods and
+  on reusable definitions created with `pipeline()`.
 - The overlapping `toPromise()`, `values()`, `valuesSync()`, callback
   `toArray()`, `value()`, `each()`, `pull()`, `pipe()`, `toAsyncIterator()`, and
   `toNodeStream()` APIs.

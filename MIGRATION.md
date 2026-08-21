@@ -1,5 +1,27 @@
 # Migrating to 1.0
 
+## Operators
+
+Operators are no longer exported as standalone or curried functions. Call them
+on a live Exstream or record them on a reusable pipeline:
+
+```js
+// Before
+const parseOrders = exstream.jsonl({ path: '$.orders[*]' })
+const orders = source.through(parseOrders)
+
+// 1.0: direct chain
+const orders = source.jsonl({ path: '$.orders[*]' })
+
+// 1.0: reusable definition
+const parseOrders = exstream.pipeline().jsonl({ path: '$.orders[*]' })
+const orders = source.through(parseOrders)
+```
+
+Top-level factories and utilities remain available: `pipeline()`, `defer()`,
+`destination()`, `fromEvent()`, `data()`, `errorInfo()`, `nil`, and the public
+error classes.
+
 ## Terminal operations
 
 Terminal methods now have one predictable contract: methods that represent

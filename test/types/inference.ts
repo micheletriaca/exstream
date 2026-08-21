@@ -134,21 +134,10 @@ type JsonOutputValue = Expect<Equal<Value<typeof jsonOutput>, string | Uint8Arra
 const jsonlOutput = exstream([{ id: 1 }]).jsonlStringify()
 type JsonlOutputValue = Expect<Equal<Value<typeof jsonlOutput>, string | Uint8Array>>
 
-const standaloneJson = exstream(['{"id":1,"name":"Ada"}']).through(exstream.json<JsonRow>())
-type StandaloneJsonValue = Expect<Equal<Value<typeof standaloneJson>, JsonRow>>
-
-const standaloneJsonl = exstream(['{"id":1,"name":"Ada"}\n']).through(exstream.jsonl<JsonRow>())
-type StandaloneJsonlValue = Expect<Equal<Value<typeof standaloneJsonl>, JsonRow>>
-
-const standaloneJsonOutput = exstream([{ id: 1 }]).through(exstream.jsonStringify())
-type StandaloneJsonOutputValue = Expect<
-  Equal<Value<typeof standaloneJsonOutput>, string | Uint8Array>
->
-
-const standaloneJsonlOutput = exstream([{ id: 1 }]).through(exstream.jsonlStringify())
-type StandaloneJsonlOutputValue = Expect<
-  Equal<Value<typeof standaloneJsonlOutput>, string | Uint8Array>
->
+// @ts-expect-error Operators are available only on streams and reusable pipelines.
+void exstream.map
+// @ts-expect-error Format operators are not standalone exports.
+void exstream.json
 
 const reusable = exstream
   .pipeline<number>()
@@ -315,10 +304,6 @@ type Used =
   | JsonlRowValue
   | JsonOutputValue
   | JsonlOutputValue
-  | StandaloneJsonValue
-  | StandaloneJsonlValue
-  | StandaloneJsonOutputValue
-  | StandaloneJsonlOutputValue
   | PipelineValue
   | AggregatedPipelineValue
   | RecoveredAsyncValue

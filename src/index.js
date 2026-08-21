@@ -10,176 +10,183 @@ const { dataValue } = require('./protocol')
 const { errorInfo } = require('./error-info.js')
 const { createDeferredSource } = require('./deferred.js')
 
-const _ = (module.exports = Object.assign(
-  (xs, options) => new Exstream(xs, options),
-  { BufferOverflowError, data: dataValue, defer: createDeferredSource, errorInfo, nil: utils.nil },
-  csv,
-  json,
-  joins,
-  events,
-  methods,
-))
+const operators = Object.assign({}, csv, json, joins, methods)
+const _ = (module.exports = Object.assign((xs, options) => new Exstream(xs, options), {
+  BufferOverflowError,
+  CsvParseError: csv.CsvParseError,
+  CsvStringifyError: csv.CsvStringifyError,
+  JsonParseError: json.JsonParseError,
+  JsonStringifyError: json.JsonStringifyError,
+  MapAsyncTimeoutError: methods.MapAsyncTimeoutError,
+  data: dataValue,
+  defer: createDeferredSource,
+  destination: methods.destination,
+  errorInfo,
+  fromEvent: events.fromEvent,
+  nil: utils.nil,
+  pipeline: methods.pipeline,
+}))
 
 const installMethod = (name, fn, options = null) => {
   Exstream.prototype[name] = fn
   methods.registerPipelineOperator(name, !options || options.pipeline !== false)
 }
 installMethod('errors', function (fn) {
-  return _.errors(fn, this)
+  return operators.errors(fn, this)
 })
 installMethod('skipErrors', function (predicate = null) {
-  return _.skipErrors(predicate, this)
+  return operators.skipErrors(predicate, this)
 })
 installMethod('failOnError', function () {
-  return _.failOnError(this)
+  return operators.failOnError(this)
 })
 installMethod(
   'routeErrors',
   function () {
-    return _.routeErrors(this)
+    return operators.routeErrors(this)
   },
   { pipeline: false },
 )
 installMethod('stopOnError', function (fn) {
-  return _.stopOnError(fn, this)
+  return operators.stopOnError(fn, this)
 })
 installMethod('map', function (fn, options = null) {
-  return _.map(fn, options, this)
+  return operators.map(fn, options, this)
 })
 installMethod('withContext', function (fn = null) {
-  return _.withContext(fn, this)
+  return operators.withContext(fn, this)
 })
 installMethod('extendContext', function (fn) {
-  return _.extendContext(fn, this)
+  return operators.extendContext(fn, this)
 })
 installMethod('flatMap', function (fn) {
-  return _.flatMap(fn, this)
+  return operators.flatMap(fn, this)
 })
 installMethod('tap', function (fn) {
-  return _.tap(fn, this)
+  return operators.tap(fn, this)
 })
 installMethod('compact', function () {
-  return _.compact(this)
+  return operators.compact(this)
 })
 installMethod('find', function (fn) {
-  return _.find(fn, this)
+  return operators.find(fn, this)
 })
 installMethod('pluck', function (field, defaultValue) {
-  return _.pluck(field, defaultValue, this)
+  return operators.pluck(field, defaultValue, this)
 })
 installMethod('pick', function (fields) {
-  return _.pick(fields, this)
+  return operators.pick(fields, this)
 })
 installMethod('omit', function (fields) {
-  return _.omit(fields, this)
+  return operators.omit(fields, this)
 })
 installMethod('filter', function (fn) {
-  return _.filter(fn, this)
+  return operators.filter(fn, this)
 })
 installMethod('reject', function (fn) {
-  return _.reject(fn, this)
+  return operators.reject(fn, this)
 })
 installMethod('stopWhen', function (fn) {
-  return _.stopWhen(fn, this)
+  return operators.stopWhen(fn, this)
 })
 installMethod('flatten', function () {
-  return _.flatten(this)
+  return operators.flatten(this)
 })
 installMethod('uniq', function () {
-  return _.uniq(this)
+  return operators.uniq(this)
 })
 installMethod('uniqBy', function (cfg) {
-  return _.uniqBy(cfg, this)
+  return operators.uniqBy(cfg, this)
 })
 installMethod('collect', function () {
-  return _.collect(this)
+  return operators.collect(this)
 })
 installMethod('batch', function (size) {
-  return _.batch(size, this)
+  return operators.batch(size, this)
 })
 installMethod('mapAsync', function (fn, options = null) {
-  return _.mapAsync(fn, options, this)
+  return operators.mapAsync(fn, options, this)
 })
 installMethod('csv', function (opts) {
-  return _.csv(opts, this)
+  return operators.csv(opts, this)
 })
 installMethod('csvStringify', function (opts) {
-  return _.csvStringify(opts, this)
+  return operators.csvStringify(opts, this)
 })
 installMethod('json', function (opts) {
-  return _.json(opts, this)
+  return operators.json(opts, this)
 })
 installMethod('jsonStringify', function (opts) {
-  return _.jsonStringify(opts, this)
+  return operators.jsonStringify(opts, this)
 })
 installMethod('jsonl', function (opts) {
-  return _.jsonl(opts, this)
+  return operators.jsonl(opts, this)
 })
 installMethod('jsonlStringify', function (opts) {
-  return _.jsonlStringify(opts, this)
+  return operators.jsonlStringify(opts, this)
 })
 installMethod('slice', function (start, end = Infinity) {
-  return _.slice(start, end, this)
+  return operators.slice(start, end, this)
 })
 installMethod('take', function (n) {
-  return _.take(n, this)
+  return operators.take(n, this)
 })
 installMethod('head', function () {
-  return _.head(this)
+  return operators.head(this)
 })
 installMethod('last', function () {
-  return _.last(this)
+  return operators.last(this)
 })
 installMethod('drop', function (n) {
-  return _.drop(n, this)
+  return operators.drop(n, this)
 })
 installMethod('throttle', function (ms) {
-  return _.throttle(ms, this)
+  return operators.throttle(ms, this)
 })
 installMethod('reduce', function (memo, fn) {
-  return _.reduce(memo, fn, this)
+  return operators.reduce(memo, fn, this)
 })
 installMethod('groupBy', function (fnOrString) {
-  return _.groupBy(fnOrString, this)
+  return operators.groupBy(fnOrString, this)
 })
 installMethod('keyBy', function (fnOrString) {
-  return _.keyBy(fnOrString, this)
+  return operators.keyBy(fnOrString, this)
 })
 installMethod('sort', function () {
-  return _.sort(this)
+  return operators.sort(this)
 })
 installMethod('sortBy', function (fn) {
-  return _.sortBy(fn, this)
+  return operators.sortBy(fn, this)
 })
 installMethod('split', function (encoding = 'utf8') {
-  return _.split(encoding, this)
+  return operators.split(encoding, this)
 })
 installMethod('encode', function (encoding) {
-  return _.encode(encoding, this)
+  return operators.encode(encoding, this)
 })
 installMethod('decode', function (encoding) {
-  return _.decode(encoding, this)
+  return operators.decode(encoding, this)
 })
 installMethod('splitBy', function (regexp, encoding = 'utf8') {
-  return _.splitBy(regexp, encoding, this)
+  return operators.splitBy(regexp, encoding, this)
 })
 installMethod('reduce1', function (fn) {
-  return _.reduce1(fn, this)
+  return operators.reduce1(fn, this)
 })
 installMethod('makeAsync', function (ms) {
-  return _.makeAsync(ms, this)
+  return operators.makeAsync(ms, this)
 })
 installMethod('where', function (props) {
-  return _.where(props, this)
+  return operators.where(props, this)
 })
 installMethod('findWhere', function (props) {
-  return _.findWhere(props, this)
+  return operators.findWhere(props, this)
 })
 installMethod('ratelimit', function (num, ms) {
-  return _.ratelimit(num, ms, this)
+  return operators.ratelimit(num, ms, this)
 })
 installMethod('sortedGroupBy', function (fnOrString) {
-  return _.sortedGroupBy(fnOrString, this)
+  return operators.sortedGroupBy(fnOrString, this)
 })
 installMethod(
   'sortedJoin',

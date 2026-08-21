@@ -341,14 +341,6 @@ test('through accepts null', () => {
   expect(s).toBe(s1)
 })
 
-test('through _.function', async () => {
-  const transform = _.map((x) => x.toString(), null)
-
-  const res = await _([1, 2, 3]).through(transform).toArray()
-
-  expect(res).toEqual(['1', '2', '3'])
-})
-
 test('through stream', async () => {
   await ((res) => {
     expect(res).toEqual([4, 8, 12])

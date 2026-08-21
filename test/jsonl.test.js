@@ -97,9 +97,9 @@ test('jsonl resets finite byte accounting across skipped empty records', async (
   expect(await _(['\n1\n\r\n2\n']).jsonl({ maxRecordBytes: 1 }).toArray()).toEqual([1, 2])
 })
 
-test('jsonl works as a curried standalone operator', async () => {
-  expect(await _(['1\n2\n']).through(_.jsonl()).toArray()).toEqual([1, 2])
-  expect(await _.jsonl(null, _(['3\n'])).toArray()).toEqual([3])
+test('jsonl works in a reusable pipeline and accepts null options', async () => {
+  expect(await _(['1\n2\n']).through(_.pipeline().jsonl()).toArray()).toEqual([1, 2])
+  expect(await _(['3\n']).jsonl(null).toArray()).toEqual([3])
 })
 
 test('jsonl applies a reviver after incremental validation', async () => {
@@ -190,10 +190,9 @@ test('jsonlStringify emits one compact JSON value per line and round-trips', asy
   expect(await _(byteChunks(serialized)).jsonl().toArray()).toEqual(input)
 })
 
-test('jsonlStringify works as a curried standalone operator and accepts null options', async () => {
-  expect(await _([1, 2]).through(_.jsonlStringify()).toArray()).toEqual(['1\n', '2\n'])
-  expect(await _([1, 2]).through(_.jsonlStringify(null)).toArray()).toEqual(['1\n', '2\n'])
-  expect(await _.jsonlStringify(null, _([3])).toArray()).toEqual(['3\n'])
+test('jsonlStringify works in a reusable pipeline and accepts null options', async () => {
+  expect(await _([1, 2]).through(_.pipeline().jsonlStringify()).toArray()).toEqual(['1\n', '2\n'])
+  expect(await _([3]).jsonlStringify(null).toArray()).toEqual(['3\n'])
 })
 
 test('jsonlStringify supports line endings, replacer and byte output encodings', async () => {

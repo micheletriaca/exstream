@@ -59,7 +59,7 @@ const run = async () => {
 
   const json = encoder.encode('{"rows":[{"id":1},{"id":2}]}')
   assert.deepEqual(await web([json]).json({ path: '$.rows[*]' }).toArray(), [{ id: 1 }, { id: 2 }])
-  assert.deepEqual(await web(['1\n2\n']).through(web.jsonl()).toArray(), [1, 2])
+  assert.deepEqual(await web(['1\n2\n']).jsonl().toArray(), [1, 2])
 
   assert.throws(
     () => web([1]).toNodeReadable(),

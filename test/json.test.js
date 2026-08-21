@@ -82,11 +82,11 @@ test('json preserves chunk order when text interrupts an incomplete byte sequenc
   expect(await _(chunks).json().toArray()).toEqual([['�x��']])
 })
 
-test('json works as a curried standalone operator', async () => {
-  const parseRows = _.json({ path: '$.rows[*]' })
+test('json works in a reusable pipeline and accepts null options', async () => {
+  const parseRows = _.pipeline().json({ path: '$.rows[*]' })
   expect(await _(['{"rows":[1,2]}']).through(parseRows).toArray()).toEqual([1, 2])
-  expect(await _(['1']).through(_.json()).toArray()).toEqual([1])
-  expect(await _.json(null, _(['2'])).toArray()).toEqual([2])
+  expect(await _(['1']).json().toArray()).toEqual([1])
+  expect(await _(['2']).json(null).toArray()).toEqual([2])
 })
 
 test('json validates the entire document after the last selected value', async () => {
@@ -279,8 +279,8 @@ test('jsonStringify exposes branch cancellation to an asynchronous finalizer', a
   expect(finalizerSignal.reason).toBe(reason)
 })
 
-test('jsonStringify supports replacers, quoted envelope paths, and standalone currying', async () => {
-  const stringifyRows = _.jsonStringify({
+test('jsonStringify supports replacers, quoted envelope paths, and pipelines', async () => {
+  const stringifyRows = _.pipeline().jsonStringify({
     path: "$['data.items'][*]",
     properties: { version: 1 },
     replacer: ['visible'],
@@ -290,8 +290,8 @@ test('jsonStringify supports replacers, quoted envelope paths, and standalone cu
     .toArray()
 
   expect(JSON.parse(chunks.join(''))).toEqual({ version: 1, 'data.items': [{ visible: 1 }] })
-  expect((await _([1]).through(_.jsonStringify()).toArray()).join('')).toBe('[1]')
-  expect((await _.jsonStringify(null, _([2])).toArray()).join('')).toBe('[2]')
+  expect((await _([1]).jsonStringify().toArray()).join('')).toBe('[1]')
+  expect((await _([2]).jsonStringify(null).toArray()).join('')).toBe('[2]')
 })
 
 test('jsonStringify closes empty arrays and envelopes', async () => {
