@@ -26,9 +26,7 @@ Object.defineProperty(_m, 'registerPipelineOperator', {
 
 _m.destination = createDestination
 
-_m.split = _.curry((encoding, s) => _m.splitBy(/\r?\n/, encoding, s))
-
-_m.splitBy = _.curry((regexp, encoding, s) => {
+_m.split = _.curry((regexp, encoding, s) => {
   const decoder = runtime.createStringDecoder(encoding)
   let buffer = ''
 
@@ -188,13 +186,18 @@ _m.where = _.curry((props, s) =>
 
 _m.findWhere = _.curry((props, s) => s.where(props).take(1))
 
-_m.ratelimit = _.curry((num, ms, s) => {
-  num = _.asPositiveInteger(num)
-  ms = _.asNonNegativeFiniteNumber(ms)
-  if (num === null) throw Error('error in .ratelimit(). num must be a positive integer')
-  if (ms === null) throw Error('error in .ratelimit(). ms must be a non-negative finite number')
+_m.rateLimit = _.curry((options, s) => {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw Error('error in .rateLimit(). options must be an object')
+  }
+  const limit = _.asPositiveInteger(options.limit)
+  const interval = _.asNonNegativeFiniteNumber(options.interval)
+  if (limit === null) throw Error('error in .rateLimit(). limit must be a positive integer')
+  if (interval === null) {
+    throw Error('error in .rateLimit(). interval must be a non-negative finite number')
+  }
   let sent = 0
-  let startWindow
+  let windowEndsAt
   let timer
   const result = s.consume((err, x, push, next) => {
     if (err) {
@@ -202,30 +205,34 @@ _m.ratelimit = _.curry((num, ms, s) => {
       next()
     } else if (x === _.nil) {
       push(null, _.nil)
-    } else if (sent === 0) {
-      startWindow = monotonicNow()
-      sent++
-      push(null, x)
-      next()
-    } else if (sent < num) {
-      sent++
-      push(null, x)
-      next()
-    } else if (monotonicNow() - startWindow > ms) {
-      startWindow = monotonicNow()
-      sent = 1
-      push(null, x)
-      next()
     } else {
-      timer = setTimeout(
-        () => {
-          startWindow = monotonicNow()
+      const now = monotonicNow()
+      if (sent === 0 || now >= windowEndsAt) {
+        windowEndsAt = now + interval
+        sent = 1
+        push(null, x)
+        next()
+      } else if (sent < limit) {
+        sent++
+        push(null, x)
+        next()
+      } else {
+        const release = () => {
+          timer = void 0
+          if (result.ended) return
+          const releaseTime = monotonicNow()
+          const remaining = windowEndsAt - releaseTime
+          if (remaining > 0) {
+            timer = setTimeout(release, remaining)
+            return
+          }
+          windowEndsAt = releaseTime + interval
           sent = 1
           push(null, x)
           next()
-        },
-        ms - Math.round(monotonicNow() - startWindow),
-      )
+        }
+        timer = setTimeout(release, windowEndsAt - now)
+      }
     }
   })
   result.once('end', () => {
@@ -377,18 +384,54 @@ _m.batch = _.curry((size, s) => {
   return result
 })
 
-_m.uniq = (s) => {
+_m.uniq = (selector, hasSelector, s) => {
   const seen = new Set()
-  return s.consumeSync((err, x, push) => {
+  const seenComposite = new Map()
+  const compositeLeaf = Symbol('uniq composite leaf')
+  const isFn = hasSelector && _.isFunction(selector)
+  const fields = hasSelector && !isFn ? (Array.isArray(selector) ? selector : [selector]) : null
+  const usesContext = isFn && selector.length >= 2
+  let result
+
+  function hasSeenCompositeKey(key) {
+    let level = seenComposite
+    for (const part of key) {
+      if (!level.has(part)) level.set(part, new Map())
+      level = level.get(part)
+    }
+    if (level.has(compositeLeaf)) return true
+    level.set(compositeLeaf, true)
+    return false
+  }
+
+  result = s.consumeSync((err, x, push) => {
     if (err) {
       push(err)
     } else if (x === _.nil) {
       push(err, x)
-    } else if (!seen.has(x)) {
-      seen.add(x)
-      push(null, x)
+    } else {
+      const context = usesContext ? result._recordContext : void 0
+      const nextContext =
+        usesContext && context === void 0 ? createContext(x, result.signal) : context
+      try {
+        const key = !hasSelector
+          ? x
+          : isFn
+            ? usesContext
+              ? selector(x, nextContext)
+              : selector(x)
+            : fields.map((field) => x[field])
+        const alreadySeen = fields ? hasSeenCompositeKey(key) : seen.has(key)
+        if (!alreadySeen) {
+          if (!fields) seen.add(key)
+          push(null, x, nextContext)
+        }
+      } catch (e) {
+        push(new ExstreamError(e, x, { origin: 'operator', stage: 'uniq' }), null, nextContext)
+      }
     }
   })
+  return result
 }
 
 _m.pluck = _.curry((field, defaultValue, s) => {
@@ -431,52 +474,6 @@ _m.omit = _.curry((fields, s) =>
     return res
   }),
 )
-
-_m.uniqBy = _.curry((cfg, s) => {
-  const seen = new Set()
-  const seenComposite = new Map()
-  const compositeLeaf = Symbol('uniqBy composite leaf')
-  const isFn = _.isFunction(cfg)
-  if (!isFn && !Array.isArray(cfg)) cfg = [cfg]
-
-  const fn = !isFn ? (x) => cfg.map((f) => x[f]) : cfg
-  const usesContext = isFn && fn.length >= 2
-  let result
-
-  function hasSeenCompositeKey(key) {
-    let level = seenComposite
-    for (const part of key) {
-      if (!level.has(part)) level.set(part, new Map())
-      level = level.get(part)
-    }
-    if (level.has(compositeLeaf)) return true
-    level.set(compositeLeaf, true)
-    return false
-  }
-
-  result = s.consumeSync((err, x, push) => {
-    if (err) {
-      push(err)
-    } else if (x === _.nil) {
-      push(err, x)
-    } else {
-      const context = usesContext ? result._recordContext : void 0
-      const nextContext =
-        usesContext && context === void 0 ? createContext(x, result.signal) : context
-      try {
-        const k = usesContext ? fn(x, nextContext) : fn(x)
-        const alreadySeen = isFn ? seen.has(k) : hasSeenCompositeKey(k)
-        if (!alreadySeen) {
-          if (isFn) seen.add(k)
-          push(null, x, nextContext)
-        }
-      } catch (e) {
-        push(new ExstreamError(e, x), null, nextContext)
-      }
-    }
-  })
-  return result
-})
 
 class MapAsyncTimeoutError extends Error {
   constructor(timeout, attempt) {

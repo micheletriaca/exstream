@@ -44,8 +44,8 @@ test('predicate and key callbacks receive a lazy per-record context', async () =
     .toArray()
 
   const unique = await _([1, 1, 2])
-    .uniqBy((value, context) => {
-      seen.push(['uniqBy', value, context.input])
+    .uniq((value, context) => {
+      seen.push(['uniq', value, context.input])
       return value
     })
     .toArray()
@@ -271,21 +271,21 @@ test('sortedJoin preserves the source context of selector errors', async () => {
 test('new contextual callback support preserves historical unary argument lists', async () => {
   const tap = vi.fn((value) => value)
   const stopWhen = vi.fn((value) => value === 1)
-  const uniqBy = vi.fn((value) => value)
+  const uniq = vi.fn((value) => value)
   const groupBy = vi.fn((value) => value)
   const keyBy = vi.fn((value) => value)
   const toArray = vi.fn((values) => values)
 
   await _([1]).tap(tap).drain()
   await _([1]).stopWhen(stopWhen).toArray()
-  await _([1]).uniqBy(uniqBy).toArray()
+  await _([1]).uniq(uniq).toArray()
   await _([1]).groupBy(groupBy).single()
   await _([1]).keyBy(keyBy).single()
   toArray(await _([1]).toArray())
 
   expect(tap).toHaveBeenCalledWith(1)
   expect(stopWhen).toHaveBeenCalledWith(1)
-  expect(uniqBy).toHaveBeenCalledWith(1)
+  expect(uniq).toHaveBeenCalledWith(1)
   expect(groupBy).toHaveBeenCalledWith(1)
   expect(keyBy).toHaveBeenCalledWith(1)
   expect(toArray).toHaveBeenCalledWith([1])

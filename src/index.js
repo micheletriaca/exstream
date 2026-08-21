@@ -93,11 +93,8 @@ installMethod('stopWhen', function (fn) {
 installMethod('flatten', function () {
   return operators.flatten(this)
 })
-installMethod('uniq', function () {
-  return operators.uniq(this)
-})
-installMethod('uniqBy', function (cfg) {
-  return operators.uniqBy(cfg, this)
+installMethod('uniq', function (selector) {
+  return operators.uniq(selector, arguments.length > 0, this)
 })
 installMethod('collect', function () {
   return operators.collect(this)
@@ -156,17 +153,21 @@ installMethod('keyBy', function (fnOrString) {
 installMethod('sort', function (compare) {
   return operators.sort(compare, this)
 })
-installMethod('split', function (encoding = 'utf8') {
-  return operators.split(encoding, this)
+installMethod('split', function (separatorOrEncoding, encoding = 'utf8') {
+  const hasSeparator = separatorOrEncoding instanceof RegExp
+  const separator = hasSeparator ? separatorOrEncoding : /\r?\n/
+  const selectedEncoding = hasSeparator
+    ? encoding
+    : separatorOrEncoding === void 0
+      ? 'utf8'
+      : separatorOrEncoding
+  return operators.split(separator, selectedEncoding, this)
 })
 installMethod('encode', function (encoding) {
   return operators.encode(encoding, this)
 })
 installMethod('decode', function (encoding) {
   return operators.decode(encoding, this)
-})
-installMethod('splitBy', function (regexp, encoding = 'utf8') {
-  return operators.splitBy(regexp, encoding, this)
 })
 installMethod('makeAsync', function (ms) {
   return operators.makeAsync(ms, this)
@@ -177,8 +178,8 @@ installMethod('where', function (props) {
 installMethod('findWhere', function (props) {
   return operators.findWhere(props, this)
 })
-installMethod('ratelimit', function (num, ms) {
-  return operators.ratelimit(num, ms, this)
+installMethod('rateLimit', function (options) {
+  return operators.rateLimit(options, this)
 })
 installMethod('sortedGroupBy', function (fnOrString) {
   return operators.sortedGroupBy(fnOrString, this)

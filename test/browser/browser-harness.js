@@ -25,6 +25,14 @@ const run = async () => {
     [2, 3, 4],
     'ES module',
   )
+  equal(
+    await ExstreamModule([{ id: 1 }, { id: 1 }, { id: 2 }])
+      .uniq('id')
+      .rateLimit({ limit: 1, interval: 0 })
+      .toArray(),
+    [{ id: 1 }, { id: 2 }],
+    '1.0 selection and flow operators',
+  )
   let deferredInvocations = 0
   const deferred = ExstreamModule.defer(() => {
     deferredInvocations += 1
@@ -108,6 +116,13 @@ const run = async () => {
   equal(await eventResult, [7], 'EventTarget source')
 
   const encoder = new TextEncoder()
+  equal(
+    await Exstream([encoder.encode('one\0two')])
+      .split(/\0/)
+      .toArray(),
+    ['one', 'two'],
+    'browser split separator',
+  )
   const csv = encoder.encode('id💥name\n1💥Ada\n')
   const response = new Response(csv)
   const csvOutput = []
@@ -181,7 +196,7 @@ const run = async () => {
   })
   assert(workerResult.checks === 6, 'worker did not complete every check')
 
-  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=15 worker=6'
+  document.body.textContent = 'EXSTREAM_BROWSER_PASS main=17 worker=6'
 }
 
 run().catch((error) => {

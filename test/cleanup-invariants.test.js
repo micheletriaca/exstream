@@ -131,10 +131,10 @@ test('destroy prevents pending mapAsync work from starting more tasks', async ()
   expect(resolved.eventNames()).toEqual([])
 })
 
-test('destroy clears a pending ratelimit timer', () => {
+test('destroy clears a pending rateLimit timer', () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   try {
-    const limited = _([1, 2]).ratelimit(1, 1000)
+    const limited = _([1, 2]).rateLimit({ limit: 1, interval: 1000 })
     limited[kResume]()
 
     expect(vi.getTimerCount()).toBe(1)

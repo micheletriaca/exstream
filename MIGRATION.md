@@ -46,6 +46,53 @@ stream.sortBy((left, right) => right.score - left.score)
 stream.sort((left, right) => right.score - left.score)
 ```
 
+`uniq()` now covers both direct duplicate removal and the selectors previously
+handled by `uniqBy()`:
+
+```js
+// Before
+stream.uniqBy('customerId')
+stream.uniqBy(['tenantId', 'email'])
+stream.uniqBy((row) => normalizeEmail(row.email))
+
+// 1.0
+stream.uniq('customerId')
+stream.uniq(['tenantId', 'email'])
+stream.uniq((row) => normalizeEmail(row.email))
+```
+
+`uniq()` with no argument is unchanged. Values and callback keys use `Set`
+equality; a field tuple is compared component by component without converting
+it to a string.
+
+`split()` now accepts the separator previously passed to `splitBy()`:
+
+```js
+// Before
+stream.splitBy(/\0/, 'utf8')
+
+// 1.0
+stream.split(/\0/, 'utf8')
+```
+
+The separator is a `RegExp`. `split()` and `split(encoding)` retain their
+line-oriented behavior, including the default `/\r?\n/` separator.
+
+Rate limiting now uses the same camel-case naming and named-options style as
+the rest of the 1.0 API:
+
+```js
+// Before
+stream.ratelimit(100, 60_000)
+
+// 1.0
+stream.rateLimit({ limit: 100, interval: 60_000 })
+```
+
+`interval` is measured in milliseconds. `rateLimit()` preserves input order and
+uses backpressure while a value waits for the next local burst window; it does
+not coordinate a quota across processes or clients.
+
 `map()` no longer has a special wrapping mode. Build the output shape in the
 callback:
 

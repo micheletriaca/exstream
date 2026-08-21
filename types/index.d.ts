@@ -337,6 +337,12 @@ declare namespace exstream {
     /** Preserve outer-stream order. Defaults to false. */
     ordered?: boolean
   }
+  interface RateLimitOptions {
+    /** Maximum number of values emitted during one interval. */
+    limit: number
+    /** Window duration in milliseconds. */
+    interval: number
+  }
   interface PipeOptions {
     /** End the destination when the source ends. Defaults to true. */
     end?: boolean
@@ -548,9 +554,10 @@ declare namespace exstream {
     flatten(): Exstream<FlatValue<T>, C>
     /** Keeps only the first occurrence of each value. */
     uniq(): Exstream<T, C>
-    /** Keeps the first value for each selected key. */
-    uniqBy<K>(fn: (value: T, context: C) => K): Exstream<T, C>
-    uniqBy<K extends PropertyKeyOf<T>>(fields: K | readonly K[]): Exstream<T, C>
+    /** Keeps the first value for each key returned by the selector. */
+    uniq<K>(selector: (value: T, context: C) => K): Exstream<T, C>
+    /** Keeps the first value for each selected field or field tuple. */
+    uniq<K extends PropertyKeyOf<T>>(selector: K | readonly K[]): Exstream<T, C>
     /** Collects all values into one array. */
     collect(): Exstream<T[], AggregateOutputContext<C, T[]>>
     /** Groups values into arrays of the requested maximum size. */
@@ -610,8 +617,8 @@ declare namespace exstream {
     drop(n: number): Exstream<T, C>
     /** Emits at most one value during each time window. */
     throttle(milliseconds: number): Exstream<T, C>
-    /** Emits no more than num values during each time window. */
-    ratelimit(num: number, milliseconds: number): Exstream<T, C>
+    /** Emits no more than limit values during each local time window. */
+    rateLimit(options: RateLimitOptions): Exstream<T, C>
 
     /** Combines all values into one result. */
     reduce<F extends (accumulator: T, value: T, context: CallbackContext<T, C>) => T>(
@@ -641,7 +648,7 @@ declare namespace exstream {
     /** Decodes byte chunks and splits them on line endings. */
     split(encoding?: string): Exstream<string, C>
     /** Decodes byte chunks and splits them with a regular expression. */
-    splitBy(separator: RegExp, encoding?: string): Exstream<string, C>
+    split(separator: RegExp, encoding?: string): Exstream<string, C>
     /** Encodes chunks as base64 text. */
     encode(encoding: 'base64'): Exstream<string, C>
     /** Decodes base64 text into byte chunks. */
@@ -765,8 +772,10 @@ declare namespace exstream {
     ): Pipeline<Input, Omit<Output, K>, C>
     /** Adds duplicate removal. */
     uniq(): Pipeline<Input, Output, C>
-    /** Adds duplicate removal by key. */
-    uniqBy<K>(fn: (value: Output, context: C) => K): Pipeline<Input, Output, C>
+    /** Adds duplicate removal by a computed key. */
+    uniq<K>(selector: (value: Output, context: C) => K): Pipeline<Input, Output, C>
+    /** Adds duplicate removal by one field or a field tuple. */
+    uniq<K extends PropertyKeyOf<Output>>(selector: K | readonly K[]): Pipeline<Input, Output, C>
     /** Adds first-match selection. */
     find(fn: (value: Output, context: C) => unknown): Pipeline<Input, Output, C>
     /** Adds collection into one array. */
@@ -838,7 +847,7 @@ declare namespace exstream {
     /** Adds line splitting. */
     split(encoding?: string): Pipeline<Input, string, C>
     /** Adds regular-expression splitting. */
-    splitBy(separator: RegExp, encoding?: string): Pipeline<Input, string, C>
+    split(separator: RegExp, encoding?: string): Pipeline<Input, string, C>
     /** Adds base64 encoding. */
     encode(encoding: 'base64'): Pipeline<Input, string, C>
     /** Adds base64 decoding. */
@@ -848,7 +857,7 @@ declare namespace exstream {
     /** Adds output throttling. */
     throttle(milliseconds: number): Pipeline<Input, Output, C>
     /** Adds output rate limiting. */
-    ratelimit(count: number, milliseconds: number): Pipeline<Input, Output, C>
+    rateLimit(options: RateLimitOptions): Pipeline<Input, Output, C>
     /** Adds object matching. */
     where(properties: Partial<Output>): Pipeline<Input, Output, C>
     /** Adds first-object matching. */

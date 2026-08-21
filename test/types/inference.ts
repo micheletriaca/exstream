@@ -57,6 +57,29 @@ const batchInput: number[] = batchContext.input
 
 const customers = exstream([{ id: 1, name: 'Ada' }])
 const orders = exstream([{ customerId: 1, total: 42 }])
+const uniqueCustomers = customers.uniq('id')
+customers.uniq(['id', 'name'])
+customers.uniq((customer, customerContext) => customer.id + customerContext.input.id)
+exstream([1, 2]).uniq()
+exstream([1, 2]).uniq((value) => value % 2)
+type UniqueCustomer = Expect<Equal<Value<typeof uniqueCustomers>, { id: number; name: string }>>
+// @ts-expect-error uniqBy() was folded into uniq(selector).
+customers.uniqBy('id')
+// @ts-expect-error Unknown fields are rejected by the property-selector overload.
+customers.uniq('missing')
+
+customers.rateLimit({ limit: 100, interval: 60_000 })
+exstream.pipeline<number>().rateLimit({ limit: 2, interval: 1000 })
+// @ts-expect-error ratelimit() was renamed to rateLimit().
+customers.ratelimit(100, 60_000)
+// @ts-expect-error rateLimit() uses named options.
+customers.rateLimit(100, 60_000)
+exstream(['one\ntwo']).split()
+exstream(['one\ntwo']).split('utf8')
+exstream(['one\0two']).split(/\0/, 'utf8')
+exstream.pipeline<Uint8Array>().split(/\0/)
+// @ts-expect-error splitBy() was folded into split(separator, encoding).
+exstream(['one\0two']).splitBy(/\0/)
 const innerJoin = customers.sortedJoin(orders, {
   leftKey: 'id',
   order: (customerId, orderCustomerId) => customerId - orderCustomerId,
@@ -312,6 +335,7 @@ type Used =
   | NarrowedValue
   | ErrorDataValue
   | BatchValue
+  | UniqueCustomer
   | InnerJoinValue
   | LeftJoinValue
   | ReducedWithoutInitial

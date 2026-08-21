@@ -1,6 +1,6 @@
 const _ = require('../src/index.js')
 
-test('uniqBy keeps distinct composite keys without string coercion collisions', async () => {
+test('uniq keeps distinct composite keys without string coercion collisions', async () => {
   const values = [
     { id: 1, first: 'a_', second: 'b' },
     { id: 2, first: 'a', second: '_b' },
@@ -9,7 +9,7 @@ test('uniqBy keeps distinct composite keys without string coercion collisions', 
     { id: 5, first: 'a_', second: 'b' },
   ]
 
-  expect(await _(values).uniqBy(['first', 'second']).toArray()).toEqual(values.slice(0, 4))
+  expect(await _(values).uniq(['first', 'second']).toArray()).toEqual(values.slice(0, 4))
 })
 
 test.each([
@@ -85,15 +85,16 @@ test.each([
     'error in .merge(). ordered must be a boolean',
   ],
   ['batch size', () => _([]).batch(1.5), 'error in .batch(). size must be a valid number'],
+  ['rate options', () => _([]).rateLimit(1), 'error in .rateLimit(). options must be an object'],
   [
     'rate count',
-    () => _([]).ratelimit(0, 10),
-    'error in .ratelimit(). num must be a positive integer',
+    () => _([]).rateLimit({ limit: 0, interval: 10 }),
+    'error in .rateLimit(). limit must be a positive integer',
   ],
   [
     'rate window',
-    () => _([]).ratelimit(1, -1),
-    'error in .ratelimit(). ms must be a non-negative finite number',
+    () => _([]).rateLimit({ limit: 1, interval: -1 }),
+    'error in .rateLimit(). interval must be a non-negative finite number',
   ],
   [
     'throttle window',

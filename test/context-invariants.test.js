@@ -439,7 +439,7 @@ test('context survives async operators and contextual rejection recovery', async
   const errors = []
   const result = await _([1, 2])
     .withContext((value) => ({ correlationId: `row-${value}` }))
-    .ratelimit(10, 0)
+    .rateLimit({ limit: 10, interval: 0 })
     .mapAsync(async (value, context) => {
       try {
         if (value === 1) throw Error('rejected')

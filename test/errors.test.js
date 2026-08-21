@@ -238,7 +238,7 @@ test('error propagation', async () => {
     .map(() => {
       throw Error('NOO')
     })
-    .ratelimit(1, 10000)
+    .rateLimit({ limit: 1, interval: 10000 })
     .batch(3)
     .flatten()
     .filter((x) => x)
@@ -247,8 +247,8 @@ test('error propagation', async () => {
     .encode('base64')
     .decode('base64')
     .split()
-    .splitBy('|')
-    .uniqBy((x) => x)
+    .split(/\|/)
+    .uniq((x) => x)
     .throttle(10)
     .csv()
     .stopWhen((x) => x)
@@ -279,10 +279,10 @@ test('mapAsync handles promise errors', async () => {
   expect(errs[0].message).toBe('NOO')
 })
 
-test('uniqBy errors', async () => {
+test('uniq selector errors', async () => {
   const errs = []
   const res = await _([1, 2, 3])
-    .uniqBy((x) => {
+    .uniq((x) => {
       if ('value' in x) return x.value
     })
     .errors((e) => errs.push(e))

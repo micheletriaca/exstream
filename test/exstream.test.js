@@ -149,7 +149,7 @@ test('uniq', async () => {
   })(await _([1, 2, 2, 2, 5]).uniq().toArray())
 })
 
-test('uniqBy', async () => {
+test('uniq with a selector', async () => {
   await ((res) => {
     expect(res).toEqual([
       { a: 1, b: 1, c: 1 },
@@ -161,7 +161,7 @@ test('uniqBy', async () => {
       { a: 1, b: 2, c: 2 },
       { a: 1, b: 3, c: 1 },
     ])
-      .uniqBy(['a', 'c'])
+      .uniq(['a', 'c'])
       .toArray(),
   )
 
@@ -176,15 +176,32 @@ test('uniqBy', async () => {
       { a: 1, b: 2, c: 2 },
       { a: 1, b: 3, c: 1 },
     ])
-      .uniqBy('c')
+      .uniq('c')
       .toArray(),
   )
 
   await ((res) => expect(res).toEqual([1, 2]))(
     await _([1, 2, 3, 4])
-      .uniqBy((x) => x % 2 === 0)
+      .uniq((x) => x % 2 === 0)
       .toArray(),
   )
+})
+
+test('uniq selectors and rateLimit compose in a reusable pipeline', async () => {
+  const firstPerId = _.pipeline().uniq('id').rateLimit({ limit: 1, interval: 0 })
+
+  expect(
+    await _([
+      { id: 1, value: 'first' },
+      { id: 1, value: 'duplicate' },
+      { id: 2, value: 'second' },
+    ])
+      .through(firstPerId)
+      .toArray(),
+  ).toEqual([
+    { id: 1, value: 'first' },
+    { id: 2, value: 'second' },
+  ])
 })
 
 test('flatten', async () => {
@@ -386,20 +403,26 @@ test('split', async () => {
   expect(res).toEqual(['line1', 'line2', 'line3'])
 })
 
-test('splitBy', async () => {
+test('split with a custom separator', async () => {
   const b = [Buffer.from('||line1||li'), Buffer.from('ne2||'), Buffer.from('line3||line4||')]
-  const res = await _(b).splitBy('||').toArray()
+  const res = await _(b).split(/\|\|/).toArray()
   expect(res).toEqual(['', 'line1', 'line2', 'line3', 'line4', ''])
 })
 
-test('splitBy with different encodings', async () => {
+test('split with a custom separator and encoding', async () => {
   const b = [
     Buffer.from('line1||li', 'utf16le'),
     Buffer.from('ne2||', 'utf16le'),
     Buffer.from('line3||line4', 'utf16le'),
   ]
-  const res = await _(b).splitBy('||', 'utf16le').toArray()
+  const res = await _(b).split(/\|\|/, 'utf16le').toArray()
   expect(res).toEqual(['line1', 'line2', 'line3', 'line4'])
+})
+
+test('split keeps the encoding-only line form', async () => {
+  const chunks = [Buffer.from('line1\nli', 'utf16le'), Buffer.from('ne2', 'utf16le')]
+
+  expect(await _(chunks).split('utf16le').toArray()).toEqual(['line1', 'line2'])
 })
 
 test('split with multibyte chars', async () => {

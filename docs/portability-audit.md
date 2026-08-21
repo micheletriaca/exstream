@@ -63,8 +63,8 @@ Pausable producers use `pause()` when their bounded ingress buffer fills and
 
 ## Byte-oriented operators
 
-CSV, base64, `encode`, `decode`, `split`, and `splitBy` use runtime byte and text
-codecs. The Web path produces `Uint8Array` and supports streaming UTF-8 decode,
+CSV, base64, `encode`, `decode`, and `split` use runtime byte and text codecs.
+The Web path produces `Uint8Array` and supports streaming UTF-8 decode,
 including multi-byte CSV separators split across chunks. Buffer conversion and
 Node-specific encodings stay in the Node adapter.
 

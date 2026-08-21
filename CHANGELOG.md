@@ -51,6 +51,15 @@ authoritative record for earlier versions.
   resource acquisition in `defer()` when it must wait for an activation slot.
 - `merge()` now takes `{ concurrency, ordered }` instead of positional
   `parallelism` and `preserveOrder` arguments.
+- `ratelimit(num, ms)` is now `rateLimit({ limit, interval })`. The limiter
+  keeps its local burst-window behavior while making both numeric arguments
+  explicit.
+- `uniq()` now accepts the key callback, property name, or property-name tuple
+  previously passed to `uniqBy()`; calling it without a selector still removes
+  duplicate values directly.
+- `split()` now accepts the regular-expression separator previously passed to
+  `splitBy()`. The existing `split()` and `split(encoding)` line-oriented forms
+  are unchanged.
 - `sortedJoin()` is now a binary graph operation called on the left input with
   the right input and a named options object. Its merge-join coordinator
   propagates fatal failures and cancellation across both inputs, uses numeric
@@ -74,12 +83,19 @@ authoritative record for earlier versions.
   per-record task cost without starving timers, I/O, rendering, or cancellation.
 - `makeAsync()` now includes record errors and work performed by the first
   record after a yield in its synchronous execution budget.
+- `rateLimit()` now resets an expired, partially used window and rechecks its
+  monotonic deadline after a timer wakes, avoiding late-window bursts and early
+  release caused by timer or clock granularity.
 
 ### Removed
 
 - The `map(fn, { wrap: true })` output mode. Return `{ input, output }`
   explicitly from the mapping callback when both values are needed.
 - `sortBy()`; pass its comparison function directly to `sort(compare)`.
+- `uniqBy()`; pass its selector directly to `uniq(selector)`.
+- `ratelimit()`; use `rateLimit({ limit, interval })`.
+- `splitBy()`; pass its regular-expression separator directly to
+  `split(separator, encoding)`.
 - `reduce1()`; call `reduce(fn)` to use the first successful value as the
   accumulator, or `reduce(fn, initialValue)` to provide one explicitly.
 - Standalone and curried operator exports such as `map()`, `filter()`, `json()`,
