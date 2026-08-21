@@ -151,6 +151,11 @@ try {
       if (bundle.includes(forbidden))
         throw Error(`${bundleName} contains Node dependency: ${forbidden}`)
     }
+
+    const sourceMap = JSON.parse(await readFile(path.join(output, `${bundleName}.map`), 'utf8'))
+    if (!sourceMap.mappings) throw Error(`${bundleName}.map contains no source mappings`)
+    if ('sourcesContent' in sourceMap)
+      throw Error(`${bundleName}.map unexpectedly embeds source content`)
   }
 
   server = createServer(async (request, response) => {

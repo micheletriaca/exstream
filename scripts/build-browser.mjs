@@ -32,6 +32,11 @@ const shared = (outDir, logLevel) => ({
   build: {
     minify: true,
     outDir,
+    rolldownOptions: {
+      output: {
+        sourcemapExcludeSources: true,
+      },
+    },
     sourcemap: true,
   },
 })
