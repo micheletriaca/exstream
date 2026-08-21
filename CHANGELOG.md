@@ -77,6 +77,10 @@ authoritative record for earlier versions.
 
 ### Fixed
 
+- `toNodeTransform()` now composes dedicated writable and readable adapters
+  instead of relying on Node's async-generator `Duplex.from()` bridge. This
+  preserves later upstream failures after an early Exstream completion on
+  Node.js 22 without weakening backpressure or cancellation.
 - Async iterables and Web `ReadableStream` sources now continue through
   microtasks within a bounded execution slice, then yield through `setImmediate`
   in Node or a cancellable `MessageChannel` task in browsers. This removes the

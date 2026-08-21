@@ -9,7 +9,7 @@ const runtime = {
   concatBytes: webCodecs.concatBytes,
   concatTextBytes: webCodecs.concatTextBytes,
   createBase64Encoder: webCodecs.createBase64Encoder,
-  duplexFromTransform: null,
+  duplexFromPipeline: null,
   EventBase: class {},
   finished: null,
   isNodeStream: () => false,

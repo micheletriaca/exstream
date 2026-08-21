@@ -1345,12 +1345,6 @@ _m.last = (s) => {
 const clonePipelineDefinitions = (definitions) =>
   definitions.map(({ method, args }) => ({ method, args: [...args] }))
 
-const drainAsyncIterator = async (iterator) => {
-  for await (const value of { [Symbol.asyncIterator]: () => iterator }) {
-    void value
-  }
-}
-
 const unavailablePipelineMethod = (method) => () => {
   const advice =
     method === 'toNodeReadable'
@@ -1374,40 +1368,11 @@ const createPipeline = (definitions = []) => {
       return createDestination((source) => source.through(snapshot).drain())
     },
     toNodeTransform: function () {
-      if (!runtime.duplexFromTransform) {
+      if (!runtime.duplexFromPipeline) {
         throw Error('toNodeTransform() is not available in this runtime')
       }
-      const snapshot = createPipeline(clonePipelineDefinitions(definitions))
-      return runtime.duplexFromTransform(async function* (source, { signal }) {
-        const iterator = source[Symbol.asyncIterator]()
-        let inputEnded = false
-        let completed = false
-        const protectedSource = {
-          [Symbol.asyncIterator]() {
-            return {
-              async next() {
-                const item = await iterator.next()
-                inputEnded ||= item.done
-                return item
-              },
-              return(value) {
-                return Promise.resolve({ done: true, value })
-              },
-            }
-          },
-        }
-
-        try {
-          yield* new Exstream(protectedSource, { signal }).through(snapshot)
-          completed = true
-        } finally {
-          if (completed && !inputEnded && !signal.aborted) {
-            await drainAsyncIterator(iterator)
-          } else if (!inputEnded && typeof iterator.return === 'function') {
-            await Promise.resolve(iterator.return()).catch(noCancel)
-          }
-        }
-      })
+      const { input, output } = materializePipeline(clonePipelineDefinitions(definitions))
+      return runtime.duplexFromPipeline(input, output)
     },
   }
   const pipeline = new Proxy(target, {
