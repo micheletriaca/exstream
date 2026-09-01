@@ -1546,8 +1546,14 @@ class Exstream extends EventHub {
       this.#addConsumer(pipelineInstance.input)
       return pipelineInstance.output
     } else if (_.isNodeStream(target)) {
-      this.toNodeReadable().pipe(target)
-      return new Exstream(target)
+      const input = this.toNodeReadable()
+      const output = new Exstream()
+      output.#sourceInitializer = () => {
+        if (_.isAsyncIterable(target)) output.#pipeAsyncIterable(target, 'read')
+        else output.#pipeReadable(target)
+        input.pipe(target)
+      }
+      return output
     } else if (_.isFunction(target)) {
       return target(this)
     }
