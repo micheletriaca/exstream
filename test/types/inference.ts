@@ -187,6 +187,46 @@ const aggregatedPipeline = exstream
 const aggregated = exstream([{ id: 'a', amount: 1 }]).through(aggregatedPipeline)
 type AggregatedPipelineValue = Expect<Equal<Value<typeof aggregated>, true[]>>
 
+declare const massiveChecksMode: boolean
+const enrichBatch = async (rows: Array<{ id: number }>) => rows
+const conditionallyBatched = exstream([{ id: 1 }]).through(
+  massiveChecksMode
+    ? exstream.pipeline<{ id: number }>()
+    : exstream.pipeline<{ id: number }>().batch(200).mapAsync(enrichBatch).flatten(),
+)
+type ConditionallyBatchedValue = Expect<
+  Value<typeof conditionallyBatched> extends { id: number } ? true : false
+>
+type ConditionallyBatchedContext = Expect<
+  Equal<
+    Context<typeof conditionallyBatched>,
+    | exstream.RecordContext<{ id: number }>
+    | exstream.AggregateContext<{ id: number }[], exstream.RecordContext<{ id: number }>>
+  >
+>
+
+const conditionallyMapped = exstream([1]).through(
+  massiveChecksMode
+    ? exstream.pipeline<number>().map(String)
+    : exstream.pipeline<number>().map(Boolean),
+)
+type ConditionallyMappedValue = Expect<Equal<Value<typeof conditionallyMapped>, string | boolean>>
+
+const conditionallyComposed = exstream
+  .pipeline<number>()
+  .through(
+    massiveChecksMode
+      ? exstream.pipeline<number>().map(String)
+      : exstream.pipeline<number>().map(Boolean),
+  )
+const conditionallyComposedResult = exstream([1]).through(conditionallyComposed)
+type ConditionallyComposedValue = Expect<
+  Equal<Value<typeof conditionallyComposedResult>, string | boolean>
+>
+
+// @ts-expect-error A pipeline that consumes strings cannot be attached to a numeric source.
+exstream([1]).through(exstream.pipeline<string>())
+
 const nestedPipeline = exstream
   .pipeline<number>()
   .map((value) => String(value))
@@ -349,6 +389,10 @@ type Used =
   | JsonlOutputValue
   | PipelineValue
   | AggregatedPipelineValue
+  | ConditionallyBatchedValue
+  | ConditionallyBatchedContext
+  | ConditionallyMappedValue
+  | ConditionallyComposedValue
   | RecoveredAsyncValue
   | NestedPipelineValue
   | typeof pipeCompletion
