@@ -50,7 +50,7 @@ declare namespace exstream {
   type ContextAddition<T> = Awaited<T> extends object ? Awaited<T> : object
   type ValueOf<S> = S extends Exstream<infer T, any> ? T : never
   type ContextOf<S> = S extends Exstream<infer T, infer C> ? CallbackContext<T, C> : never
-  type PipelineValue<P> = [P] extends [Pipeline<any, infer Output, any>] ? Output : never
+  type PipelineValue<P> = P extends Pipeline<any, infer Output, any> ? Output : never
   type PipelineContext<P> = P extends Pipeline<any, any, infer C> ? C : never
 
   /** Information that follows one value through the pipeline. */

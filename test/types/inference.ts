@@ -205,20 +205,16 @@ type ConditionallyBatchedContext = Expect<
   >
 >
 
-const conditionallyMapped = exstream([1]).through(
-  massiveChecksMode
-    ? exstream.pipeline<number>().map(String)
-    : exstream.pipeline<number>().map(Boolean),
-)
+const conditionalMapPipeline = massiveChecksMode
+  ? exstream.pipeline<number>().map(String)
+  : exstream.pipeline<number>().map(Boolean)
+type ConditionalMapPipelineValue = Expect<
+  Equal<exstream.PipelineValue<typeof conditionalMapPipeline>, string | boolean>
+>
+const conditionallyMapped = exstream([1]).through(conditionalMapPipeline)
 type ConditionallyMappedValue = Expect<Equal<Value<typeof conditionallyMapped>, string | boolean>>
 
-const conditionallyComposed = exstream
-  .pipeline<number>()
-  .through(
-    massiveChecksMode
-      ? exstream.pipeline<number>().map(String)
-      : exstream.pipeline<number>().map(Boolean),
-  )
+const conditionallyComposed = exstream.pipeline<number>().through(conditionalMapPipeline)
 const conditionallyComposedResult = exstream([1]).through(conditionallyComposed)
 type ConditionallyComposedValue = Expect<
   Equal<Value<typeof conditionallyComposedResult>, string | boolean>
@@ -391,6 +387,7 @@ type Used =
   | AggregatedPipelineValue
   | ConditionallyBatchedValue
   | ConditionallyBatchedContext
+  | ConditionalMapPipelineValue
   | ConditionallyMappedValue
   | ConditionallyComposedValue
   | RecoveredAsyncValue
