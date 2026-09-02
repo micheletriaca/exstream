@@ -5,6 +5,18 @@ first public release after 0.25.0 and consolidates the work developed through
 the internal 0.26–0.33 milestones. npm releases and Git history remain the
 authoritative record for earlier versions.
 
+## [1.0.1] - 2026-09-02
+
+### Fixed
+
+- `through()` now preserves the output and context unions of conditional
+  reusable pipeline expressions, both on live streams and while composing
+  pipeline definitions, without accepting incompatible input types.
+- Node transforms passed to `through()` now start only after downstream demand
+  and after their readable side is connected. This preserves output and
+  completion from legacy flowing transforms such as `JSONStream` and
+  `through@2` while keeping source acquisition lazy.
+
 ## [1.0.0] - 2026-08-21
 
 ### Added
