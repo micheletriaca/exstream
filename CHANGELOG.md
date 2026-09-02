@@ -5,6 +5,14 @@ first public release after 0.25.0 and consolidates the work developed through
 the internal 0.26–0.33 milestones. npm releases and Git history remain the
 authoritative record for earlier versions.
 
+## [Unreleased]
+
+### Fixed
+
+- Passthrough transform factories passed to `through()` now infer their input
+  value from the source stream, including callbacks nested inside factories such
+  as `through(log(value => ...))` on live streams and reusable pipelines.
+
 ## [1.0.1] - 2026-09-02
 
 ### Fixed

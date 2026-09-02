@@ -674,6 +674,11 @@ declare namespace exstream {
     /** Creates a non-blocking branch that may drop buffered values by policy. */
     observe(options?: ObserveOptions | null): Exstream<T, C>
     /** Connects this stream to a reusable pipeline, transform function, or Node transform. */
+    through(
+      target: <InputContext extends object>(
+        stream: Exstream<T, InputContext>,
+      ) => Exstream<T, InputContext>,
+    ): Exstream<T, C>
     through<P extends Pipeline<T, any, any>>(
       target: P,
     ): Exstream<PipelineValue<P>, PipelineContext<P>>
@@ -872,6 +877,11 @@ declare namespace exstream {
       fn: (value: Output, context: C) => K,
     ): Pipeline<Input, SortedGroup<K, Output>, AggregateContext<SortedGroup<K, Output>, C>>
     /** Adds another reusable pipeline after this one. */
+    through(
+      target: <InputContext extends object>(
+        stream: Exstream<Output, InputContext>,
+      ) => Exstream<Output, InputContext>,
+    ): Pipeline<Input, Output, C>
     through<P extends Pipeline<Output, any, any>>(
       target: P,
     ): Pipeline<Input, PipelineValue<P>, PipelineContext<P>>
