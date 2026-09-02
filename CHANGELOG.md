@@ -5,7 +5,7 @@ first public release after 0.25.0 and consolidates the work developed through
 the internal 0.26–0.33 milestones. npm releases and Git history remain the
 authoritative record for earlier versions.
 
-## [Unreleased]
+## [1.0.1] - 2026-09-02
 
 ### Fixed
 
